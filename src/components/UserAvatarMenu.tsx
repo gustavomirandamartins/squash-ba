@@ -5,14 +5,15 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
-import { LogOut, User, Settings } from 'lucide-react'
+import { LogOut, User, Settings, ShieldCheck, Trophy } from 'lucide-react'
 
 interface Props {
   name?: string | null
   avatarUrl?: string | null
+  isAdmin?: boolean
 }
 
-export function UserAvatarMenu({ name, avatarUrl }: Props) {
+export function UserAvatarMenu({ name, avatarUrl, isAdmin }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -69,6 +70,24 @@ export function UserAvatarMenu({ name, avatarUrl }: Props) {
             </div>
           )}
           {name && <div className="h-px bg-white/8 mx-2" />}
+          {isAdmin && (
+            <Link
+              href="/admin"
+              onClick={() => setOpen(false)}
+              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-secondary/80 transition hover:bg-white/8 hover:text-secondary active:scale-95"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Painel admin
+            </Link>
+          )}
+          <Link
+            href="/organizador"
+            onClick={() => setOpen(false)}
+            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-white/70 transition hover:bg-white/8 hover:text-white active:scale-95"
+          >
+            <Trophy className="h-4 w-4" />
+            Ser organizador
+          </Link>
           <Link
             href="/perfil"
             onClick={() => setOpen(false)}

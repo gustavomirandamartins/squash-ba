@@ -5,9 +5,10 @@ import { UserAvatarMenu } from './UserAvatarMenu'
 interface Props {
   name?: string | null
   avatarUrl?: string | null
+  isAdmin?: boolean
 }
 
-export function TopBar({ name, avatarUrl }: Props) {
+export function TopBar({ name, avatarUrl, isAdmin }: Props) {
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between px-5 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
       <Logo />
@@ -19,7 +20,7 @@ export function TopBar({ name, avatarUrl }: Props) {
         >
           <Search className="h-[18px] w-[18px]" />
         </button>
-        <UserAvatarMenu name={name} avatarUrl={avatarUrl} />
+        <UserAvatarMenu name={name} avatarUrl={avatarUrl} isAdmin={isAdmin} />
       </div>
     </header>
   )

@@ -17,12 +17,20 @@ export default async function AppLayout({
     redirect('/login')
   }
 
-  // Verifica onboarding
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('full_name, avatar_url, onboarding_completed')
-    .eq('id', user.id)
-    .single()
+  // Verifica onboarding + papel admin em paralelo
+  const [{ data: profile }, { data: adminRole }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('full_name, avatar_url, onboarding_completed')
+      .eq('id', user.id)
+      .single(),
+    supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('role', 'admin')
+      .maybeSingle(),
+  ])
 
   if (!profile?.onboarding_completed) {
     redirect('/onboarding')
@@ -30,7 +38,11 @@ export default async function AppLayout({
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col">
-      <TopBar name={profile.full_name} avatarUrl={profile.avatar_url} />
+      <TopBar
+        name={profile.full_name}
+        avatarUrl={profile.avatar_url}
+        isAdmin={!!adminRole}
+      />
       <main className="flex-1 pb-32">{children}</main>
       <BottomNav />
     </div>

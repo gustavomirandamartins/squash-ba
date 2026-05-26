@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
+import { compressImage } from '@/lib/compress-image'
 import {
   Camera,
   User,
@@ -65,6 +66,7 @@ export function EditProfileForm({ userId, email, initial }: Props) {
     initial.avatarUrl
   )
 
+  const [compressing, setCompressing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -72,11 +74,20 @@ export function EditProfileForm({ userId, email, initial }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    setAvatarFile(file)
-    setAvatarPreview(URL.createObjectURL(file))
+    setCompressing(true)
+    setError(null)
+    try {
+      const compressed = await compressImage(file)
+      setAvatarFile(compressed)
+      setAvatarPreview(URL.createObjectURL(compressed))
+    } catch {
+      setError('Não foi possível processar a imagem. Tente outra.')
+    } finally {
+      setCompressing(false)
+    }
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -92,11 +103,10 @@ export function EditProfileForm({ userId, email, initial }: Props) {
       let avatarUrl = initial.avatarUrl
 
       if (avatarFile) {
-        const ext = avatarFile.name.split('.').pop() ?? 'jpg'
-        const path = `${userId}/avatar.${ext}`
+        const path = `${userId}/avatar.jpg`
         const { error: uploadError } = await supabase.storage
           .from('avatars')
-          .upload(path, avatarFile, { upsert: true })
+          .upload(path, avatarFile, { upsert: true, contentType: 'image/jpeg' })
         if (uploadError) throw new Error('Erro ao enviar a foto.')
         const { data: urlData } = supabase.storage
           .from('avatars')
@@ -176,7 +186,8 @@ export function EditProfileForm({ userId, email, initial }: Props) {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="group relative h-24 w-24 overflow-hidden rounded-full border-2 border-white/15 transition active:scale-95"
+              disabled={compressing}
+              className="group relative h-24 w-24 overflow-hidden rounded-full border-2 border-white/15 transition active:scale-95 disabled:opacity-70"
               aria-label="Alterar foto"
             >
               {avatarPreview ? (
@@ -192,11 +203,19 @@ export function EditProfileForm({ userId, email, initial }: Props) {
                   <User className="h-8 w-8 text-white/30" />
                 </div>
               )}
-              <div className="absolute inset-0 flex items-end justify-center bg-gradient-to-t from-black/50 to-transparent pb-2 opacity-0 transition-opacity group-hover:opacity-100">
-                <Camera className="h-4 w-4 text-white" />
-              </div>
+              {compressing ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                </div>
+              ) : (
+                <div className="absolute inset-0 flex items-end justify-center bg-gradient-to-t from-black/50 to-transparent pb-2 opacity-0 transition-opacity group-hover:opacity-100">
+                  <Camera className="h-4 w-4 text-white" />
+                </div>
+              )}
             </button>
-            <span className="text-xs text-white/40">Toque para trocar a foto</span>
+            <span className="text-xs text-white/40">
+              {compressing ? 'Otimizando imagem…' : 'Toque para trocar a foto'}
+            </span>
             <input
               ref={fileInputRef}
               type="file"
