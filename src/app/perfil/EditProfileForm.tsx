@@ -16,20 +16,36 @@ import {
   ArrowLeft,
   Check,
   AlertTriangle,
+  Tag,
+  Users,
 } from 'lucide-react'
 import { Logo } from '@/components/Logo'
 
 type Gender = 'masculino' | 'feminino' | 'outro' | 'nao_informado'
 
+interface Category {
+  id: string
+  name: string
+}
+
+interface Team {
+  id: string
+  name: string
+}
+
 interface Props {
   userId: string
   email: string
+  categories: Category[]
+  teams: Team[]
   initial: {
     fullName: string
     birthDate: string
     gender: Gender
     phone: string
     avatarUrl: string | null
+    categoryId: string | null
+    teamId: string | null
   }
 }
 
@@ -53,7 +69,7 @@ const LABEL_CLS =
 const INPUT_CLS =
   'w-full rounded-2xl border border-white/10 bg-white/5 py-3.5 pl-11 pr-4 text-sm text-white placeholder-white/30 outline-none transition focus:border-secondary/50 focus:bg-white/8'
 
-export function EditProfileForm({ userId, email, initial }: Props) {
+export function EditProfileForm({ userId, email, categories, teams, initial }: Props) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -61,6 +77,9 @@ export function EditProfileForm({ userId, email, initial }: Props) {
   const [birthDate, setBirthDate] = useState(initial.birthDate)
   const [gender, setGender] = useState<Gender>(initial.gender)
   const [phone, setPhone] = useState(formatPhone(initial.phone))
+  const [categoryId, setCategoryId] = useState<string>(initial.categoryId ?? '')
+  const [teamId, setTeamId] = useState<string>(initial.teamId ?? '')
+
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(
     initial.avatarUrl
@@ -121,6 +140,8 @@ export function EditProfileForm({ userId, email, initial }: Props) {
           full_name: fullName.trim(),
           birth_date: birthDate || null,
           gender,
+          category_id: categoryId || null,
+          team_id: teamId || null,
           ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
         })
         .eq('id', userId)
@@ -321,6 +342,64 @@ export function EditProfileForm({ userId, email, initial }: Props) {
               />
             </div>
           </div>
+
+          {/* Categoria */}
+          {categories.length > 0 && (
+            <div>
+              <label htmlFor="ep-categoria" className={LABEL_CLS}>
+                Categoria
+              </label>
+              <div className="relative">
+                <Tag className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+                <select
+                  id="ep-categoria"
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                  className="w-full appearance-none rounded-2xl border border-white/10 bg-white/5 py-3.5 pl-11 pr-11 text-sm text-white/80 outline-none transition focus:border-secondary/50 focus:bg-white/8"
+                  style={{ colorScheme: 'dark' }}
+                >
+                  <option value="" className="bg-[#1d2b45]">
+                    Sem categoria
+                  </option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id} className="bg-[#1d2b45]">
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Time */}
+          {teams.length > 0 && (
+            <div>
+              <label htmlFor="ep-time" className={LABEL_CLS}>
+                Time
+              </label>
+              <div className="relative">
+                <Users className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+                <select
+                  id="ep-time"
+                  value={teamId}
+                  onChange={(e) => setTeamId(e.target.value)}
+                  className="w-full appearance-none rounded-2xl border border-white/10 bg-white/5 py-3.5 pl-11 pr-11 text-sm text-white/80 outline-none transition focus:border-secondary/50 focus:bg-white/8"
+                  style={{ colorScheme: 'dark' }}
+                >
+                  <option value="" className="bg-[#1d2b45]">
+                    Sem time
+                  </option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id} className="bg-[#1d2b45]">
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
 
           {error && (
             <p className="rounded-xl bg-red-500/10 px-4 py-2.5 text-xs text-red-400">

@@ -20,28 +20,40 @@ export default async function PerfilPage() {
     redirect('/login')
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('full_name, birth_date, gender, avatar_url')
-    .eq('id', user.id)
-    .single()
-
-  const { data: priv } = await supabase
-    .from('profiles_private')
-    .select('phone, email')
-    .eq('user_id', user.id)
-    .single()
+  const [
+    { data: profile },
+    { data: priv },
+    { data: categories },
+    { data: teams },
+  ] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('full_name, birth_date, gender, avatar_url, category_id, team_id')
+      .eq('id', user.id)
+      .single(),
+    supabase
+      .from('profiles_private')
+      .select('phone, email')
+      .eq('user_id', user.id)
+      .single(),
+    supabase.from('categories').select('id, name').order('name'),
+    supabase.from('teams').select('id, name').order('name'),
+  ])
 
   return (
     <EditProfileForm
       userId={user.id}
       email={priv?.email ?? user.email ?? ''}
+      categories={categories ?? []}
+      teams={teams ?? []}
       initial={{
         fullName: profile?.full_name ?? '',
         birthDate: profile?.birth_date ?? '',
         gender: (profile?.gender as Gender) ?? 'nao_informado',
         phone: priv?.phone ?? '',
         avatarUrl: profile?.avatar_url ?? null,
+        categoryId: profile?.category_id ?? null,
+        teamId: profile?.team_id ?? null,
       }}
     />
   )
