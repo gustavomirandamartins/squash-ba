@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
-import { getUserRoles } from '@/utils/get-user-roles'
 import { GestaoNav } from '@/components/GestaoNav'
 
 export const metadata = { title: 'Gestão' }
@@ -17,7 +16,14 @@ export default async function GestaoLayout({
 
   if (!user) notFound()
 
-  const { canManage } = await getUserRoles(user.id)
+  const { data: rolesData } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id)
+
+  const roleSet = new Set((rolesData ?? []).map((r) => r.role as string))
+  const canManage = roleSet.has('organizer') || roleSet.has('admin')
+
   if (!canManage) notFound()
 
   return (
