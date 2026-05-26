@@ -91,14 +91,16 @@ export function UserAvatarMenu({ name, avatarUrl, isAdmin, canManage }: Props) {
               Gestão
             </Link>
           )}
-          <Link
-            href="/organizador"
-            onClick={() => setOpen(false)}
-            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-white/70 transition hover:bg-white/8 hover:text-white active:scale-95"
-          >
-            <Trophy className="h-4 w-4" />
-            Ser organizador
-          </Link>
+          {!canManage && (
+            <Link
+              href="/organizador"
+              onClick={() => setOpen(false)}
+              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-white/70 transition hover:bg-white/8 hover:text-white active:scale-95"
+            >
+              <Trophy className="h-4 w-4" />
+              Ser organizador
+            </Link>
+          )}
           <Link
             href="/perfil"
             onClick={() => setOpen(false)}
