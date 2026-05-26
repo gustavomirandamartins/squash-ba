@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
+import { getUserRoles } from '@/utils/get-user-roles'
 import { TopBar } from '@/components/TopBar'
 import { BottomNav } from '@/components/BottomNav'
 
@@ -17,19 +18,14 @@ export default async function AppLayout({
     redirect('/login')
   }
 
-  // Verifica onboarding + papel admin em paralelo
-  const [{ data: profile }, { data: adminRole }] = await Promise.all([
+  // Verifica onboarding + todos os papéis em paralelo
+  const [{ data: profile }, roles] = await Promise.all([
     supabase
       .from('profiles')
       .select('full_name, avatar_url, onboarding_completed')
       .eq('id', user.id)
       .single(),
-    supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .eq('role', 'admin')
-      .maybeSingle(),
+    getUserRoles(user.id),
   ])
 
   if (!profile?.onboarding_completed) {
@@ -41,7 +37,8 @@ export default async function AppLayout({
       <TopBar
         name={profile.full_name}
         avatarUrl={profile.avatar_url}
-        isAdmin={!!adminRole}
+        isAdmin={roles.isAdmin}
+        canManage={roles.canManage}
       />
       <main className="flex-1 pb-32">{children}</main>
       <BottomNav />

@@ -6,9 +6,10 @@ interface Props {
   name?: string | null
   avatarUrl?: string | null
   isAdmin?: boolean
+  canManage?: boolean
 }
 
-export function TopBar({ name, avatarUrl, isAdmin }: Props) {
+export function TopBar({ name, avatarUrl, isAdmin, canManage }: Props) {
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between px-5 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
       <Logo />
@@ -20,7 +21,12 @@ export function TopBar({ name, avatarUrl, isAdmin }: Props) {
         >
           <Search className="h-[18px] w-[18px]" />
         </button>
-        <UserAvatarMenu name={name} avatarUrl={avatarUrl} isAdmin={isAdmin} />
+        <UserAvatarMenu
+          name={name}
+          avatarUrl={avatarUrl}
+          isAdmin={isAdmin}
+          canManage={canManage}
+        />
       </div>
     </header>
   )
