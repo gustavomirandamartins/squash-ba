@@ -47,32 +47,48 @@ body {
 }
 
 /* ── Glassmorphism ─────────────────────────────────────── */
+/* IMPORTANTE: definido FORA de @layer (CSS sem layer vence qualquer regra
+   layered do Tailwind v4 — que estava sobrescrevendo backdrop-filter p/ none).
+   Receita: tint em gradiente diagonal (luz batendo no vidro) + blur/saturação
+   fortes + brilho interno no topo (sheen) + borda definida. */
+.glass {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  /* backdrop-filter é injetado via <style> cru no layout.tsx — o Lightning CSS
+     do Tailwind v4 descarta a propriedade aqui na compilação. */
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    var(--shadow-glass),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Glass mais opaco p/ sobreposição em imagens claras */
+.glass-strong {
+  background: linear-gradient(
+    135deg,
+    rgba(44, 59, 88, 0.72) 0%,
+    rgba(22, 35, 58, 0.58) 100%
+  );
+  /* backdrop-filter injetado via <style> cru no layout.tsx (ver .glass). */
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    var(--shadow-glass),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.16);
+}
+
+.glass-card {
+  border-radius: var(--radius-card);
+}
+
+.glass-pill {
+  border-radius: var(--radius-pill);
+}
+
 @layer utilities {
-  .glass {
-    background: rgba(255, 255, 255, 0.07);
-    backdrop-filter: blur(20px) saturate(120%);
-    -webkit-backdrop-filter: blur(20px) saturate(120%);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    box-shadow: var(--shadow-glass);
-  }
-
-  /* Glass mais opaco p/ sobreposição em imagens claras */
-  .glass-strong {
-    background: rgba(22, 35, 58, 0.55);
-    backdrop-filter: blur(24px) saturate(130%);
-    -webkit-backdrop-filter: blur(24px) saturate(130%);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    box-shadow: var(--shadow-glass);
-  }
-
-  .glass-card {
-    border-radius: var(--radius-card);
-  }
-
-  .glass-pill {
-    border-radius: var(--radius-pill);
-  }
-
   .text-balance {
     text-wrap: balance;
   }
@@ -127,9 +143,11 @@ body {
   }
 }
 
+/* reveal = só opacidade (sem transform): transform em ancestral cria um
+   containing block que QUEBRA o backdrop-filter dos cards glass aninhados. */
 .reveal {
   opacity: 0;
-  animation: reveal-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: fade-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .fade-in {

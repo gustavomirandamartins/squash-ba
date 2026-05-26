@@ -1,9 +1,13 @@
-import { Search } from "lucide-react";
-import { Logo } from "./Logo";
-import { SquashImage } from "./SquashImage";
-import { currentUser } from "@/lib/mock/data";
+import { Search } from 'lucide-react'
+import { Logo } from './Logo'
+import { UserAvatarMenu } from './UserAvatarMenu'
 
-export function TopBar() {
+interface Props {
+  name?: string | null
+  avatarUrl?: string | null
+}
+
+export function TopBar({ name, avatarUrl }: Props) {
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between px-5 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
       <Logo />
@@ -15,14 +19,8 @@ export function TopBar() {
         >
           <Search className="h-[18px] w-[18px]" />
         </button>
-        <button
-          type="button"
-          aria-label="Perfil"
-          className="h-10 w-10 overflow-hidden rounded-full border border-white/15 transition active:scale-95"
-        >
-          <SquashImage seed={currentUser.seed} rounded className="h-full w-full" />
-        </button>
+        <UserAvatarMenu name={name} avatarUrl={avatarUrl} />
       </div>
     </header>
-  );
+  )
 }
