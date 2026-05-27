@@ -20,7 +20,6 @@ import {
   Swords,
   User,
   Users,
-  Users2,
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -98,7 +97,6 @@ const FORMAT_OPTIONS: { value: Format; label: string; desc: string; icon: React.
 const UNIT_OPTIONS: { value: Unit; label: string; sub: string; icon: React.ReactNode }[] = [
   { value: 'player', label: 'Jogador', sub: '1 vs 1', icon: <User className="h-5 w-5" /> },
   { value: 'pair', label: 'Dupla', sub: '2 vs 2', icon: <Users className="h-5 w-5" /> },
-  { value: 'team', label: 'Time', sub: 'N vs N', icon: <Users2 className="h-5 w-5" /> },
 ]
 
 const TIEBREAKER_LABELS: Record<string, string> = {
@@ -934,7 +932,7 @@ export function ChampionshipWizard() {
   const canGoForward = canAdvance(step, state)
 
   return (
-    <div className="flex flex-col" style={{ minHeight: 'calc(100dvh - 8rem)' }}>
+    <div>
       {/* Step header */}
       <div className="px-5 pt-4 pb-3 space-y-3">
         <div className="grid grid-cols-[2rem_1fr_2rem] items-center gap-2">
@@ -951,7 +949,6 @@ export function ChampionshipWizard() {
               {STEP_TITLES[step - 1]}
             </p>
           </div>
-          {/* Cancel X on step 1 or spacer on others */}
           {step === 1 ? (
             <Link
               href="/campeonatos"
@@ -973,8 +970,9 @@ export function ChampionshipWizard() {
         </div>
       </div>
 
-      {/* Step content */}
-      <div className="flex-1 overflow-y-auto px-5 pb-4">
+      {/* Step content + Avançar button — flui naturalmente; pb-32 no main
+          (shell layout) já garante espaço acima da BottomNav flutuante */}
+      <div className="px-5 pb-6 space-y-0">
         {step === 1 && <Step1 state={state} onChange={onChange} />}
         {step === 2 && <Step2 state={state} onChange={onChange} />}
         {step === 3 && <Step3 state={state} onChange={onChange} />}
@@ -988,23 +986,22 @@ export function ChampionshipWizard() {
             error={error}
           />
         )}
-      </div>
 
-      {/* Footer — Avançar (steps 1–4) */}
-      {step < 5 && (
-        <div className="px-5 pb-6 pt-2">
-          {step === 1 && isBlocked && state.name.trim() !== '' ? null : null}
-          <button
-            type="button"
-            onClick={next}
-            disabled={!canGoForward}
-            className="w-full flex items-center justify-center gap-2 rounded-full bg-secondary py-3.5 text-base font-bold text-primary transition active:scale-[0.98] disabled:opacity-35"
-          >
-            Avançar
-            <ChevronRight className="h-5 w-5" />
-          </button>
-        </div>
-      )}
+        {/* Avançar — dentro do fluxo, visível sem sobreposição */}
+        {step < 5 && (
+          <div className="pt-5">
+            <button
+              type="button"
+              onClick={next}
+              disabled={!canGoForward}
+              className="w-full flex items-center justify-center gap-2 rounded-full bg-secondary py-3.5 text-base font-bold text-primary transition active:scale-[0.98] disabled:opacity-35"
+            >
+              Avançar
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
