@@ -10,7 +10,7 @@ export function Logo({ className = "", showWordmark = true, size = 40 }: Props) 
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
       <Image
-        src="/brand/logo.avif"
+        src="/brand/logo.png"
         alt="SquashBa"
         width={size}
         height={size}
