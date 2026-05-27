@@ -35,6 +35,11 @@ interface PlayerResult {
   avatar_url: string | null
 }
 
+interface Category {
+  id: string
+  name: string
+}
+
 interface WizardState {
   // Step 1
   name: string
@@ -560,36 +565,58 @@ function Step3({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
 
 function Step4({ state, onChange }: { state: WizardState; onChange: (p: Patch) => void }) {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<PlayerResult[]>([])
-  const [searching, setSearching] = useState(false)
+  const [categories, setCategories] = useState<Category[]>([])
+  const [filterCategories, setFilterCategories] = useState<string[]>([])
+  const [pool, setPool] = useState<PlayerResult[]>([])
+  const [loadingPool, setLoadingPool] = useState(true)
 
+  // Load categories once
   useEffect(() => {
-    const q = query.trim()
-    if (q.length < 2) {
-      setResults([])
-      return
+    createClient()
+      .from('categories')
+      .select('id, name')
+      .order('name')
+      .then(({ data }) => setCategories(data ?? []))
+  }, [])
+
+  // Load player pool whenever category filter changes
+  useEffect(() => {
+    setLoadingPool(true)
+    const supabase = createClient()
+    let q = supabase
+      .from('profiles')
+      .select('id, full_name, avatar_url')
+      .not('full_name', 'is', null)
+      .order('full_name')
+      .limit(150)
+
+    if (filterCategories.length > 0) {
+      q = q.in('category_id', filterCategories)
     }
-    const t = setTimeout(async () => {
-      setSearching(true)
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, full_name, avatar_url')
-        .ilike('full_name', `%${q}%`)
-        .limit(8)
-      const filtered = (data ?? []).filter(
-        (p) => !state.players.find((s) => s.id === p.id),
-      )
-      setResults(filtered)
-      setSearching(false)
-    }, 280)
-    return () => clearTimeout(t)
-  }, [query, state.players])
+
+    q.then(({ data }) => {
+      setPool(data ?? [])
+      setLoadingPool(false)
+    })
+  }, [filterCategories])
+
+  // Toggle a category filter pill
+  function toggleCategory(id: string) {
+    setFilterCategories((prev) =>
+      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id],
+    )
+  }
+
+  // Client-side text filter + exclude already-selected
+  const available = pool.filter(
+    (p) =>
+      !state.players.find((s) => s.id === p.id) &&
+      (!query.trim() ||
+        p.full_name?.toLowerCase().includes(query.trim().toLowerCase())),
+  )
 
   function addPlayer(p: PlayerResult) {
     onChange({ players: [...state.players, p] })
-    setQuery('')
-    setResults([])
   }
 
   function removePlayer(id: string) {
@@ -598,79 +625,112 @@ function Step4({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
 
   return (
     <div className="space-y-4">
-      {/* Search */}
+      {/* Category filter pills */}
+      {categories.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40 px-1">
+            Filtrar por categoria{' '}
+            <span className="normal-case font-normal text-white/30">(opcional)</span>
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {categories.map((c) => {
+              const active = filterCategories.includes(c.id)
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => toggleCategory(c.id)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition active:scale-95 ${
+                    active
+                      ? 'bg-secondary text-primary'
+                      : 'glass border-white/10 text-white/55 hover:text-white/80'
+                  }`}
+                >
+                  {c.name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Search / filter input */}
       <div className="glass glass-card flex items-center gap-2 px-3.5 py-2.5">
         <Search className="h-4 w-4 shrink-0 text-white/40" />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar jogador por nome…"
+          placeholder="Filtrar por nome…"
           className="flex-1 bg-transparent text-sm text-white placeholder-white/30 outline-none"
         />
         {query && (
-          <button
-            type="button"
-            onClick={() => {
-              setQuery('')
-              setResults([])
-            }}
-          >
+          <button type="button" onClick={() => setQuery('')}>
             <X className="h-4 w-4 text-white/40" />
           </button>
         )}
       </div>
 
-      {/* Results panel — visible whenever query has ≥2 chars */}
-      {query.trim().length >= 2 && (
-        <div className="space-y-1.5">
-          {searching ? (
-            <p className="text-xs text-white/40 px-1">Buscando…</p>
-          ) : results.length > 0 ? (
-            results.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => addPlayer(p)}
-                className="glass glass-card w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition active:scale-[0.98]"
-              >
-                <PlayerAvatar player={p} size={32} />
-                <span className="flex-1 text-sm text-white/85">
-                  {p.full_name ?? 'Sem nome'}
-                </span>
-                <span className="text-xs font-semibold text-secondary">+ Adicionar</span>
-              </button>
-            ))
-          ) : (
-            <p className="text-xs text-white/40 px-1">
-              Nenhum resultado para &quot;{query.trim()}&quot;.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Selected list */}
-      <div className="space-y-2">
+      {/* Available players */}
+      <div className="space-y-1.5">
         <div className="flex items-center justify-between px-1">
           <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">
-            Selecionados
+            Disponíveis
           </p>
-          <span
-            className={`text-xs font-semibold ${
-              state.players.length < 2 ? 'text-white/30' : 'text-secondary'
-            }`}
-          >
-            {state.players.length}{' '}
-            {state.players.length === 1 ? 'jogador' : 'jogadores'}
-            {state.players.length < 2 && ' (mín. 2)'}
-          </span>
+          {!loadingPool && (
+            <span className="text-xs text-white/30">{available.length}</span>
+          )}
         </div>
 
-        {state.players.length === 0 ? (
-          <p className="py-10 text-center text-sm text-white/30">
-            Nenhum jogador adicionado ainda.
+        {loadingPool ? (
+          <p className="py-6 text-center text-xs text-white/35">Carregando jogadores…</p>
+        ) : available.length === 0 ? (
+          <p className="py-6 text-center text-xs text-white/35">
+            {query.trim()
+              ? `Nenhum resultado para "${query.trim()}".`
+              : filterCategories.length > 0
+                ? 'Nenhum jogador nesta categoria.'
+                : 'Nenhum jogador cadastrado.'}
           </p>
         ) : (
-          state.players.map((p) => (
+          available.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => addPlayer(p)}
+              className="glass glass-card w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition active:scale-[0.98]"
+            >
+              <PlayerAvatar player={p} size={32} />
+              <span className="flex-1 text-sm text-white/85">
+                {p.full_name ?? 'Sem nome'}
+              </span>
+              <span className="text-xs font-semibold text-secondary/80">+ Adicionar</span>
+            </button>
+          ))
+        )}
+      </div>
+
+      {/* Divider */}
+      {state.players.length > 0 && <div className="h-px bg-white/8" />}
+
+      {/* Selected list */}
+      {state.players.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">
+              Selecionados
+            </p>
+            <span
+              className={`text-xs font-semibold ${
+                state.players.length < 2 ? 'text-white/30' : 'text-secondary'
+              }`}
+            >
+              {state.players.length}{' '}
+              {state.players.length === 1 ? 'jogador' : 'jogadores'}
+              {state.players.length < 2 && ' (mín. 2)'}
+            </span>
+          </div>
+
+          {state.players.map((p) => (
             <div
               key={p.id}
               className="glass glass-card flex items-center gap-3 px-3.5 py-2.5"
@@ -687,9 +747,16 @@ function Step4({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
                 <X className="h-4 w-4" />
               </button>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
+
+      {/* Hint when nothing selected yet */}
+      {state.players.length === 0 && !loadingPool && available.length > 0 && (
+        <p className="text-center text-xs text-white/25">
+          Toque em um jogador para adicioná-lo.
+        </p>
+      )}
     </div>
   )
 }
