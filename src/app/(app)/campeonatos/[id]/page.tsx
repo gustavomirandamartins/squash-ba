@@ -1,35 +1,8 @@
 import { notFound } from 'next/navigation'
-import Link from 'next/link'
-import Image from 'next/image'
-import { ChevronLeft, Trophy, User } from 'lucide-react'
 import { createClient } from '@/utils/supabase/server'
+import { ChampionshipDetailClient } from '@/components/campeonatos/ChampionshipDetailClient'
 
 export const metadata = { title: 'Campeonato' }
-
-const FORMAT_LABEL: Record<string, string> = {
-  liga: 'Liga',
-  grupos_elim: 'Grupos + Eliminatórias',
-  eliminatoria: 'Eliminatórias',
-  desafio: 'Desafio',
-}
-
-const UNIT_LABEL: Record<string, string> = {
-  player: 'Jogador (1v1)',
-  pair: 'Dupla (2v2)',
-  team: 'Time',
-}
-
-const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  rascunho: { label: 'Rascunho', className: 'bg-white/8 text-white/50' },
-  ativo: { label: 'Ativo', className: 'bg-secondary/20 text-secondary' },
-  encerrado: { label: 'Encerrado', className: 'bg-white/5 text-white/30' },
-}
-
-const TIEBREAKER_LABELS: Record<string, string> = {
-  sets_ganhos: 'Sets ganhos',
-  pontos_ganhos: 'Pontos ganhos',
-  pontos_sofridos_asc: 'Menos pontos sofridos',
-}
 
 export default async function ChampionshipPage({
   params,
@@ -37,21 +10,23 @@ export default async function ChampionshipPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  // Um único client por request — crítico para consistência de sessão
   const supabase = await createClient()
 
-  // Query championship with stages and participant membership
+  // getUser() — nunca getSession() server-side (valida JWT)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  // ── 1. Campeonato + fase ──────────────────────────────────────
   const { data: champ } = await supabase
     .from('championships')
     .select(
       `id, name, format, unit, status, allow_draw,
-       points_win, points_draw, points_loss, tiebreakers, created_at,
+       points_win, points_draw, points_loss, tiebreakers, created_at, created_by,
        championship_stages(
          id, name, kind, counting, rounds,
          sets_to_play, points_per_set, win_by_two, set_draw_enabled, time_minutes
-       ),
-       participants(
-         id,
-         participant_members(user_id)
        )`,
     )
     .eq('id', id)
@@ -59,164 +34,129 @@ export default async function ChampionshipPage({
 
   if (!champ) notFound()
 
-  // Collect all user_ids to batch-fetch profiles
-  const userIds = (champ.participants ?? []).flatMap((p) =>
+  // ── 2. Jogos + sets do campeonato ─────────────────────────────
+  const { data: matchesRaw } = await supabase
+    .from('matches')
+    .select(
+      `id, round, result, status,
+       side_a_participant_id, side_b_participant_id,
+       match_games(game_number, score_a, score_b)`,
+    )
+    .eq('championship_id', id)
+    .order('round', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  // ── 3. Participantes confirmados + seus membros ───────────────
+  const { data: participantsRaw } = await supabase
+    .from('participants')
+    .select(`id, participant_members(user_id)`)
+    .eq('championship_id', id)
+    .eq('enrollment_status', 'confirmado')
+
+  // ── 4. Perfis dos usuários (batch) ───────────────────────────
+  const allUserIds = (participantsRaw ?? []).flatMap((p) =>
     (p.participant_members ?? []).map((m: { user_id: string }) => m.user_id),
   )
-
-  const { data: profiles } = userIds.length
+  const { data: profiles } = allUserIds.length
     ? await supabase
         .from('profiles')
         .select('id, full_name, avatar_url')
-        .in('id', userIds)
+        .in('id', allUserIds)
     : { data: [] }
 
-  const profileMap = new Map(
-    (profiles ?? []).map((p) => [p.id, p]),
-  )
+  const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]))
 
-  // Flatten participants → one player per row
-  const players = (champ.participants ?? [])
-    .flatMap((p) =>
-      (p.participant_members ?? []).map((m: { user_id: string }) => ({
-        participantId: p.id,
-        profile: profileMap.get(m.user_id) ?? {
-          id: m.user_id,
-          full_name: null,
-          avatar_url: null,
-        },
-      })),
+  // Monta mapa participantId → {full_name, avatar_url}
+  const participantInfo: Record<
+    string,
+    { full_name: string | null; avatar_url: string | null }
+  > = {}
+  for (const p of participantsRaw ?? []) {
+    const memberIds = (p.participant_members ?? []).map(
+      (m: { user_id: string }) => m.user_id,
     )
+    const names = memberIds
+      .map((uid: string) => profileMap.get(uid)?.full_name)
+      .filter(Boolean) as string[]
+    const avatarUrl =
+      memberIds.length === 1
+        ? (profileMap.get(memberIds[0])?.avatar_url ?? null)
+        : null
+    participantInfo[p.id] = {
+      full_name: names.length ? names.join(' / ') : null,
+      avatar_url: avatarUrl,
+    }
+  }
 
+  // ── 5. Permissão de gestão (server-side, security definer) ────
+  // can_manage_championship: creator OU organizer/admin
+  let canManage = false
+  if (user) {
+    try {
+      const { data: ok } = await supabase.rpc('can_manage_championship', {
+        _championship_id: id,
+      })
+      canManage = (ok as boolean) ?? false
+    } catch {
+      // Fallback conservador: só creator
+      canManage = user.id === (champ.created_by ?? '')
+    }
+  }
+
+  // ── Normalização para serialização server → client ─────────────
   const stage =
     champ.championship_stages && champ.championship_stages.length > 0
       ? champ.championship_stages[0]
       : null
 
-  const badge = STATUS_BADGE[champ.status] ?? STATUS_BADGE.rascunho
-
-  const countingDesc = stage
-    ? stage.counting === 'set'
-      ? `Por set — ${stage.sets_to_play === 1 ? '1 set' : `MD${stage.sets_to_play}`}, ${stage.points_per_set} pts/set`
-      : `Por tempo — ${stage.time_minutes} min`
-    : '—'
-
   return (
-    <div className="px-5 py-4 space-y-4">
-      {/* Back nav */}
-      <Link
-        href="/campeonatos"
-        className="inline-flex items-center gap-1.5 text-sm text-white/50 hover:text-white/80 transition"
-      >
-        <ChevronLeft className="h-4 w-4" />
-        Campeonatos
-      </Link>
-
-      {/* Hero card */}
-      <div className="glass glass-card px-4 py-4 space-y-3">
-        <div className="flex items-start gap-3">
-          <div className="h-11 w-11 rounded-2xl bg-secondary/15 grid place-items-center shrink-0">
-            <Trophy className="h-5 w-5 text-secondary" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-base font-bold text-white leading-snug">
-              {champ.name}
-            </h1>
-            <p className="text-xs text-white/45 mt-0.5">
-              {FORMAT_LABEL[champ.format] ?? champ.format} ·{' '}
-              {UNIT_LABEL[champ.unit] ?? champ.unit}
-            </p>
-          </div>
-          <span
-            className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${badge.className}`}
-          >
-            {badge.label}
-          </span>
-        </div>
-
-        <div className="h-px bg-white/8" />
-
-        {/* Config */}
-        <div className="space-y-2">
-          {stage && (
-            <>
-              <Row label="Rodadas" value={`${stage.rounds}× round-robin`} />
-              <Row label="Contagem" value={countingDesc} />
-            </>
-          )}
-          <Row
-            label="Pontuação"
-            value={`V ${champ.points_win} · ${champ.allow_draw ? `E ${champ.points_draw} · ` : ''}D ${champ.points_loss}`}
-          />
-          <div>
-            <p className="text-xs text-white/40 mb-1">Desempate</p>
-            <ol className="list-decimal list-inside space-y-0.5">
-              {((champ.tiebreakers as string[]) ?? []).map((k) => (
-                <li key={k} className="text-xs text-white/55">
-                  {TIEBREAKER_LABELS[k] ?? k}
-                </li>
-              ))}
-            </ol>
-          </div>
-        </div>
-      </div>
-
-      {/* Participants */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">
-            Participantes
-          </p>
-          <span className="text-xs text-white/40">{players.length}</span>
-        </div>
-
-        {players.length === 0 ? (
-          <p className="py-8 text-center text-sm text-white/30">
-            Nenhum participante cadastrado.
-          </p>
-        ) : (
-          players.map(({ participantId, profile }) => (
-            <div
-              key={participantId}
-              className="glass glass-card flex items-center gap-3 px-3.5 py-2.5"
-            >
-              {profile.avatar_url ? (
-                <Image
-                  src={profile.avatar_url}
-                  alt={profile.full_name ?? ''}
-                  width={36}
-                  height={36}
-                  className="rounded-full object-cover shrink-0"
-                />
-              ) : (
-                <div className="h-9 w-9 rounded-full bg-secondary/15 grid place-items-center shrink-0">
-                  <User className="h-4 w-4 text-secondary/60" />
-                </div>
-              )}
-              <span className="text-sm text-white/85">
-                {profile.full_name ?? 'Sem nome'}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Placeholder for future sections (4C) */}
-      <div className="glass glass-card px-4 py-4 text-center space-y-1">
-        <p className="text-sm font-medium text-white/40">Jogos e tabela</p>
-        <p className="text-xs text-white/25">
-          Geração de confrontos e classificação chegam na próxima fase.
-        </p>
-      </div>
-    </div>
-  )
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="text-xs text-white/40 shrink-0">{label}</span>
-      <span className="text-xs text-white/80 text-right">{value}</span>
-    </div>
+    <ChampionshipDetailClient
+      champ={{
+        id: champ.id,
+        name: champ.name,
+        format: champ.format,
+        unit: champ.unit,
+        status: champ.status,
+        allow_draw: champ.allow_draw ?? false,
+        points_win: champ.points_win ?? 3,
+        points_draw: champ.points_draw ?? 1,
+        points_loss: champ.points_loss ?? 0,
+        tiebreakers: (champ.tiebreakers as string[]) ?? [],
+        created_by: champ.created_by ?? '',
+      }}
+      stage={
+        stage
+          ? {
+              id: stage.id,
+              counting: stage.counting as string,
+              rounds: stage.rounds ?? 1,
+              sets_to_play: stage.sets_to_play ?? 3,
+              points_per_set: stage.points_per_set ?? 11,
+              win_by_two: stage.win_by_two ?? true,
+              set_draw_enabled: stage.set_draw_enabled ?? false,
+              time_minutes: stage.time_minutes ?? null,
+            }
+          : null
+      }
+      matches={(matchesRaw ?? []).map((m) => ({
+        id: m.id,
+        round: m.round ?? 1,
+        result: m.result ?? null,
+        status: m.status,
+        side_a_participant_id: m.side_a_participant_id ?? null,
+        side_b_participant_id: m.side_b_participant_id ?? null,
+        match_games: ((m.match_games as unknown as Array<{
+          game_number: number
+          score_a: number
+          score_b: number
+        }>) ?? []).map((g) => ({
+          game_number: g.game_number,
+          score_a: g.score_a,
+          score_b: g.score_b,
+        })),
+      }))}
+      participantInfo={participantInfo}
+      canManage={canManage}
+    />
   )
 }
