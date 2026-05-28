@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
-import { ChampionshipDetailClient } from '@/components/campeonatos/ChampionshipDetailClient'
+import { ChampionshipDetailClient, type Standing } from '@/components/campeonatos/ChampionshipDetailClient'
 
 export const metadata = { title: 'Campeonato' }
 
@@ -88,7 +88,23 @@ export default async function ChampionshipPage({
     }
   }
 
-  // ── 5. Permissão de gestão (server-side, security definer) ────
+  // ── 5. ID do participante do usuário logado (para highlight na tabela) ──
+  const currentUserParticipantId =
+    user && participantsRaw
+      ? (participantsRaw.find((p) =>
+          (p.participant_members ?? []).some(
+            (m: { user_id: string }) => m.user_id === user.id,
+          ),
+        )?.id ?? null)
+      : null
+
+  // ── 6. Classificação inicial via RPC (SSR) ────────────────────
+  const { data: standingsRaw } = await supabase.rpc('get_standings', {
+    _championship_id: id,
+  })
+  const initialStandings = (standingsRaw ?? []) as Standing[]
+
+  // ── 7. Permissão de gestão (server-side, security definer) ────
   // can_manage_championship: creator OU organizer/admin
   let canManage = false
   if (user) {
@@ -157,6 +173,8 @@ export default async function ChampionshipPage({
       }))}
       participantInfo={participantInfo}
       canManage={canManage}
+      initialStandings={initialStandings}
+      currentUserParticipantId={currentUserParticipantId}
     />
   )
 }

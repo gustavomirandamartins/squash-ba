@@ -4,8 +4,11 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { ChevronLeft, ChevronRight, Trophy, User } from 'lucide-react'
+import { StandingsTable, type Standing } from './StandingsTable'
 
-// ─── Types ───────────────────────────────────────────────────────
+// ─── Tipos exportados (reutilizados em page.tsx) ──────────────────────────────
+
+export type { Standing }
 
 export type GameScore = {
   game_number: number
@@ -59,9 +62,12 @@ type Props = {
   matches: Match[]
   participantInfo: Record<string, ParticipantInfo>
   canManage: boolean
+  // Classificação
+  initialStandings: Standing[]
+  currentUserParticipantId: string | null
 }
 
-// ─── Constants ───────────────────────────────────────────────────
+// ─── Constantes ───────────────────────────────────────────────────────────────
 
 const FORMAT_LABEL: Record<string, string> = {
   liga: 'Liga',
@@ -88,23 +94,17 @@ const MATCH_STATUS: Record<string, { label: string; cls: string; dot?: boolean }
   finalizado:   { label: 'Encerrado',  cls: 'text-white/35' },
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Conta sets ganhos por cada lado a partir dos match_games.
- * Para jogos por tempo retorna o placar em pontos (só há 1 game).
- */
 function countSets(
   games: GameScore[],
   stage: Stage | null,
 ): { a: number; b: number } | null {
   if (!games.length || !stage) return null
-
   if (stage.counting === 'tempo') {
     const g = games[0]
     return g ? { a: g.score_a, b: g.score_b } : null
   }
-
   const P = stage.points_per_set
   let a = 0, b = 0
   for (const g of games) {
@@ -114,7 +114,7 @@ function countSets(
   return { a, b }
 }
 
-// ─── Sub-components ──────────────────────────────────────────────
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function PlayerAvatar({ info }: { info?: ParticipantInfo }) {
   if (info?.avatar_url) {
@@ -158,9 +158,6 @@ function MatchCard({
   const winnerA = match.result === 'lado_a'
   const winnerB = match.result === 'lado_b'
 
-  const nameA = pA?.full_name ?? '—'
-  const nameB = pB?.full_name ?? '—'
-
   return (
     <Link
       href={`/campeonatos/${champId}/jogos/${match.id}`}
@@ -168,52 +165,34 @@ function MatchCard({
     >
       {/* Players */}
       <div className="flex items-center gap-2">
-        {/* Lado A */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <PlayerAvatar info={pA} />
-          <span
-            className={`text-[13px] leading-tight truncate font-medium ${
-              winnerA ? 'text-secondary' : 'text-white/80'
-            }`}
-          >
-            {nameA}
+          <span className={`text-[13px] leading-tight truncate font-medium ${winnerA ? 'text-secondary' : 'text-white/80'}`}>
+            {pA?.full_name ?? '—'}
           </span>
         </div>
-
-        {/* Placar central */}
         <div className="flex flex-col items-center shrink-0 w-14 text-center">
           {score ? (
             <span className="text-base font-bold text-white tabular-nums tracking-tight">
               {score.a}–{score.b}
             </span>
           ) : (
-            <span className="text-[10px] font-semibold text-white/20 tracking-[0.15em] uppercase">
-              vs
-            </span>
+            <span className="text-[10px] font-semibold text-white/20 tracking-[0.15em] uppercase">vs</span>
           )}
         </div>
-
-        {/* Lado B */}
         <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
-          <span
-            className={`text-[13px] leading-tight truncate text-right font-medium ${
-              winnerB ? 'text-secondary' : 'text-white/80'
-            }`}
-          >
-            {nameB}
+          <span className={`text-[13px] leading-tight truncate text-right font-medium ${winnerB ? 'text-secondary' : 'text-white/80'}`}>
+            {pB?.full_name ?? '—'}
           </span>
           <PlayerAvatar info={pB} />
         </div>
       </div>
 
-      {/* Status + seta */}
+      {/* Status */}
       <div className="flex items-center justify-between pt-0.5">
         <div className="flex items-center gap-1.5">
-          {st.dot && (
-            <span className="live-dot h-1.5 w-1.5 rounded-full bg-secondary inline-block" />
-          )}
+          {st.dot && <span className="live-dot h-1.5 w-1.5 rounded-full bg-secondary inline-block" />}
           <span className={`text-[11px] font-medium ${st.cls}`}>{st.label}</span>
-          {/* Sets detail when finalized */}
           {match.status === 'finalizado' && match.match_games.length > 0 && stage?.counting !== 'tempo' && (
             <span className="text-[11px] text-white/20 ml-1">
               ({match.match_games.length} set{match.match_games.length > 1 ? 's' : ''})
@@ -235,7 +214,7 @@ function PlaceholderTab({ title, desc }: { title: string; desc: string }) {
   )
 }
 
-// ─── Tabs ─────────────────────────────────────────────────────────
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
 
 type TabId = 'jogos' | 'classificacao' | 'estatisticas'
 
@@ -245,7 +224,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'estatisticas',  label: 'Estatísticas' },
 ]
 
-// ─── Main ─────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 export function ChampionshipDetailClient({
   champ,
@@ -253,6 +232,8 @@ export function ChampionshipDetailClient({
   matches,
   participantInfo,
   canManage: _canManage,
+  initialStandings,
+  currentUserParticipantId,
 }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>('jogos')
 
@@ -264,11 +245,13 @@ export function ChampionshipDetailClient({
     ;(acc[r] ??= []).push(m)
     return acc
   }, {})
-  const rounds = Object.keys(byRound)
-    .map(Number)
-    .sort((a, b) => a - b)
-
+  const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b)
   const isMultiRound = stage ? stage.rounds > 1 : false
+
+  // avatarUrl por participantId — derivado do participantInfo já disponível
+  const participantAvatars: Record<string, string | null> = Object.fromEntries(
+    Object.entries(participantInfo).map(([id, info]) => [id, info.avatar_url]),
+  )
 
   return (
     <div className="px-5 py-4 space-y-4">
@@ -287,9 +270,7 @@ export function ChampionshipDetailClient({
           <Trophy className="h-5 w-5 text-secondary" />
         </div>
         <div className="min-w-0 flex-1">
-          <h1 className="text-sm font-bold text-white leading-snug truncate">
-            {champ.name}
-          </h1>
+          <h1 className="text-sm font-bold text-white leading-snug truncate">{champ.name}</h1>
           <p className="text-xs text-white/40 mt-0.5">
             {FORMAT_LABEL[champ.format] ?? champ.format}
             {' · '}
@@ -297,9 +278,7 @@ export function ChampionshipDetailClient({
             {stage && ` · ${stage.rounds}× round-robin`}
           </p>
         </div>
-        <span
-          className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${champBadge.cls}`}
-        >
+        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${champBadge.cls}`}>
           {champBadge.label}
         </span>
       </div>
@@ -331,7 +310,6 @@ export function ChampionshipDetailClient({
           ) : (
             rounds.map((round) => (
               <section key={round} className="space-y-2">
-                {/* Cabeçalho do round */}
                 <div className="flex items-center gap-3 px-1">
                   <p className="text-[11px] font-semibold uppercase tracking-widest text-white/35 shrink-0">
                     {isMultiRound ? `Rodada ${round}` : 'Confrontos'}
@@ -342,8 +320,6 @@ export function ChampionshipDetailClient({
                     {byRound[round].length === 1 ? 'jogo' : 'jogos'}
                   </span>
                 </div>
-
-                {/* Match cards */}
                 {byRound[round].map((match) => (
                   <MatchCard
                     key={match.id}
@@ -362,9 +338,12 @@ export function ChampionshipDetailClient({
       {/* ── Aba: Classificação ── */}
       {activeTab === 'classificacao' && (
         <div className="reveal">
-          <PlaceholderTab
-            title="Classificação"
-            desc="A tabela de classificação chega na próxima fase."
+          <StandingsTable
+            championshipId={champ.id}
+            champStatus={champ.status}
+            initialStandings={initialStandings}
+            currentUserParticipantId={currentUserParticipantId}
+            participantAvatars={participantAvatars}
           />
         </div>
       )}
@@ -374,7 +353,7 @@ export function ChampionshipDetailClient({
         <div className="reveal">
           <PlaceholderTab
             title="Estatísticas"
-            desc="Estatísticas individuais chegam na próxima fase."
+            desc="Cards de estatísticas individuais chegam na próxima fase."
           />
         </div>
       )}
