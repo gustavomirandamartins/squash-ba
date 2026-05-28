@@ -108,7 +108,7 @@ export async function createDesafio1v1(
     .insert({
       championship_id: champId,
       kind: 'player',
-      enrollment_source: 'convite',
+      enrollment_source: 'jogador',
       enrollment_status: 'pendente',
     })
     .select('id')
