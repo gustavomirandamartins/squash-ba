@@ -56,20 +56,33 @@ function useUnreadCount(userId: string | null) {
   useEffect(() => {
     void fetchCount()
 
-    // Atualiza ao receber qualquer mensagem nova
-    const ch = supabase
-      .channel('bottom-nav-unread')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
-        void fetchCount()
-      })
-      .subscribe()
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    let cancelled = false
+
+    async function setup() {
+      // setAuth antes de subscribe — RLS exige JWT na conexão Realtime (ver ChatView)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (cancelled) return
+      if (session?.access_token) await supabase.realtime.setAuth(session.access_token)
+      if (cancelled) return
+
+      channel = supabase
+        .channel('bottom-nav-unread')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
+          void fetchCount()
+        })
+        .subscribe()
+    }
+
+    void setup()
 
     // Atualiza ao retornar ao foco
     const onFocus = () => void fetchCount()
     window.addEventListener('focus', onFocus)
 
     return () => {
-      void supabase.removeChannel(ch)
+      cancelled = true
+      if (channel) void supabase.removeChannel(channel)
       window.removeEventListener('focus', onFocus)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

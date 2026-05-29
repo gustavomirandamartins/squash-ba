@@ -141,8 +141,8 @@ function Bubble({
           </a>
         ))}
 
-        {/* Timestamp */}
-        <span className="text-[9px] text-white/20 px-1">
+        {/* Timestamp — suppressHydrationWarning: tempo relativo difere entre SSR e cliente */}
+        <span className="text-[9px] text-white/20 px-1" suppressHydrationWarning>
           {(() => {
             try {
               return formatDistanceToNowStrict(parseISO(msg.createdAt), {
@@ -206,50 +206,76 @@ export function ChatView({ conv, initialMessages, currentUserId }: Props) {
 
   // Realtime: novas mensagens
   useEffect(() => {
-    const ch = supabase
-      .channel(`chat-${conv.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${conv.id}`,
-        },
-        async (payload) => {
-          const row = payload.new as {
-            id: string
-            sender_id: string
-            body: string
-            created_at: string
-          }
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    let cancelled = false
 
-          // Evita duplicata com mensagem otimista
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === row.id)) return prev
+    async function setup() {
+      // CRÍTICO: a tabela messages tem RLS. O Realtime só entrega eventos se a
+      // conexão WebSocket estiver autenticada com o JWT do usuário. O token é
+      // carregado de forma assíncrona dos cookies, então precisamos garantir que
+      // setAuth() rode ANTES de subscribe() — senão a conexão entra como anon e
+      // a RLS bloqueia todos os eventos.
+      const { data: { session } } = await supabase.auth.getSession()
+      if (cancelled) return
+      if (session?.access_token) {
+        await supabase.realtime.setAuth(session.access_token)
+      }
+      if (cancelled) return
 
-            // Busca perfil do sender (já deve estar em cache ou é o próprio user)
-            const existing = prev.find((m) => m.senderId === row.sender_id)
-            const isOwn = row.sender_id === currentUserId
-
-            const newMsg: ChatMessage = {
-              id: row.id,
-              senderId: row.sender_id,
-              senderName: isOwn ? null : (existing?.senderName ?? 'Jogador'),
-              senderAvatar: isOwn ? null : (existing?.senderAvatar ?? null),
-              body: row.body,
-              createdAt: row.created_at,
-              isOwn,
+      channel = supabase
+        .channel(`chat-${conv.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conv.id}`,
+          },
+          (payload) => {
+            const row = payload.new as {
+              id: string
+              sender_id: string
+              body: string
+              created_at: string
             }
-            return [...prev.filter((m) => !m.id.startsWith('optimistic-')), ...prev.filter((m) => m.id.startsWith('optimistic-')), newMsg]
-              .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-          })
 
-          if (row.sender_id !== currentUserId) void markRead()
-        },
-      )
-      .subscribe()
-    return () => { void supabase.removeChannel(ch) }
+            // Evita duplicata com mensagem otimista
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === row.id)) return prev
+
+              // Busca perfil do sender (já deve estar em cache ou é o próprio user)
+              const existing = prev.find((m) => m.senderId === row.sender_id)
+              const isOwn = row.sender_id === currentUserId
+
+              const newMsg: ChatMessage = {
+                id: row.id,
+                senderId: row.sender_id,
+                senderName: isOwn ? null : (existing?.senderName ?? 'Jogador'),
+                senderAvatar: isOwn ? null : (existing?.senderAvatar ?? null),
+                body: row.body,
+                createdAt: row.created_at,
+                isOwn,
+              }
+              // Remove eventual otimista do próprio user (substituído pelo real)
+              const base = isOwn
+                ? prev.filter((m) => !(m.id.startsWith('optimistic-') && m.body === row.body))
+                : prev
+              return [...base, newMsg].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+            })
+
+            if (row.sender_id !== currentUserId) void markRead()
+          },
+        )
+        .subscribe()
+    }
+
+    void setup()
+
+    return () => {
+      cancelled = true
+      if (channel) void supabase.removeChannel(channel)
+    }
   }, [supabase, conv.id, currentUserId, markRead])
 
   // Auto-resize textarea

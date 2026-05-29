@@ -302,15 +302,32 @@ export function ConversationList({ initialConversations, currentUserId }: Props)
 
   // Realtime: qualquer mensagem nova → refetch lista
   useEffect(() => {
-    const ch = supabase
-      .channel('conv-list-realtime')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages' },
-        () => { void refetch() },
-      )
-      .subscribe()
-    return () => { void supabase.removeChannel(ch) }
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    let cancelled = false
+
+    async function setup() {
+      // setAuth antes de subscribe — RLS exige JWT na conexão Realtime (ver ChatView)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (cancelled) return
+      if (session?.access_token) await supabase.realtime.setAuth(session.access_token)
+      if (cancelled) return
+
+      channel = supabase
+        .channel('conv-list-realtime')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages' },
+          () => { void refetch() },
+        )
+        .subscribe()
+    }
+
+    void setup()
+
+    return () => {
+      cancelled = true
+      if (channel) void supabase.removeChannel(channel)
+    }
   }, [supabase, refetch])
 
   function handleCreated(id: string) {
