@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { ChevronLeft, ChevronRight, Clock, Swords, User } from 'lucide-react'
+import { ManageBar } from '@/components/ManageBar'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ type Props = {
   matches: ChallengeMatch[]
   currentUserParticipantId: string | null
   isCreator: boolean
+  canManage?: boolean
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -337,6 +339,7 @@ export function ChallengeDetailClient({
   challenge,
   participants,
   matches,
+  canManage = false,
 }: Props) {
   const badge = CHAMP_STATUS[challenge.status] ?? CHAMP_STATUS.rascunho
   const isPending = challenge.status === 'rascunho'
@@ -352,6 +355,10 @@ export function ChallengeDetailClient({
         <ChevronLeft className="h-4 w-4" />
         Jogos
       </Link>
+
+      {canManage && (
+        <ManageBar id={challenge.id} basePath="/desafios" listPath="/jogos" />
+      )}
 
       {/* Hero compacto */}
       <div className="glass glass-card px-4 py-3.5 flex items-center gap-3">

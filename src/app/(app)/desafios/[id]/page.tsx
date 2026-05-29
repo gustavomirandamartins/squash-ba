@@ -108,6 +108,13 @@ export default async function DesafioPage({
 
   const isCreator = user?.id === champ.id // checked via can_manage; fallback ok for display
 
+  // Permissão de gestão (editar/excluir) — mesmo gate do campeonato
+  let canManage = false
+  if (user) {
+    const { data: ok } = await supabase.rpc('can_manage_championship', { _championship_id: id })
+    canManage = (ok as boolean) ?? false
+  }
+
   return (
     <ChallengeDetailClient
       challenge={{
@@ -122,6 +129,7 @@ export default async function DesafioPage({
       matches={matches}
       currentUserParticipantId={currentUserParticipantId}
       isCreator={isCreator}
+      canManage={canManage}
     />
   )
 }

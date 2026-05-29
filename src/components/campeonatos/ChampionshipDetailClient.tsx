@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Trophy, User, Medal, GitMerge, Layers, Messa
 import { StandingsTable, type Standing } from './StandingsTable'
 import { BracketView } from './BracketView'
 import { GroupsView, type Group } from './GroupsView'
+import { ManageBar } from '@/components/ManageBar'
 
 // ─── Tipos exportados (reutilizados em page.tsx) ──────────────────────────────
 
@@ -392,6 +393,10 @@ export function ChampionshipDetailClient({
         <ChevronLeft className="h-4 w-4" />
         Campeonatos
       </Link>
+
+      {canManage && (
+        <ManageBar id={champ.id} basePath="/campeonatos" listPath="/campeonatos" />
+      )}
 
       {/* Hero compacto */}
       <div className="glass glass-card px-4 py-3.5 flex items-center gap-3">
