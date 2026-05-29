@@ -20,6 +20,7 @@ import {
   Users,
 } from 'lucide-react'
 import { Logo } from '@/components/Logo'
+import { subscribePush } from '@/lib/push'
 
 type Gender = 'masculino' | 'feminino' | 'outro' | 'nao_informado'
 
@@ -155,6 +156,8 @@ export function EditProfileForm({ userId, email, categories, teams, initial }: P
 
       setSaved(true)
       router.refresh()
+      // Ativa Web Push best-effort (não bloqueia se o usuário recusar)
+      void subscribePush()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Tente novamente.')
     } finally {
