@@ -1,8 +1,9 @@
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import { createClient } from '@/utils/supabase/server'
+import Link from 'next/link'
 import { approveRequest, rejectRequest, saveBannerLink } from './actions'
-import { ShieldCheck, User, CheckCircle, XCircle, ClipboardList, Megaphone, Link2 } from 'lucide-react'
+import { ShieldCheck, User, CheckCircle, XCircle, ClipboardList, Megaphone, Link2, ArrowLeft } from 'lucide-react'
 
 export const metadata = { title: 'Painel admin' }
 
@@ -66,21 +67,27 @@ export default async function AdminPage() {
 
   if (!adminRole) notFound()
 
-  // Lista pedidos pendentes com nome + avatar do solicitante
-  const { data: requests } = await supabase
+  // Lista pedidos pendentes. NÃO embutimos profiles aqui: organizer_requests.user_id
+  // não tem FK para public.profiles (referencia auth.users), então o embed do PostgREST
+  // falha e zera a lista. Buscamos os perfis em separado (mesmo padrão das outras telas).
+  const { data: reqRows } = await supabase
     .from('organizer_requests')
-    .select(`
-      user_id,
-      created_at,
-      profiles (
-        full_name,
-        avatar_url
-      )
-    `)
+    .select('user_id, created_at')
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
 
-  const pending = requests ?? []
+  const reqUserIds = (reqRows ?? []).map((r) => r.user_id)
+  const { data: reqProfiles } = reqUserIds.length
+    ? await supabase.from('profiles').select('id, full_name, avatar_url').in('id', reqUserIds)
+    : { data: [] }
+  const profById = new Map(
+    (reqProfiles ?? []).map((p: { id: string; full_name: string | null; avatar_url: string | null }) => [p.id, p]),
+  )
+  const pending = (reqRows ?? []).map((r) => ({
+    user_id: r.user_id,
+    created_at: r.created_at,
+    profile: profById.get(r.user_id) ?? null,
+  }))
 
   // ── Banners do patrocinador: imagens do bucket + link de cada uma ───────────
   const [{ data: bannerFiles }, { data: bannerLinks }] = await Promise.all([
@@ -107,6 +114,15 @@ export default async function AdminPage() {
       }}
     >
       <div className="mx-auto w-full max-w-[480px]">
+        {/* Voltar */}
+        <Link
+          href="/"
+          className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-white/55 transition hover:text-white active:scale-95"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Voltar ao início
+        </Link>
+
         {/* Header */}
         <div className="mb-8 flex items-center gap-3">
           <div
@@ -149,9 +165,7 @@ export default async function AdminPage() {
         ) : (
           <ul className="space-y-3">
             {pending.map((req) => {
-              const profile = Array.isArray(req.profiles)
-                ? req.profiles[0]
-                : req.profiles
+              const profile = req.profile
               const name = profile?.full_name ?? 'Usuário'
               const avatar = profile?.avatar_url ?? null
               const createdAt = new Date(req.created_at).toLocaleDateString(

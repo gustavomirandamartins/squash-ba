@@ -36,7 +36,7 @@ export default async function HomePage() {
     sponsorsRes,
     sponsorLinksRes,
   ] = await Promise.all([
-    supabase.from('profiles').select('full_name').eq('id', user.id).single(),
+    supabase.from('profiles').select('full_name, gender').eq('id', user.id).single(),
     supabase.from('conversation_members').select('conversation_id, last_read_at').eq('user_id', user.id),
     supabase
       .from('participant_members')
@@ -60,6 +60,7 @@ export default async function HomePage() {
   ])
 
   const firstName = (profileRes.data?.full_name ?? 'Jogador').trim().split(/\s+/)[0]
+  const gender = profileRes.data?.gender ?? null
 
   // Deriva IDs/mapas da fase 1 (síncrono) para alimentar a fase 2.
   const memberships = (membershipsRes.data ?? []) as Array<{ conversation_id: string; last_read_at: string | null }>
@@ -227,7 +228,7 @@ export default async function HomePage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   const sections = [
-    <WelcomeHeader key="welcome" firstName={firstName} />,
+    <WelcomeHeader key="welcome" firstName={firstName} gender={gender} />,
     <Lembretes key="lembretes" data={lembretes} />,
     <SponsorBanner key="sponsor" banners={banners} />,
     <OngoingSection key="ongoing" liveMatches={liveMatches} active={activeItems} />,
