@@ -110,11 +110,26 @@ function NewConversationSheet({
     return () => clearTimeout(t)
   }, [query, supabase])
 
+  const [starting, setStarting] = useState<string | null>(null) // userId em criação
+  const [startError, setStartError] = useState<string | null>(null)
+
   async function startConversation(userId: string) {
+    setStarting(userId)
+    setStartError(null)
     const { data, error } = await supabase.rpc('get_or_create_direct_conversation', {
       _other_user_id: userId,
     })
-    if (!error && data) onCreated(data as string)
+    setStarting(null)
+    if (error) {
+      console.error('get_or_create_direct_conversation:', error)
+      setStartError('Não foi possível criar a conversa. Tente novamente.')
+      return
+    }
+    if (!data) {
+      setStartError('Resposta inesperada. Tente novamente.')
+      return
+    }
+    onCreated(data as string)
   }
 
   return (
@@ -127,6 +142,10 @@ function NewConversationSheet({
         {/* Handle */}
         <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-2" />
         <p className="text-sm font-bold text-white/80 text-center">Nova conversa</p>
+
+        {startError && (
+          <p className="text-xs text-red-400 text-center bg-red-500/10 rounded-xl px-3 py-2">{startError}</p>
+        )}
 
         {/* Search */}
         <div className="flex items-center gap-2 bg-white/[0.07] rounded-full px-3 py-2.5">
@@ -157,8 +176,9 @@ function NewConversationSheet({
             <button
               key={u.id}
               type="button"
+              disabled={starting === u.id}
               onClick={() => void startConversation(u.id)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.06] transition text-left"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.06] transition text-left disabled:opacity-50"
             >
               {u.avatar_url ? (
                 <Image src={u.avatar_url} alt={u.full_name ?? ''} width={36} height={36} className="rounded-full object-cover shrink-0" />
@@ -167,7 +187,9 @@ function NewConversationSheet({
                   <User className="h-4 w-4 text-secondary" />
                 </div>
               )}
-              <span className="text-sm font-medium text-white/80">{u.full_name ?? 'Jogador'}</span>
+              <span className="text-sm font-medium text-white/80">
+                {starting === u.id ? 'Abrindo…' : (u.full_name ?? 'Jogador')}
+              </span>
             </button>
           ))}
         </div>

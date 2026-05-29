@@ -52,11 +52,17 @@ export async function subscribePush(): Promise<boolean> {
   const auth_key = bufferToBase64url(sub.getKey('auth')!)
 
   const supabase = createClient()
+
+  // Obtém o user_id da sessão (obrigatório: coluna NOT NULL)
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return false
+
   const { error } = await supabase.from('push_subscriptions').upsert(
-    { endpoint, p256dh, auth_key },
+    { user_id: user.id, endpoint, p256dh, auth_key },
     { onConflict: 'user_id,endpoint' },
   )
 
+  if (error) console.error('push_subscriptions upsert:', error)
   return !error
 }
 
