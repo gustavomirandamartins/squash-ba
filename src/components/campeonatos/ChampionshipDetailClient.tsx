@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ChevronLeft, ChevronRight, Trophy, User, Medal, GitMerge, Layers } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Trophy, User, Medal, GitMerge, Layers, MessageSquare } from 'lucide-react'
 import { StandingsTable, type Standing } from './StandingsTable'
 import { BracketView } from './BracketView'
 import { GroupsView, type Group } from './GroupsView'
@@ -77,6 +77,8 @@ type Props = {
   groups?: Group[]
   /** participantId → groupId */
   participantGroups?: Record<string, string>
+  /** ID da conversa de grupo do campeonato (se existir) */
+  groupConversationId?: string | null
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -295,6 +297,7 @@ export function ChampionshipDetailClient({
   currentUserParticipantId,
   groups = [],
   participantGroups = {},
+  groupConversationId = null,
 }: Props) {
   const isElim       = champ.format === 'eliminatoria'
   const isGruposElim = champ.format === 'grupos_elim'
@@ -410,9 +413,20 @@ export function ChampionshipDetailClient({
             {(isElim || isGruposElim) && champ.has_third_place && ' · com 3º lugar'}
           </p>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${champBadge.cls}`}>
-          {champBadge.label}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          {groupConversationId && champ.status === 'ativo' && (
+            <Link
+              href={`/mensagens/${groupConversationId}`}
+              className="h-8 w-8 rounded-full bg-secondary/15 grid place-items-center text-secondary transition active:scale-90"
+              title="Chat do campeonato"
+            >
+              <MessageSquare className="h-4 w-4" />
+            </Link>
+          )}
+          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${champBadge.cls}`}>
+            {champBadge.label}
+          </span>
+        </div>
       </div>
 
       {/* TabBar */}

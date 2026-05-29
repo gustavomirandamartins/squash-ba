@@ -43,7 +43,7 @@ export default async function AppLayout({
         canManage={canManage}
       />
       <main className="flex-1 pb-32">{children}</main>
-      <BottomNav />
+      <BottomNav userId={user.id} />
     </div>
   )
 }

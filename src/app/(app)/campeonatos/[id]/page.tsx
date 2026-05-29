@@ -143,7 +143,19 @@ export default async function ChampionshipPage({
   })
   const initialStandings = (standingsRaw ?? []) as Standing[]
 
-  // ── 9. Permissão de gestão ────────────────────────────────────────────────
+  // ── 9. Conversa de grupo do campeonato ───────────────────────────────────
+  let groupConversationId: string | null = null
+  if (champ.status === 'ativo') {
+    const { data: convRow } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('championship_id', id)
+      .eq('kind', 'group')
+      .single()
+    groupConversationId = convRow?.id ?? null
+  }
+
+  // ── 11. Permissão de gestão ───────────────────────────────────────────────
   let canManage = false
   if (user) {
     try {
@@ -216,6 +228,7 @@ export default async function ChampionshipPage({
       currentUserParticipantId={currentUserParticipantId}
       groups={groups}
       participantGroups={participantGroups}
+      groupConversationId={groupConversationId}
     />
   )
 }
