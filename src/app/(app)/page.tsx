@@ -8,14 +8,6 @@ import { CategoryRanking, type RankCategory, type RankRow } from '@/components/h
 
 const EPOCH = new Date(0).toISOString()
 
-// Rotação determinística do banner por usuário
-function hashIndex(seed: string, length: number): number {
-  if (length <= 0) return 0
-  let h = 0
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0
-  return Math.abs(h) % length
-}
-
 type InviteRow = {
   participants: {
     enrollment_status: string
@@ -42,6 +34,7 @@ export default async function HomePage() {
     organizersRes,
     rankingRes,
     sponsorsRes,
+    sponsorLinksRes,
   ] = await Promise.all([
     supabase.from('profiles').select('full_name').eq('id', user.id).single(),
     supabase.from('conversation_members').select('conversation_id, last_read_at').eq('user_id', user.id),
@@ -63,6 +56,7 @@ export default async function HomePage() {
     supabase.from('user_roles').select('user_id').eq('role', 'organizer'),
     supabase.rpc('get_category_rankings'),
     supabase.storage.from('sponsors').list('', { limit: 100, sortBy: { column: 'name', order: 'asc' } }),
+    supabase.from('sponsor_banners').select('image_name, link_url'),
   ])
 
   const firstName = (profileRes.data?.full_name ?? 'Jogador').trim().split(/\s+/)[0]
@@ -217,19 +211,25 @@ export default async function HomePage() {
   }
   const rankCategories = [...catMap.values()]
 
-  // ── Banner do patrocinador (bucket público, rotação por usuário) ──────────
-  const files = (sponsorsRes.data ?? []).filter((f) => f.name && !f.name.startsWith('.'))
-  let sponsorSrc: string | null = null
-  if (files.length > 0) {
-    const pick = files[hashIndex(user.id, files.length)]
-    sponsorSrc = supabase.storage.from('sponsors').getPublicUrl(pick.name).data.publicUrl
-  }
+  // ── Banner do patrocinador (todos os do bucket; carrossel rotaciona no client) ─
+  const linkByName = new Map(
+    ((sponsorLinksRes.data ?? []) as Array<{ image_name: string; link_url: string | null }>).map((r) => [
+      r.image_name,
+      r.link_url,
+    ]),
+  )
+  const banners = (sponsorsRes.data ?? [])
+    .filter((f) => f.name && !f.name.startsWith('.'))
+    .map((f) => ({
+      src: supabase.storage.from('sponsors').getPublicUrl(f.name).data.publicUrl,
+      href: linkByName.get(f.name) ?? null,
+    }))
 
   // ── Render ────────────────────────────────────────────────────────────────
   const sections = [
     <WelcomeHeader key="welcome" firstName={firstName} />,
     <Lembretes key="lembretes" data={lembretes} />,
-    <SponsorBanner key="sponsor" src={sponsorSrc} />,
+    <SponsorBanner key="sponsor" banners={banners} />,
     <OngoingSection key="ongoing" liveMatches={liveMatches} active={activeItems} />,
     <TeachersSection key="teachers" teachers={teachers} />,
     <CategoryRanking key="ranking" categories={rankCategories} />,
