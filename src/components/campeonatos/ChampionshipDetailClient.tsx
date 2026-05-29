@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ChevronLeft, ChevronRight, Trophy, User } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Trophy, User, Medal, GitMerge, Layers } from 'lucide-react'
 import { StandingsTable, type Standing } from './StandingsTable'
+import { BracketView } from './BracketView'
+import { GroupsView, type Group } from './GroupsView'
 
 // ─── Tipos exportados (reutilizados em page.tsx) ──────────────────────────────
 
@@ -18,7 +20,9 @@ export type GameScore = {
 
 export type Match = {
   id: string
+  stage_id: string
   round: number
+  bracket_slot: number | null
   result: string | null
   status: string
   side_a_participant_id: string | null
@@ -28,6 +32,7 @@ export type Match = {
 
 export type Stage = {
   id: string
+  kind?: string
   counting: string
   rounds: number
   sets_to_play: number
@@ -49,6 +54,7 @@ export type ChampData = {
   points_loss: number
   tiebreakers: string[]
   created_by: string
+  has_third_place: boolean
 }
 
 export type ParticipantInfo = {
@@ -58,13 +64,19 @@ export type ParticipantInfo = {
 
 type Props = {
   champ: ChampData
+  /** Fase principal: liga stage para liga, grupos stage para grupos_elim, elim stage para elim */
   stage: Stage | null
+  /** Fase eliminatória (apenas grupos_elim) */
+  elimStage?: Stage | null
   matches: Match[]
   participantInfo: Record<string, ParticipantInfo>
   canManage: boolean
-  // Classificação
   initialStandings: Standing[]
   currentUserParticipantId: string | null
+  // grupos_elim specific
+  groups?: Group[]
+  /** participantId → groupId */
+  participantGroups?: Record<string, string>
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -83,9 +95,9 @@ const UNIT_LABEL: Record<string, string> = {
 }
 
 const CHAMP_STATUS: Record<string, { label: string; cls: string }> = {
-  rascunho: { label: 'Rascunho', cls: 'bg-white/8 text-white/45' },
-  ativo:    { label: 'Ativo',    cls: 'bg-secondary/20 text-secondary' },
-  encerrado:{ label: 'Encerrado',cls: 'bg-white/5 text-white/30' },
+  rascunho:  { label: 'Rascunho',  cls: 'bg-white/8 text-white/45' },
+  ativo:     { label: 'Ativo',     cls: 'bg-secondary/20 text-secondary' },
+  encerrado: { label: 'Encerrado', cls: 'bg-white/5 text-white/30' },
 }
 
 const MATCH_STATUS: Record<string, { label: string; cls: string; dot?: boolean }> = {
@@ -112,6 +124,23 @@ function countSets(
     else if (g.score_b >= P && g.score_b - g.score_a >= 2) b++
   }
   return { a, b }
+}
+
+function getEliminatoriaRoundLabel(round: number, maxRound: number): string {
+  const fromFinal = maxRound - round
+  if (fromFinal === 0) return 'Final'
+  if (fromFinal === 1) return 'Semifinais'
+  if (fromFinal === 2) return 'Quartas de Final'
+  if (fromFinal === 3) return 'Oitavas de Final'
+  return `${round}ª Rodada`
+}
+
+/** Jogo de walkover: um dos lados é null e já está finalizado (BYE automático). */
+function isElimBye(m: Match): boolean {
+  return (
+    m.status === 'finalizado' &&
+    (m.side_a_participant_id === null || m.side_b_participant_id === null)
+  )
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -205,6 +234,22 @@ function MatchCard({
   )
 }
 
+function SectionHeader({ label, count }: { label: string; count?: number }) {
+  return (
+    <div className="flex items-center gap-3 px-1">
+      <p className="text-[11px] font-semibold uppercase tracking-widest text-white/35 shrink-0">
+        {label}
+      </p>
+      <div className="flex-1 h-px bg-white/8" />
+      {count !== undefined && (
+        <span className="text-[11px] text-white/20 shrink-0">
+          {count} {count === 1 ? 'jogo' : 'jogos'}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function PlaceholderTab({ title, desc }: { title: string; desc: string }) {
   return (
     <div className="glass glass-card px-4 py-12 text-center space-y-1.5">
@@ -216,12 +261,25 @@ function PlaceholderTab({ title, desc }: { title: string; desc: string }) {
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
-type TabId = 'jogos' | 'classificacao' | 'estatisticas'
+type TabId = 'jogos' | 'classificacao' | 'bracket' | 'estatisticas' | 'grupos'
 
-const TABS: { id: TabId; label: string }[] = [
+const TABS_DEFAULT: { id: TabId; label: string }[] = [
   { id: 'jogos',         label: 'Jogos' },
   { id: 'classificacao', label: 'Classificação' },
   { id: 'estatisticas',  label: 'Estatísticas' },
+]
+
+const TABS_ELIM: { id: TabId; label: string }[] = [
+  { id: 'bracket',      label: 'Bracket' },
+  { id: 'jogos',        label: 'Jogos' },
+  { id: 'estatisticas', label: 'Estatísticas' },
+]
+
+const TABS_GRUPOS_ELIM: { id: TabId; label: string }[] = [
+  { id: 'grupos',       label: 'Grupos' },
+  { id: 'bracket',      label: 'Bracket' },
+  { id: 'jogos',        label: 'Jogos' },
+  { id: 'estatisticas', label: 'Estatísticas' },
 ]
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -229,29 +287,97 @@ const TABS: { id: TabId; label: string }[] = [
 export function ChampionshipDetailClient({
   champ,
   stage,
+  elimStage,
   matches,
   participantInfo,
-  canManage: _canManage,
+  canManage,
   initialStandings,
   currentUserParticipantId,
+  groups = [],
+  participantGroups = {},
 }: Props) {
-  const [activeTab, setActiveTab] = useState<TabId>('jogos')
+  const isElim       = champ.format === 'eliminatoria'
+  const isGruposElim = champ.format === 'grupos_elim'
+
+  const TABS = isGruposElim ? TABS_GRUPOS_ELIM : isElim ? TABS_ELIM : TABS_DEFAULT
+  const defaultTab: TabId = isGruposElim ? 'grupos' : isElim ? 'bracket' : 'jogos'
+  const [activeTab, setActiveTab] = useState<TabId>(defaultTab)
 
   const champBadge = CHAMP_STATUS[champ.status] ?? CHAMP_STATUS.rascunho
 
-  // Agrupa jogos por rodada
-  const byRound = matches.reduce<Record<number, Match[]>>((acc, m) => {
-    const r = m.round ?? 1
-    ;(acc[r] ??= []).push(m)
-    return acc
-  }, {})
-  const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b)
-  const isMultiRound = stage ? stage.rounds > 1 : false
+  // ── participantGroupLabels for BracketView ─────────────────────────────────
+  const participantGroupLabels = useMemo<Record<string, string>>(() => {
+    if (!isGruposElim || !groups.length || !initialStandings.length) return {}
+    const result: Record<string, string> = {}
+    for (const group of groups) {
+      const groupStandings = initialStandings
+        .filter((s) => participantGroups[s.participant_id] === group.id)
+        .sort((a, b) => a.position - b.position)
+      groupStandings.forEach((s, idx) => {
+        result[s.participant_id] = `${idx + 1}º Gr. ${group.name}`
+      })
+    }
+    return result
+  }, [isGruposElim, groups, initialStandings, participantGroups])
 
-  // avatarUrl por participantId — derivado do participantInfo já disponível
+  // ── avatarUrl por participantId ────────────────────────────────────────────
   const participantAvatars: Record<string, string | null> = Object.fromEntries(
     Object.entries(participantInfo).map(([id, info]) => [id, info.avatar_url]),
   )
+
+  // ── Matches para aba Jogos ─────────────────────────────────────────────────
+
+  // === Liga / outros ===
+  const bronzeMatch      = isElim ? (matches.find((m) => m.bracket_slot === -2) ?? null) : null
+  const elimMainMatches  = isElim ? matches.filter((m) => m.bracket_slot !== -2 && !isElimBye(m)) : []
+  const byRound          = (isElim ? elimMainMatches : matches).reduce<Record<number, Match[]>>(
+    (acc, m) => { const r = m.round ?? 1; (acc[r] ??= []).push(m); return acc },
+    {},
+  )
+  const rounds           = Object.keys(byRound).map(Number).sort((a, b) => a - b)
+  const isMultiRound     = stage ? stage.rounds > 1 : false
+  const elimMaxRound     = rounds.length > 0 ? Math.max(...rounds) : 0
+
+  // === grupos_elim: split by stage ===
+  const gruposStageId = stage?.id ?? null        // stage = grupos stage para grupos_elim
+  const elimStageId   = elimStage?.id ?? null
+
+  // Jogos de grupos, agrupados por groupId (inferido via participantGroups)
+  const grupoMatchesByGroupId = useMemo<Record<string, Match[]>>(() => {
+    if (!isGruposElim || !gruposStageId) return {}
+    const acc: Record<string, Match[]> = {}
+    for (const m of matches) {
+      if (m.stage_id !== gruposStageId) continue
+      const pId = m.side_a_participant_id ?? m.side_b_participant_id
+      const gId = pId ? (participantGroups[pId] ?? '__unknown') : '__unknown'
+      ;(acc[gId] ??= []).push(m)
+    }
+    return acc
+  }, [isGruposElim, gruposStageId, matches, participantGroups])
+
+  // Jogos eliminatórios, agrupados por rodada
+  const elimMatchesByRound = useMemo<Record<number, Match[]>>(() => {
+    if (!isGruposElim || !elimStageId) return {}
+    const acc: Record<number, Match[]> = {}
+    for (const m of matches) {
+      if (m.stage_id !== elimStageId) continue
+      if (m.bracket_slot === -2) continue  // bronze separado
+      if (isElimBye(m)) continue
+      ;(acc[m.round] ??= []).push(m)
+    }
+    return acc
+  }, [isGruposElim, elimStageId, matches])
+
+  const elimBronzeMatch = isGruposElim
+    ? (matches.find((m) => m.stage_id === elimStageId && m.bracket_slot === -2) ?? null)
+    : null
+
+  const elimRounds = Object.keys(elimMatchesByRound).map(Number).sort((a, b) => a - b)
+  const elimMaxRoundGE = elimRounds.length > 0 ? Math.max(...elimRounds) : 0
+
+  // Bracket gerado para grupos_elim?
+  const bracketMatches = matches.filter((m) => m.stage_id === elimStageId && (m.bracket_slot ?? 0) > 0)
+  const bracketGenerated = bracketMatches.length > 0
 
   return (
     <div className="px-5 py-4 space-y-4">
@@ -267,7 +393,11 @@ export function ChampionshipDetailClient({
       {/* Hero compacto */}
       <div className="glass glass-card px-4 py-3.5 flex items-center gap-3">
         <div className="h-10 w-10 rounded-2xl bg-secondary/15 grid place-items-center shrink-0">
-          <Trophy className="h-5 w-5 text-secondary" />
+          {isGruposElim ? (
+            <Layers className="h-5 w-5 text-secondary" />
+          ) : (
+            <Trophy className="h-5 w-5 text-secondary" />
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-sm font-bold text-white leading-snug truncate">{champ.name}</h1>
@@ -275,7 +405,9 @@ export function ChampionshipDetailClient({
             {FORMAT_LABEL[champ.format] ?? champ.format}
             {' · '}
             {UNIT_LABEL[champ.unit] ?? champ.unit}
-            {stage && ` · ${stage.rounds}× round-robin`}
+            {isGruposElim && groups.length > 0 && ` · ${groups.length} grupos`}
+            {!isGruposElim && stage && !isElim && ` · ${stage.rounds}× round-robin`}
+            {(isElim || isGruposElim) && champ.has_third_place && ' · com 3º lugar'}
           </p>
         </div>
         <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${champBadge.cls}`}>
@@ -300,43 +432,257 @@ export function ChampionshipDetailClient({
         ))}
       </div>
 
-      {/* ── Aba: Jogos ── */}
-      {activeTab === 'jogos' && (
-        <div className="space-y-4 reveal">
-          {matches.length === 0 ? (
-            <div className="glass glass-card px-4 py-12 text-center">
-              <p className="text-sm text-white/30">Nenhum jogo gerado ainda.</p>
-            </div>
+      {/* ── Aba: Grupos (grupos_elim) ── */}
+      {activeTab === 'grupos' && isGruposElim && (
+        <div className="reveal">
+          <GroupsView
+            championshipId={champ.id}
+            champStatus={champ.status}
+            groups={groups}
+            participantGroups={participantGroups}
+            initialStandings={initialStandings}
+            participantInfo={participantInfo}
+            participantAvatars={participantAvatars}
+            currentUserParticipantId={currentUserParticipantId}
+            gruposStageId={gruposStageId}
+            elimStageId={elimStageId}
+            onSwitchToBracket={() => setActiveTab('bracket')}
+          />
+        </div>
+      )}
+
+      {/* ── Aba: Bracket (eliminatória pura) ── */}
+      {activeTab === 'bracket' && isElim && (
+        <div className="reveal">
+          <BracketView
+            championshipId={champ.id}
+            champStatus={champ.status}
+            initialMatches={matches}
+            participantInfo={participantInfo}
+            participantAvatars={participantAvatars}
+            stage={stage}
+            hasThirdPlace={champ.has_third_place}
+            canManage={canManage}
+            currentUserParticipantId={currentUserParticipantId}
+            initialStandings={initialStandings}
+          />
+        </div>
+      )}
+
+      {/* ── Aba: Bracket (grupos_elim) ── */}
+      {activeTab === 'bracket' && isGruposElim && (
+        <div className="reveal">
+          {bracketGenerated ? (
+            <BracketView
+              championshipId={champ.id}
+              champStatus={champ.status}
+              initialMatches={bracketMatches}
+              participantInfo={participantInfo}
+              participantAvatars={participantAvatars}
+              stage={elimStage ?? null}
+              hasThirdPlace={champ.has_third_place}
+              canManage={canManage}
+              currentUserParticipantId={currentUserParticipantId}
+              initialStandings={initialStandings}
+              participantGroupLabels={participantGroupLabels}
+            />
           ) : (
-            rounds.map((round) => (
-              <section key={round} className="space-y-2">
-                <div className="flex items-center gap-3 px-1">
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-white/35 shrink-0">
-                    {isMultiRound ? `Rodada ${round}` : 'Confrontos'}
-                  </p>
-                  <div className="flex-1 h-px bg-white/8" />
-                  <span className="text-[11px] text-white/20 shrink-0">
-                    {byRound[round].length}{' '}
-                    {byRound[round].length === 1 ? 'jogo' : 'jogos'}
-                  </span>
-                </div>
-                {byRound[round].map((match) => (
-                  <MatchCard
-                    key={match.id}
-                    match={match}
-                    champId={champ.id}
-                    stage={stage}
-                    participantInfo={participantInfo}
-                  />
-                ))}
-              </section>
-            ))
+            <div
+              className="glass glass-card px-5 py-10 text-center space-y-2"
+              style={{ borderColor: 'rgba(255,255,255,0.08)' }}
+            >
+              <GitMerge className="h-8 w-8 text-white/15 mx-auto" />
+              <p className="text-sm font-medium text-white/35 mt-2">Bracket não gerado</p>
+              <p className="text-xs text-white/20 max-w-xs mx-auto leading-relaxed">
+                O bracket será gerado automaticamente ao término da fase de grupos.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveTab('grupos')}
+                className="mt-2 text-xs text-secondary/60 underline underline-offset-2"
+              >
+                Ver grupos →
+              </button>
+            </div>
           )}
         </div>
       )}
 
-      {/* ── Aba: Classificação ── */}
-      {activeTab === 'classificacao' && (
+      {/* ── Aba: Jogos (liga / outros) ── */}
+      {activeTab === 'jogos' && !isGruposElim && (
+        <div className="space-y-4 reveal">
+          {isElim && elimMainMatches.length === 0 && !bronzeMatch ? (
+            <div className="glass glass-card px-4 py-12 text-center">
+              <p className="text-sm text-white/30">
+                {champ.status === 'rascunho'
+                  ? 'Ative o campeonato para gerar o bracket.'
+                  : 'Nenhum jogo gerado ainda.'}
+              </p>
+            </div>
+          ) : !isElim && matches.length === 0 ? (
+            <div className="glass glass-card px-4 py-12 text-center">
+              <p className="text-sm text-white/30">Nenhum jogo gerado ainda.</p>
+            </div>
+          ) : (
+            <>
+              {rounds.map((round) => {
+                const roundMatches = byRound[round] ?? []
+                if (roundMatches.length === 0) return null
+                const sectionLabel = isElim
+                  ? getEliminatoriaRoundLabel(round, elimMaxRound)
+                  : isMultiRound
+                    ? `Rodada ${round}`
+                    : 'Confrontos'
+                return (
+                  <section key={round} className="space-y-2">
+                    <SectionHeader label={sectionLabel} count={roundMatches.length} />
+                    {roundMatches.map((match) => (
+                      <MatchCard
+                        key={match.id}
+                        match={match}
+                        champId={champ.id}
+                        stage={stage}
+                        participantInfo={participantInfo}
+                      />
+                    ))}
+                  </section>
+                )
+              })}
+
+              {isElim && bronzeMatch && (
+                <section className="space-y-2">
+                  <div className="flex items-center gap-3 px-1">
+                    <div className="flex items-center gap-1.5">
+                      <Medal className="h-3 w-3 text-orange-400/70 shrink-0" />
+                      <p className="text-[11px] font-semibold uppercase tracking-widest text-orange-400/70 shrink-0">
+                        Disputa de 3º lugar
+                      </p>
+                    </div>
+                    <div className="flex-1 h-px bg-white/8" />
+                  </div>
+                  <MatchCard
+                    match={bronzeMatch}
+                    champId={champ.id}
+                    stage={stage}
+                    participantInfo={participantInfo}
+                  />
+                </section>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Aba: Jogos (grupos_elim) ── */}
+      {activeTab === 'jogos' && isGruposElim && (
+        <div className="space-y-5 reveal">
+          {/* Fase de grupos */}
+          {Object.keys(grupoMatchesByGroupId).length === 0 ? (
+            <div className="glass glass-card px-4 py-10 text-center">
+              <p className="text-sm text-white/30">Nenhum jogo gerado ainda.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Section header */}
+              <div className="flex items-center gap-3 px-1">
+                <div className="flex items-center gap-2">
+                  <Layers className="h-3.5 w-3.5 text-white/30 shrink-0" />
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-white/35">
+                    Fase de Grupos
+                  </p>
+                </div>
+                <div className="flex-1 h-px bg-white/8" />
+              </div>
+
+              {groups.map((group) => {
+                const gMatches = grupoMatchesByGroupId[group.id] ?? []
+                if (gMatches.length === 0) return null
+                return (
+                  <section key={group.id} className="space-y-2">
+                    <div className="flex items-center gap-2 px-1">
+                      <span className="text-[10px] font-bold text-secondary/70">
+                        Grupo {group.name}
+                      </span>
+                      <div className="flex-1 h-px bg-white/6" />
+                      <span className="text-[10px] text-white/20">
+                        {gMatches.length} {gMatches.length === 1 ? 'jogo' : 'jogos'}
+                      </span>
+                    </div>
+                    {gMatches.map((match) => (
+                      <MatchCard
+                        key={match.id}
+                        match={match}
+                        champId={champ.id}
+                        stage={stage}
+                        participantInfo={participantInfo}
+                      />
+                    ))}
+                  </section>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Fase eliminatória (só aparece se bracket gerado) */}
+          {bracketGenerated && (
+            <div className="space-y-4">
+              {/* Section header */}
+              <div className="flex items-center gap-3 px-1">
+                <div className="flex items-center gap-2">
+                  <GitMerge className="h-3.5 w-3.5 text-white/30 shrink-0" />
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-white/35">
+                    Fase Eliminatória
+                  </p>
+                </div>
+                <div className="flex-1 h-px bg-white/8" />
+              </div>
+
+              {elimRounds.map((round) => {
+                const roundMs = elimMatchesByRound[round] ?? []
+                if (roundMs.length === 0) return null
+                const label = getEliminatoriaRoundLabel(round, elimMaxRoundGE)
+                return (
+                  <section key={round} className="space-y-2">
+                    <SectionHeader label={label} count={roundMs.length} />
+                    {roundMs.map((match) => (
+                      <MatchCard
+                        key={match.id}
+                        match={match}
+                        champId={champ.id}
+                        stage={elimStage ?? null}
+                        participantInfo={participantInfo}
+                      />
+                    ))}
+                  </section>
+                )
+              })}
+
+              {elimBronzeMatch && (
+                <section className="space-y-2">
+                  <div className="flex items-center gap-3 px-1">
+                    <div className="flex items-center gap-1.5">
+                      <Medal className="h-3 w-3 text-orange-400/70 shrink-0" />
+                      <p className="text-[11px] font-semibold uppercase tracking-widest text-orange-400/70">
+                        Disputa de 3º lugar
+                      </p>
+                    </div>
+                    <div className="flex-1 h-px bg-white/8" />
+                  </div>
+                  <MatchCard
+                    match={elimBronzeMatch}
+                    champId={champ.id}
+                    stage={elimStage ?? null}
+                    participantInfo={participantInfo}
+                  />
+                </section>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Aba: Classificação (liga / outros) ── */}
+      {activeTab === 'classificacao' && !isElim && !isGruposElim && (
         <div className="reveal">
           <StandingsTable
             championshipId={champ.id}

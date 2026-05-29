@@ -18,11 +18,11 @@ export default async function ChampionshipPage({
     data: { user },
   } = await supabase.auth.getUser()
 
-  // ── 1. Campeonato + fase ──────────────────────────────────────
+  // ── 1. Campeonato + fases ─────────────────────────────────────────────────
   const { data: champ } = await supabase
     .from('championships')
     .select(
-      `id, name, format, unit, status, allow_draw,
+      `id, name, format, unit, status, allow_draw, has_third_place,
        points_win, points_draw, points_loss, tiebreakers, created_at, created_by,
        championship_stages(
          id, name, kind, counting, rounds,
@@ -34,11 +34,35 @@ export default async function ChampionshipPage({
 
   if (!champ) notFound()
 
-  // ── 2. Jogos + sets do campeonato ─────────────────────────────
+  const stages = (champ.championship_stages ?? []) as Array<{
+    id: string
+    name: string
+    kind: string
+    counting: string
+    rounds: number
+    sets_to_play: number
+    points_per_set: number
+    win_by_two: boolean
+    set_draw_enabled: boolean
+    time_minutes: number | null
+  }>
+
+  // Identifica fases por kind
+  const gruposStageRaw   = stages.find((s) => s.kind === 'grupos')   ?? null
+  const elimStageRaw     = stages.find((s) => s.kind === 'eliminatoria') ?? null
+  const ligaStageRaw     = stages.find((s) => s.kind === 'liga')     ?? null
+
+  // Para formatos single-stage (liga / eliminatória pura) usar o primeiro stage
+  const primaryStageRaw  =
+    champ.format === 'grupos_elim'
+      ? gruposStageRaw
+      : ligaStageRaw ?? elimStageRaw ?? stages[0] ?? null
+
+  // ── 2. Jogos + sets do campeonato (com stage_id) ──────────────────────────
   const { data: matchesRaw } = await supabase
     .from('matches')
     .select(
-      `id, round, result, status,
+      `id, stage_id, round, bracket_slot, result, status,
        side_a_participant_id, side_b_participant_id,
        match_games(game_number, score_a, score_b)`,
     )
@@ -46,14 +70,14 @@ export default async function ChampionshipPage({
     .order('round', { ascending: true })
     .order('created_at', { ascending: true })
 
-  // ── 3. Participantes confirmados + seus membros ───────────────
+  // ── 3. Participantes confirmados + membros + group_id ─────────────────────
   const { data: participantsRaw } = await supabase
     .from('participants')
-    .select(`id, participant_members(user_id)`)
+    .select(`id, group_id, participant_members(user_id)`)
     .eq('championship_id', id)
     .eq('enrollment_status', 'confirmado')
 
-  // ── 4. Perfis dos usuários (batch) ───────────────────────────
+  // ── 4. Perfis dos usuários (batch) ────────────────────────────────────────
   const allUserIds = (participantsRaw ?? []).flatMap((p) =>
     (p.participant_members ?? []).map((m: { user_id: string }) => m.user_id),
   )
@@ -67,28 +91,43 @@ export default async function ChampionshipPage({
   const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]))
 
   // Monta mapa participantId → {full_name, avatar_url}
-  const participantInfo: Record<
-    string,
-    { full_name: string | null; avatar_url: string | null }
-  > = {}
+  const participantInfo: Record<string, { full_name: string | null; avatar_url: string | null }> = {}
   for (const p of participantsRaw ?? []) {
-    const memberIds = (p.participant_members ?? []).map(
-      (m: { user_id: string }) => m.user_id,
-    )
+    const memberIds = (p.participant_members ?? []).map((m: { user_id: string }) => m.user_id)
     const names = memberIds
       .map((uid: string) => profileMap.get(uid)?.full_name)
       .filter(Boolean) as string[]
     const avatarUrl =
-      memberIds.length === 1
-        ? (profileMap.get(memberIds[0])?.avatar_url ?? null)
-        : null
+      memberIds.length === 1 ? (profileMap.get(memberIds[0])?.avatar_url ?? null) : null
     participantInfo[p.id] = {
       full_name: names.length ? names.join(' / ') : null,
       avatar_url: avatarUrl,
     }
   }
 
-  // ── 5. ID do participante do usuário logado (para highlight na tabela) ──
+  // ── 5. participantGroups (apenas grupos_elim) ─────────────────────────────
+  const participantGroups: Record<string, string> = {}
+  if (champ.format === 'grupos_elim') {
+    for (const p of participantsRaw ?? []) {
+      const gid = (p as { group_id?: string | null }).group_id
+      if (gid) participantGroups[p.id] = gid
+    }
+  }
+
+  // ── 6. Grupos (apenas grupos_elim) ────────────────────────────────────────
+  type GroupRow = { id: string; name: string }
+  let groups: GroupRow[] = []
+
+  if (champ.format === 'grupos_elim' && gruposStageRaw) {
+    const { data: groupsRaw } = await supabase
+      .from('groups')
+      .select('id, name, ordering')
+      .eq('stage_id', gruposStageRaw.id)
+      .order('ordering', { ascending: true })
+    groups = (groupsRaw ?? []).map((g) => ({ id: g.id, name: g.name }))
+  }
+
+  // ── 7. ID do participante do usuário logado ────────────────────────────────
   const currentUserParticipantId =
     user && participantsRaw
       ? (participantsRaw.find((p) =>
@@ -98,14 +137,13 @@ export default async function ChampionshipPage({
         )?.id ?? null)
       : null
 
-  // ── 6. Classificação inicial via RPC (SSR) ────────────────────
+  // ── 8. Classificação inicial via RPC (SSR) ────────────────────────────────
   const { data: standingsRaw } = await supabase.rpc('get_standings', {
     _championship_id: id,
   })
   const initialStandings = (standingsRaw ?? []) as Standing[]
 
-  // ── 7. Permissão de gestão (server-side, security definer) ────
-  // can_manage_championship: creator OU organizer/admin
+  // ── 9. Permissão de gestão ────────────────────────────────────────────────
   let canManage = false
   if (user) {
     try {
@@ -114,16 +152,26 @@ export default async function ChampionshipPage({
       })
       canManage = (ok as boolean) ?? false
     } catch {
-      // Fallback conservador: só creator
       canManage = user.id === (champ.created_by ?? '')
     }
   }
 
-  // ── Normalização para serialização server → client ─────────────
-  const stage =
-    champ.championship_stages && champ.championship_stages.length > 0
-      ? champ.championship_stages[0]
-      : null
+  // ── Normalização dos stages para serialização server → client ──────────────
+
+  function normalizeStage(s: typeof primaryStageRaw) {
+    if (!s) return null
+    return {
+      id: s.id,
+      kind: s.kind,
+      counting: s.counting as string,
+      rounds: s.rounds ?? 1,
+      sets_to_play: s.sets_to_play ?? 3,
+      points_per_set: s.points_per_set ?? 11,
+      win_by_two: s.win_by_two ?? true,
+      set_draw_enabled: s.set_draw_enabled ?? false,
+      time_minutes: s.time_minutes ?? null,
+    }
+  }
 
   return (
     <ChampionshipDetailClient
@@ -134,29 +182,20 @@ export default async function ChampionshipPage({
         unit: champ.unit,
         status: champ.status,
         allow_draw: champ.allow_draw ?? false,
+        has_third_place: (champ.has_third_place as boolean) ?? false,
         points_win: champ.points_win ?? 3,
         points_draw: champ.points_draw ?? 1,
         points_loss: champ.points_loss ?? 0,
         tiebreakers: (champ.tiebreakers as string[]) ?? [],
         created_by: champ.created_by ?? '',
       }}
-      stage={
-        stage
-          ? {
-              id: stage.id,
-              counting: stage.counting as string,
-              rounds: stage.rounds ?? 1,
-              sets_to_play: stage.sets_to_play ?? 3,
-              points_per_set: stage.points_per_set ?? 11,
-              win_by_two: stage.win_by_two ?? true,
-              set_draw_enabled: stage.set_draw_enabled ?? false,
-              time_minutes: stage.time_minutes ?? null,
-            }
-          : null
-      }
+      stage={normalizeStage(primaryStageRaw)}
+      elimStage={normalizeStage(elimStageRaw)}
       matches={(matchesRaw ?? []).map((m) => ({
         id: m.id,
+        stage_id: (m as { stage_id?: string }).stage_id ?? '',
         round: m.round ?? 1,
+        bracket_slot: (m.bracket_slot as number | null) ?? null,
         result: m.result ?? null,
         status: m.status,
         side_a_participant_id: m.side_a_participant_id ?? null,
@@ -175,6 +214,8 @@ export default async function ChampionshipPage({
       canManage={canManage}
       initialStandings={initialStandings}
       currentUserParticipantId={currentUserParticipantId}
+      groups={groups}
+      participantGroups={participantGroups}
     />
   )
 }
