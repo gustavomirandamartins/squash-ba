@@ -7,6 +7,11 @@ const supabaseHost = process.env.NEXT_PUBLIC_SUPABASE_URL
   : undefined;
 
 const nextConfig: NextConfig = {
+  // Fixa a raiz do projeto: há um package-lock.json solto em ~/ que confundia o
+  // Turbopack (inferia a raiz errada). Evita recompilações/watch fora do projeto.
+  turbopack: {
+    root: __dirname,
+  },
   images: {
     remotePatterns: supabaseHost
       ? [

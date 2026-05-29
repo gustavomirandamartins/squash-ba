@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Search, X } from 'lucide-react'
+import { useState } from 'react'
+import Link from 'next/link'
 import { Logo } from './Logo'
 import { UserAvatarMenu } from './UserAvatarMenu'
+import { SearchDropdown } from './SearchDropdown'
 
 interface Props {
   name?: string | null
@@ -14,21 +15,6 @@ interface Props {
 
 export function TopBar({ name, avatarUrl, isAdmin, canManage }: Props) {
   const [searchOpen, setSearchOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  // Focus input after the expand animation starts
-  useEffect(() => {
-    if (searchOpen) {
-      const t = setTimeout(() => inputRef.current?.focus(), 60)
-      return () => clearTimeout(t)
-    }
-  }, [searchOpen])
-
-  function closeSearch() {
-    setSearchOpen(false)
-    setQuery('')
-  }
 
   return (
     <header className="sticky top-0 z-30">
@@ -67,63 +53,27 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage }: Props) {
           transition: 'grid-template-columns 280ms cubic-bezier(.4,0,.2,1)',
         }}
       >
-        {/* Col 1 — Logo (collapses to 0 when search opens) */}
+        {/* Col 1 — Logo (collapses to 0 when search opens). Leva à home. */}
         <div className="overflow-hidden">
           <div
             className="transition-opacity duration-200"
             style={{ opacity: searchOpen ? 0 : 1 }}
           >
-            <Logo />
+            <Link href="/" aria-label="Ir para a página inicial" className="inline-flex">
+              <Logo />
+            </Link>
           </div>
         </div>
 
         {/* Col 2 — Spacer (shrinks to 0fr) */}
         <div />
 
-        {/* Col 3 — Search button / expanded input */}
-        <div className="relative h-10 overflow-hidden">
-          {/* Round icon button (default) */}
-          <button
-            type="button"
-            aria-label="Buscar"
-            onClick={() => setSearchOpen(true)}
-            className="absolute inset-0 grid place-items-center rounded-full glass text-white/85 transition-all duration-200 active:scale-95"
-            style={{
-              opacity: searchOpen ? 0 : 1,
-              pointerEvents: searchOpen ? 'none' : 'auto',
-              transform: searchOpen ? 'scale(0.8)' : 'scale(1)',
-            }}
-          >
-            <Search className="h-[18px] w-[18px]" />
-          </button>
-
-          {/* Expanded search bar */}
-          <div
-            className="glass absolute inset-0 flex items-center gap-2 rounded-full px-3 transition-all duration-200"
-            style={{
-              opacity: searchOpen ? 1 : 0,
-              pointerEvents: searchOpen ? 'auto' : 'none',
-            }}
-          >
-            <Search className="h-4 w-4 shrink-0 text-white/45" />
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Escape' && closeSearch()}
-              placeholder="Buscar…"
-              className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder-white/35 outline-none"
-            />
-            <button
-              type="button"
-              aria-label="Fechar busca"
-              onClick={closeSearch}
-              className="shrink-0 transition active:scale-95"
-            >
-              <X className="h-4 w-4 text-white/45" />
-            </button>
-          </div>
-        </div>
+        {/* Col 3 — Busca (botão → barra → resultados) */}
+        <SearchDropdown
+          open={searchOpen}
+          onOpen={() => setSearchOpen(true)}
+          onClose={() => setSearchOpen(false)}
+        />
 
         {/* Col 4 — gap (handled by grid column width) */}
         <div />
