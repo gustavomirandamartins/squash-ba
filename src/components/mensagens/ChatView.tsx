@@ -316,9 +316,9 @@ export function ChatView({ conv, initialMessages, currentUserId }: Props) {
   }
 
   return (
-    <div className="flex flex-col h-[100dvh]">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* ── Header ── */}
-      <div className="glass border-b border-white/8 px-4 pt-safe-top py-3 flex items-center gap-3 shrink-0 sticky top-0 z-10">
+      <div className="glass border-b border-white/8 px-4 py-3 flex items-center gap-3 shrink-0 z-10">
         <button
           type="button"
           onClick={() => router.push('/mensagens')}

@@ -42,7 +42,7 @@ export default async function AppLayout({
         isAdmin={isAdmin}
         canManage={canManage}
       />
-      <main className="flex-1 pb-32">{children}</main>
+      <main className="flex flex-col flex-1 pb-32">{children}</main>
       <BottomNav userId={user.id} />
     </div>
   )
