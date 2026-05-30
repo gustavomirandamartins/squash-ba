@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Home, CalendarDays, Play, MessageSquare, type LucideIcon } from 'lucide-react'
-import { createClient } from '@/utils/supabase/client'
+import { useUnreadCount } from '@/lib/use-unread-count'
 
 interface Item {
   href: string
@@ -20,79 +19,6 @@ const items: Item[] = [
   { href: '/mensagens', label: 'Mensagens', icon: MessageSquare, matchPrefix: true },
 ]
 
-// ── Hook: total de mensagens não-lidas ────────────────────────────────────────
-
-function useUnreadCount(userId: string | null) {
-  const [count, setCount] = useState(0)
-  const [supabase] = useState(() => createClient())
-
-  const fetchCount = async () => {
-    if (!userId) { setCount(0); return }
-
-    // Busca memberships
-    const { data: memberships } = await supabase
-      .from('conversation_members')
-      .select('conversation_id, last_read_at')
-      .eq('user_id', userId)
-
-    if (!memberships?.length) { setCount(0); return }
-
-    let total = 0
-    await Promise.all(
-      memberships.map(async (m: { conversation_id: string; last_read_at: string | null }) => {
-        const since = m.last_read_at ?? new Date(0).toISOString()
-        const { count: c } = await supabase
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('conversation_id', m.conversation_id)
-          .neq('sender_id', userId)
-          .gt('created_at', since)
-        total += c ?? 0
-      }),
-    )
-    setCount(total)
-  }
-
-  useEffect(() => {
-    void fetchCount()
-
-    let channel: ReturnType<typeof supabase.channel> | null = null
-    let cancelled = false
-
-    async function setup() {
-      // setAuth antes de subscribe — RLS exige JWT na conexão Realtime (ver ChatView)
-      const { data: { session } } = await supabase.auth.getSession()
-      if (cancelled) return
-      if (session?.access_token) await supabase.realtime.setAuth(session.access_token)
-      if (cancelled) return
-
-      channel = supabase
-        .channel('bottom-nav-unread')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
-          void fetchCount()
-        })
-        .subscribe()
-    }
-
-    void setup()
-
-    // Atualiza ao retornar ao foco
-    const onFocus = () => void fetchCount()
-    window.addEventListener('focus', onFocus)
-
-    return () => {
-      cancelled = true
-      if (channel) void supabase.removeChannel(channel)
-      window.removeEventListener('focus', onFocus)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId])
-
-  return count
-}
-
-// ── BottomNav ─────────────────────────────────────────────────────────────────
-
 interface Props {
   userId?: string | null
 }
@@ -102,7 +28,7 @@ export function BottomNav({ userId }: Props) {
   const unread = useUnreadCount(userId ?? null)
 
   return (
-    <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(1rem,env(safe-area-inset-bottom))]">
+    <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(1rem,env(safe-area-inset-bottom))] lg:hidden">
       <div className="pointer-events-auto glass glass-pill flex items-center gap-1 px-2.5 py-2.5">
         {items.map(({ href, label, icon: Icon, matchPrefix }) => {
           const active = matchPrefix ? pathname.startsWith(href) : pathname === href

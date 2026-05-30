@@ -53,8 +53,9 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage }: Props) {
           transition: 'grid-template-columns 280ms cubic-bezier(.4,0,.2,1)',
         }}
       >
-        {/* Col 1 — Logo (collapses to 0 when search opens). Leva à home. */}
-        <div className="overflow-hidden">
+        {/* Col 1 — Logo (collapses to 0 when search opens). Leva à home.
+            No desktop fica no rail lateral → oculto aqui. */}
+        <div className="overflow-hidden lg:hidden">
           <div
             className="transition-opacity duration-200"
             style={{ opacity: searchOpen ? 0 : 1 }}
@@ -78,13 +79,15 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage }: Props) {
         {/* Col 4 — gap (handled by grid column width) */}
         <div />
 
-        {/* Col 5 — Avatar menu */}
-        <UserAvatarMenu
-          name={name}
-          avatarUrl={avatarUrl}
-          isAdmin={isAdmin}
-          canManage={canManage}
-        />
+        {/* Col 5 — Avatar menu (no desktop fica no rail lateral → oculto aqui) */}
+        <div className="lg:hidden">
+          <UserAvatarMenu
+            name={name}
+            avatarUrl={avatarUrl}
+            isAdmin={isAdmin}
+            canManage={canManage}
+          />
+        </div>
       </div>
     </header>
   )
