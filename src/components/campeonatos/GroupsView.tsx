@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { User, Check, ArrowRight, Layers, GitMerge } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import type { Standing } from './StandingsTable'
+import { useOfflineStandings, type OfflineStandingsInput } from '@/lib/standings/use-offline-standings'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,8 @@ type Props = {
   gruposStageId: string | null
   elimStageId: string | null
   onSwitchToBracket?: () => void
+  /** dados p/ recomputar a fase de grupos offline ao vivo (opcional) */
+  offlineData?: OfflineStandingsInput
 }
 
 // ─── GroupCard ────────────────────────────────────────────────────────────────
@@ -232,11 +235,15 @@ export function GroupsView({
   gruposStageId,
   elimStageId,
   onSwitchToBracket,
+  offlineData,
 }: Props) {
   const [standings, setStandings] = useState<Standing[]>(initialStandings)
   const [matches, setMatches] = useState<MatchMeta[]>([])
   const [supabase] = useState(() => createClient())
   const refetchRef = useRef<() => Promise<void>>(() => Promise.resolve())
+
+  // Recálculo offline ao vivo (snapshot + fila de placares).
+  const off = useOfflineStandings(offlineData)
 
   const refetch = useCallback(async () => {
     const [sResult, mResult] = await Promise.all([
@@ -283,8 +290,22 @@ export function GroupsView({
 
   // ── Computed ────────────────────────────────────────────────────────────────
 
-  const gruposMatches = matches.filter((m) => m.stage_id === gruposStageId)
-  const elimMatches   = matches.filter((m) => m.stage_id === elimStageId)
+  // Fonte efetiva: offline → recálculo local; online → RPC + matches buscados.
+  const effectiveStandings = off.offline && off.standings ? off.standings : standings
+
+  // Jogos de grupos efetivos (offline derivamos status do recálculo local).
+  const gruposMatches: MatchMeta[] =
+    off.offline && offlineData
+      ? offlineData.matches.map((m) => ({
+          id: m.id,
+          stage_id: gruposStageId ?? '',
+          status: off.finalizedById[m.id] ? 'finalizado' : 'agendado',
+          side_a_participant_id: m.side_a_participant_id,
+          side_b_participant_id: m.side_b_participant_id,
+        }))
+      : matches.filter((m) => m.stage_id === gruposStageId)
+
+  const elimMatches = matches.filter((m) => m.stage_id === elimStageId)
 
   const allGroupsDone =
     gruposMatches.length > 0 &&
@@ -295,7 +316,7 @@ export function GroupsView({
   // Standings per group
   const standingsByGroup: Record<string, Standing[]> = {}
   for (const g of groups) {
-    standingsByGroup[g.id] = standings
+    standingsByGroup[g.id] = effectiveStandings
       .filter((s) => participantGroups[s.participant_id] === g.id)
       .sort((a, b) => a.position - b.position)
   }
@@ -333,13 +354,18 @@ export function GroupsView({
   return (
     <div className="space-y-4">
       {/* ── Live indicator ── */}
-      {isLive && !allGroupsDone && (
+      {off.offline ? (
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-[11px] font-semibold text-yellow-400/80">Offline · local</span>
+          <span className="text-[11px] text-white/30">— recalculado neste dispositivo</span>
+        </div>
+      ) : isLive && !allGroupsDone ? (
         <div className="flex items-center gap-2 px-1">
           <span className="live-dot h-1.5 w-1.5 rounded-full bg-secondary inline-block" />
           <span className="text-[11px] font-semibold text-secondary">Ao vivo</span>
           <span className="text-[11px] text-white/30">— tabelas atualizam automaticamente</span>
         </div>
-      )}
+      ) : null}
 
       {/* ── "Bracket gerado" banner ── */}
       {allGroupsDone && bracketGenerated && (
@@ -398,7 +424,7 @@ export function GroupsView({
       )}
 
       {/* ── Footer legend ── */}
-      {groups.length > 0 && standings.length > 0 && (
+      {groups.length > 0 && effectiveStandings.length > 0 && (
         <p className="text-[10px] text-white/18 px-1 leading-relaxed">
           Pts = pontos · V/E/D = vitória/empate/derrota · Q = classificado para o bracket
         </p>

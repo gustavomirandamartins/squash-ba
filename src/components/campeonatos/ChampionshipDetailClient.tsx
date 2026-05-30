@@ -367,6 +367,22 @@ export function ChampionshipDetailClient({
     }
   }, [stage, matches, participantInfo, champ])
 
+  // Idem, mas só com os jogos da fase de grupos (para o GroupsView offline).
+  const gruposOfflineData = useMemo(() => {
+    if (!stage || !isGruposElim) return undefined
+    return {
+      ...offlineStandingsData!,
+      matches: matches
+        .filter((m) => m.stage_id === stage.id)
+        .map((m) => ({
+          id: m.id,
+          side_a_participant_id: m.side_a_participant_id,
+          side_b_participant_id: m.side_b_participant_id,
+          match_games: m.match_games,
+        })),
+    }
+  }, [stage, isGruposElim, matches, offlineStandingsData])
+
   // ── Matches para aba Jogos ─────────────────────────────────────────────────
 
   // === Liga / outros ===
@@ -504,6 +520,7 @@ export function ChampionshipDetailClient({
             gruposStageId={gruposStageId}
             elimStageId={elimStageId}
             onSwitchToBracket={() => setActiveTab('bracket')}
+            offlineData={gruposOfflineData}
           />
         </div>
       )}
@@ -761,6 +778,7 @@ export function ChampionshipDetailClient({
             pointsWin={champ.points_win}
             pointsDraw={champ.points_draw}
             pointsLoss={champ.points_loss}
+            offlineData={offlineStandingsData}
           />
         </div>
       )}

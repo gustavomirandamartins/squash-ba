@@ -11,6 +11,7 @@ import Image from 'next/image'
 import { User, TrendingUp, Swords, Target, BarChart2 } from 'lucide-react'
 import type { Standing } from './StandingsTable'
 import type { ParticipantInfo } from './ChampionshipDetailClient'
+import { useOfflineStandings, type OfflineStandingsInput } from '@/lib/standings/use-offline-standings'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,8 @@ type Props = {
   pointsWin: number
   pointsDraw: number
   pointsLoss: number
+  /** dados p/ recomputar offline ao vivo (opcional) */
+  offlineData?: OfflineStandingsInput
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -116,7 +119,10 @@ function StatCard({
 
 // ─── StatsTab ─────────────────────────────────────────────────────────────────
 
-export function StatsTab({ standings, participantInfo, pointsWin, pointsDraw, pointsLoss }: Props) {
+export function StatsTab({ standings: onlineStandings, participantInfo, pointsWin, pointsDraw, pointsLoss, offlineData }: Props) {
+  const off = useOfflineStandings(offlineData)
+  const standings = off.offline && off.standings ? off.standings : onlineStandings
+
   const rows = useMemo(() => {
     return standings
       .map((s) => {
