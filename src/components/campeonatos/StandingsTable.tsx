@@ -4,6 +4,15 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Image from 'next/image'
 import { User } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { getQueuedGames } from '@/lib/score-engine/SyncEngine'
+import {
+  computeStandings,
+  mergeGames,
+  type CMatch,
+  type StageCfg,
+  type ChampCfg,
+  type ParticipantRef,
+} from '@/lib/standings/compute'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -23,6 +32,19 @@ export type Standing = {
   saldo_pontos: number
 }
 
+/** Dados para recomputar a classificação offline (refletindo placares na fila). */
+export type OfflineStandingsData = {
+  matches: Array<{
+    id: string
+    side_a_participant_id: string | null
+    side_b_participant_id: string | null
+    match_games: Array<{ game_number: number; score_a: number; score_b: number }>
+  }>
+  participants: ParticipantRef[]
+  stage: StageCfg
+  champ: ChampCfg
+}
+
 type Props = {
   championshipId: string
   champStatus: string
@@ -31,6 +53,8 @@ type Props = {
   currentUserParticipantId: string | null
   /** avatarUrl indexado por participantId */
   participantAvatars: Record<string, string | null>
+  /** dados p/ cálculo offline ao vivo (opcional; quando ausente, só usa RPC) */
+  offlineData?: OfflineStandingsData
 }
 
 // ─── Grid template (mobile: 6 colunas | desktop md+: 11 colunas) ──────────────
@@ -62,9 +86,11 @@ export function StandingsTable({
   initialStandings,
   currentUserParticipantId,
   participantAvatars,
+  offlineData,
 }: Props) {
   const [standings, setStandings] = useState<Standing[]>(initialStandings)
   const [refreshing, setRefreshing] = useState(false)
+  const [offline, setOffline] = useState(false)
 
   // Browser client — criado uma vez (lazy initializer do useState)
   const [supabase] = useState(() => createClient())
@@ -72,7 +98,33 @@ export function StandingsTable({
   // ref para garantir que o callback do canal sempre veja a versão mais recente
   const refetchRef = useRef<() => Promise<void>>(() => Promise.resolve())
 
+  // Recalcula no cliente a partir do snapshot + fila offline de placares.
+  const computeOffline = useCallback(async () => {
+    if (!offlineData) return
+    setRefreshing(true)
+    try {
+      const cmatches: CMatch[] = await Promise.all(
+        offlineData.matches.map(async (m) => {
+          const queued = await getQueuedGames(m.id)
+          return {
+            side_a_participant_id: m.side_a_participant_id,
+            side_b_participant_id: m.side_b_participant_id,
+            games: mergeGames(m.match_games, queued),
+          }
+        }),
+      )
+      setStandings(computeStandings(cmatches, offlineData.participants, offlineData.stage, offlineData.champ))
+    } finally {
+      setRefreshing(false)
+    }
+  }, [offlineData])
+
   const refetch = useCallback(async () => {
+    // Offline → calcula no cliente (reflete placares na fila).
+    if (typeof navigator !== 'undefined' && !navigator.onLine && offlineData) {
+      await computeOffline()
+      return
+    }
     setRefreshing(true)
     try {
       const { data, error } = await supabase.rpc('get_standings', {
@@ -80,16 +132,36 @@ export function StandingsTable({
       })
       if (!error && data) {
         setStandings(data as Standing[])
+      } else if (error && offlineData) {
+        // RPC falhou (provável offline) → fallback client-side.
+        await computeOffline()
       }
     } finally {
       setRefreshing(false)
     }
-  }, [supabase, championshipId])
+  }, [supabase, championshipId, offlineData, computeOffline])
 
   // Mantém ref sempre atualizada (evita stale closure no canal)
   useEffect(() => {
     refetchRef.current = refetch
   }, [refetch])
+
+  // Estado online/offline → no mount offline já recalcula localmente; ao trocar
+  // de estado, recomputa (offline) ou rebusca no servidor (online).
+  useEffect(() => {
+    const off = typeof navigator !== 'undefined' && !navigator.onLine
+    setOffline(off)
+    if (off) void refetchRef.current()
+
+    const onOnline = () => { setOffline(false); void refetchRef.current() }
+    const onOffline = () => { setOffline(true); void refetchRef.current() }
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
+  }, [])
 
   // Subscrição Realtime — segue o padrão do spec exatamente
   useEffect(() => {
@@ -126,12 +198,14 @@ export function StandingsTable({
         <p className="text-[11px] font-semibold uppercase tracking-widest text-white/35">
           Classificação
         </p>
-        {isLive && (
+        {offline ? (
+          <span className="text-[11px] font-semibold text-yellow-400/80">Offline · local</span>
+        ) : isLive ? (
           <div className="flex items-center gap-1.5">
             <span className="live-dot h-1.5 w-1.5 rounded-full bg-secondary inline-block" />
             <span className="text-[11px] font-semibold text-secondary">Ao vivo</span>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Tabela */}

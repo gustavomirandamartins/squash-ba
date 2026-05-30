@@ -337,6 +337,36 @@ export function ChampionshipDetailClient({
     Object.entries(participantInfo).map(([id, info]) => [id, info.avatar_url]),
   )
 
+  // ── Dados p/ classificação offline ao vivo (liga) ──────────────────────────
+  const offlineStandingsData = useMemo(() => {
+    if (!stage) return undefined
+    return {
+      matches: matches.map((m) => ({
+        id: m.id,
+        side_a_participant_id: m.side_a_participant_id,
+        side_b_participant_id: m.side_b_participant_id,
+        match_games: m.match_games,
+      })),
+      participants: Object.entries(participantInfo).map(([id, info]) => ({
+        id,
+        name: info.full_name,
+      })),
+      stage: {
+        counting: stage.counting,
+        points_per_set: stage.points_per_set,
+        win_by_two: stage.win_by_two,
+        set_draw_enabled: stage.set_draw_enabled,
+        sets_to_play: stage.sets_to_play,
+      },
+      champ: {
+        pointsWin: champ.points_win,
+        pointsDraw: champ.points_draw,
+        pointsLoss: champ.points_loss,
+        tiebreakers: champ.tiebreakers,
+      },
+    }
+  }, [stage, matches, participantInfo, champ])
+
   // ── Matches para aba Jogos ─────────────────────────────────────────────────
 
   // === Liga / outros ===
@@ -717,6 +747,7 @@ export function ChampionshipDetailClient({
             initialStandings={initialStandings}
             currentUserParticipantId={currentUserParticipantId}
             participantAvatars={participantAvatars}
+            offlineData={offlineStandingsData}
           />
         </div>
       )}

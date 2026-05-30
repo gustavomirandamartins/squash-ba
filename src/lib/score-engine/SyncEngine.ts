@@ -148,6 +148,31 @@ export async function getPendingCount(matchId: string): Promise<number> {
   return q.length
 }
 
+// ─── games da fila (para classificação offline) ───────────────────────────────
+// Reconstrói o estado atual dos games a partir da fila local (upserts/deletes).
+// Retorna null se não houver nada na fila para a partida.
+export async function getQueuedGames(
+  matchId: string,
+): Promise<Array<{ game_number: number; score_a: number; score_b: number }> | null> {
+  const q = await getQueue(matchId)
+  if (q.length === 0) return null
+  const map = new Map<number, { game_number: number; score_a: number; score_b: number }>()
+  for (const a of q) {
+    if (a.type === 'upsert_game') {
+      const { game_number, score_a, score_b } = a.payload as {
+        game_number: number
+        score_a: number
+        score_b: number
+      }
+      map.set(game_number, { game_number, score_a, score_b })
+    } else if (a.type === 'delete_game') {
+      const { game_number } = a.payload as { game_number: number }
+      map.delete(game_number)
+    }
+  }
+  return [...map.values()].sort((x, y) => x.game_number - y.game_number)
+}
+
 // ─── clearQueue ───────────────────────────────────────────────────────────────
 
 export async function clearQueue(matchId: string): Promise<void> {
