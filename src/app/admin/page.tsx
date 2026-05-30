@@ -3,7 +3,8 @@ import Image from 'next/image'
 import { createClient } from '@/utils/supabase/server'
 import Link from 'next/link'
 import { approveRequest, rejectRequest, saveBannerLink } from './actions'
-import { ShieldCheck, User, CheckCircle, XCircle, ClipboardList, Megaphone, Link2, ArrowLeft } from 'lucide-react'
+import { ShieldCheck, User, CheckCircle, XCircle, ClipboardList, Megaphone, Link2, ArrowLeft, Users } from 'lucide-react'
+import { AdminUsers, type AdminUser } from '@/components/admin/AdminUsers'
 
 export const metadata = { title: 'Painel admin' }
 
@@ -88,6 +89,27 @@ export default async function AdminPage() {
     created_at: r.created_at,
     profile: profById.get(r.user_id) ?? null,
   }))
+
+  // ── Usuários cadastrados + papéis ───────────────────────────────────────────
+  const [{ data: allProfiles }, { data: allRoles }] = await Promise.all([
+    supabase.from('profiles').select('id, full_name, avatar_url').order('full_name'),
+    supabase.from('user_roles').select('user_id, role'),
+  ])
+  const rolesByUser = new Map<string, Set<string>>()
+  for (const r of (allRoles ?? []) as Array<{ user_id: string; role: string }>) {
+    const set = rolesByUser.get(r.user_id) ?? new Set<string>()
+    set.add(r.role)
+    rolesByUser.set(r.user_id, set)
+  }
+  const users: AdminUser[] = (allProfiles ?? []).map((p: { id: string; full_name: string | null; avatar_url: string | null }) => {
+    const roles = rolesByUser.get(p.id)
+    const role: AdminUser['role'] = roles?.has('admin')
+      ? 'admin'
+      : roles?.has('organizer')
+        ? 'organizer'
+        : 'jogador'
+    return { id: p.id, name: p.full_name, avatarUrl: p.avatar_url, role }
+  })
 
   // ── Banners do patrocinador: imagens do bucket + link de cada uma ───────────
   const [{ data: bannerFiles }, { data: bannerLinks }] = await Promise.all([
@@ -212,6 +234,19 @@ export default async function AdminPage() {
             })}
           </ul>
         )}
+
+        {/* Seção: usuários cadastrados */}
+        <div className="mb-3 mt-10 flex items-center gap-2">
+          <Users className="h-4 w-4 text-white/40" />
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-white/40">
+            Usuários
+          </h2>
+          <span className="ml-auto text-[11px] text-white/30">{users.length}</span>
+        </div>
+        <p className="mb-3 text-xs text-white/35">
+          Remova o acesso de professor ou exclua usuários cadastrados.
+        </p>
+        <AdminUsers users={users} currentUserId={user.id} />
 
         {/* Seção: banners do patrocinador */}
         <div className="mb-3 mt-10 flex items-center gap-2">
