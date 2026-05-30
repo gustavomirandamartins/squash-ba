@@ -45,7 +45,6 @@ export function SearchDropdown({ open, onOpen, onClose }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Results>(EMPTY)
   const [loading, setLoading] = useState(false)
-  const [busyPerson, setBusyPerson] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Foca o input após iniciar a animação de expansão
@@ -129,15 +128,9 @@ export function SearchDropdown({ open, onOpen, onClose }: Props) {
     [router],
   )
 
-  // Pessoa → abre (ou cria) conversa direta
-  async function openPerson(userId: string) {
-    if (busyPerson) return
-    setBusyPerson(userId)
-    const { data, error } = await supabase.rpc('get_or_create_direct_conversation', {
-      _other_user_id: userId,
-    })
-    setBusyPerson(null)
-    if (!error && data) go(`/mensagens/${data as string}`)
+  // Pessoa → abre a ficha técnica do jogador
+  function openPerson(userId: string) {
+    go(`/jogador/${userId}`)
   }
 
   const hasQuery = query.trim().length >= 2
@@ -209,9 +202,8 @@ export function SearchDropdown({ open, onOpen, onClose }: Props) {
                   <button
                     key={p.id}
                     type="button"
-                    disabled={busyPerson === p.id}
-                    onClick={() => void openPerson(p.id)}
-                    className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-white/[0.06] disabled:opacity-50"
+                    onClick={() => openPerson(p.id)}
+                    className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-white/[0.06]"
                   >
                     {p.avatar_url ? (
                       <Image src={p.avatar_url} alt="" width={32} height={32} className="h-8 w-8 shrink-0 rounded-full object-cover" />
@@ -221,7 +213,7 @@ export function SearchDropdown({ open, onOpen, onClose }: Props) {
                       </span>
                     )}
                     <span className="truncate text-sm text-white/85">
-                      {busyPerson === p.id ? 'Abrindo…' : (p.full_name ?? 'Jogador')}
+                      {p.full_name ?? 'Jogador'}
                     </span>
                   </button>
                 ))}
