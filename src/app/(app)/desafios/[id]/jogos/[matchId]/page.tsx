@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { ScoreScreen } from '@/components/score/ScoreScreen'
+import { reopenMatch } from '@/app/(app)/jogos/actions'
 import type { GameScore, ConflictSnapshot } from '@/lib/score-engine/useScoreEngine'
 
 export const metadata = { title: 'Placar' }
@@ -93,16 +94,18 @@ export default async function DesafioScorePage({
 
   // ── canManage ─────────────────────────────────────────────────────────────
   let canManage = false
+  let isOrganizer = false
   if (user) {
     try {
       const { data: ok } = await supabase.rpc('can_manage_championship', {
         _championship_id: matchRaw.championship_id,
       })
       canManage = (ok as boolean) ?? false
+      isOrganizer = canManage
     } catch {
       canManage = false
     }
-    // Também pode gerir se for participante do jogo
+    // Também pode gerir se for participante do jogo (mas NÃO reabrir)
     if (!canManage && (sideAId || sideBId)) {
       const myMembers = (membersRaw ?? []) as Array<{ participant_id: string; user_id: string }>
       const myPid = myMembers.find((m) => m.user_id === user.id)?.participant_id
@@ -110,6 +113,12 @@ export default async function DesafioScorePage({
         canManage = true
       }
     }
+  }
+
+  // Inline server action: captura matchId do escopo externo
+  async function handleReopenMatch() {
+    'use server'
+    return reopenMatch(matchId)
   }
 
   // ── Initial state ─────────────────────────────────────────────────────────
@@ -135,6 +144,7 @@ export default async function DesafioScorePage({
       setDrawEnabled={stage?.set_draw_enabled ?? false}
       timeMinutes={stage?.time_minutes ?? null}
       canManage={canManage}
+      onReopenMatch={isOrganizer ? handleReopenMatch : undefined}
       initialGames={initialGames}
       initialStatus={matchRaw.status}
       initialResult={(matchRaw.result as string | null) ?? null}

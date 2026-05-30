@@ -17,7 +17,8 @@
 import { useState, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw } from 'lucide-react'
 import { useScoreEngine, type GameScore, type ConflictSnapshot, type ScoreEngineConfig } from '@/lib/score-engine/useScoreEngine'
 import { CourtTimer } from '@/lib/score-engine/CourtTimer'
 import { createClient } from '@/utils/supabase/client'
@@ -41,6 +42,8 @@ export type ScoreScreenProps = {
   setDrawEnabled: boolean
   timeMinutes: number | null
   canManage: boolean
+  /** Server Action — reabre partida finalizada (apenas organizers/admins) */
+  onReopenMatch?: () => Promise<{ error: string | null }>
   // SSR initial state
   initialGames: GameScore[]
   initialStatus: string
@@ -320,6 +323,7 @@ export function ScoreScreen({
   setDrawEnabled,
   timeMinutes,
   canManage,
+  onReopenMatch,
   initialGames,
   initialStatus,
   initialResult,
@@ -372,6 +376,28 @@ export function ScoreScreen({
 
   // A partida finaliza AUTOMATICAMENTE quando o placar decide (mais sets vence;
   // empate só quando a fase permite e o resultado dá igual). Sem confirmação manual.
+
+  const router = useRouter()
+  const [reopening, setReopening] = useState(false)
+  const [reopenError, setReopenError] = useState<string | null>(null)
+
+  async function handleReopen() {
+    if (!onReopenMatch || reopening) return
+    setReopening(true)
+    setReopenError(null)
+    try {
+      const res = await onReopenMatch()
+      if (res.error) {
+        setReopenError(res.error)
+        setReopening(false)
+        return
+      }
+      router.refresh()
+    } catch {
+      setReopenError('Não foi possível reabrir a partida.')
+      setReopening(false)
+    }
+  }
 
   // Supabase client
   const [supabase] = useState(() => createClient())
@@ -544,6 +570,33 @@ export function ScoreScreen({
                 ? (sideA.name ?? 'Lado A')
                 : (sideB.name ?? 'Lado B')} venceu
           </p>
+        </div>
+      )}
+
+      {/* ── Reabrir partida (só para organizadores/admins) ── */}
+      {isFinished && onReopenMatch && (
+        <div className="space-y-1.5">
+          <button
+            type="button"
+            disabled={reopening}
+            onClick={() => void handleReopen()}
+            className="w-full flex items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/[0.04] py-3 text-xs font-semibold text-white/50 transition hover:bg-white/[0.08] hover:text-white/75 active:scale-95 disabled:opacity-40"
+          >
+            {reopening ? (
+              <>
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                Reabrindo…
+              </>
+            ) : (
+              <>
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reabrir partida
+              </>
+            )}
+          </button>
+          {reopenError && (
+            <p className="text-[11px] text-red-400/80 text-center">{reopenError}</p>
+          )}
         </div>
       )}
 

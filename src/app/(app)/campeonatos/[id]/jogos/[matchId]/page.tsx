@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { ScoreScreen } from '@/components/score/ScoreScreen'
+import { reopenMatch } from '@/app/(app)/jogos/actions'
 import type { GameScore, ConflictSnapshot } from '@/lib/score-engine/useScoreEngine'
 
 export const metadata = { title: 'Placar' }
@@ -111,16 +112,18 @@ export default async function CampeonatoScorePage({
 
   // ── canManage ─────────────────────────────────────────────────────────────
   let canManage = false
+  let isOrganizer = false
   if (user) {
     try {
       const { data: ok } = await supabase.rpc('can_manage_championship', {
         _championship_id: matchRaw.championship_id,
       })
       canManage = (ok as boolean) ?? false
+      isOrganizer = canManage
     } catch {
       canManage = false
     }
-    // Participante do jogo também pode gerir
+    // Participante do jogo também pode gerir (mas NÃO reabrir)
     if (!canManage) {
       const myPid = ((membersRaw ?? []) as MemberRow[]).find(
         (m) => m.user_id === user.id,
@@ -129,6 +132,12 @@ export default async function CampeonatoScorePage({
         canManage = true
       }
     }
+  }
+
+  // Inline server action: captura matchId do escopo externo
+  async function handleReopenMatch() {
+    'use server'
+    return reopenMatch(matchId)
   }
 
   // ── Initial state ─────────────────────────────────────────────────────────
@@ -154,6 +163,7 @@ export default async function CampeonatoScorePage({
       setDrawEnabled={stage?.set_draw_enabled ?? false}
       timeMinutes={stage?.time_minutes ?? null}
       canManage={canManage}
+      onReopenMatch={isOrganizer ? handleReopenMatch : undefined}
       initialGames={initialGames}
       initialStatus={matchRaw.status}
       initialResult={(matchRaw.result as string | null) ?? null}
