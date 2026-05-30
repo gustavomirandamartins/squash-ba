@@ -122,10 +122,17 @@ function countSets(
     return g ? { a: g.score_a, b: g.score_b } : null
   }
   const P = stage.points_per_set
+  const w2 = stage.win_by_two
   let a = 0, b = 0
   for (const g of games) {
-    if (g.score_a >= P && g.score_a - g.score_b >= 2) a++
-    else if (g.score_b >= P && g.score_b - g.score_a >= 2) b++
+    if (w2) {
+      if (g.score_a >= P && g.score_a - g.score_b >= 2) a++
+      else if (g.score_b >= P && g.score_b - g.score_a >= 2) b++
+    } else {
+      // sem vantagem de 2: vence o set quem chega a P com mais pontos
+      if (g.score_a >= P && g.score_a > g.score_b) a++
+      else if (g.score_b >= P && g.score_b > g.score_a) b++
+    }
   }
   return { a, b }
 }
