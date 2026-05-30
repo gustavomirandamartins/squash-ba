@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Trophy, User, Medal, GitMerge, Layers, Messa
 import { StandingsTable, type Standing } from './StandingsTable'
 import { BracketView } from './BracketView'
 import { GroupsView, type Group } from './GroupsView'
+import { StatsTab } from './StatsTab'
 import { ManageBar } from '@/components/ManageBar'
 
 // ─── Tipos exportados (reutilizados em page.tsx) ──────────────────────────────
@@ -716,9 +717,12 @@ export function ChampionshipDetailClient({
       {/* ── Aba: Estatísticas ── */}
       {activeTab === 'estatisticas' && (
         <div className="reveal">
-          <PlaceholderTab
-            title="Estatísticas"
-            desc="Cards de estatísticas individuais chegam na próxima fase."
+          <StatsTab
+            standings={initialStandings}
+            participantInfo={participantInfo}
+            pointsWin={champ.points_win}
+            pointsDraw={champ.points_draw}
+            pointsLoss={champ.points_loss}
           />
         </div>
       )}

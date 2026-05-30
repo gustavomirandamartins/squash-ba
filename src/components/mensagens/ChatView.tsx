@@ -39,6 +39,25 @@ type Props = {
   currentUserId: string
 }
 
+// ─── Timestamp helper ─────────────────────────────────────────────────────────
+
+/**
+ * Formata a data de uma mensagem de forma legível.
+ * Mensagens com menos de 60 s mostram "agora" em vez de "X segundos".
+ */
+function formatMsgTime(isoString: string): string {
+  try {
+    const diff = Date.now() - new Date(isoString).getTime()
+    if (diff < 60_000) return 'agora'
+    return formatDistanceToNowStrict(parseISO(isoString), {
+      locale: ptBR,
+      addSuffix: false,
+    })
+  } catch {
+    return ''
+  }
+}
+
 // ─── URL detection ────────────────────────────────────────────────────────────
 
 const URL_RE = /(https?:\/\/[^\s]+)/g
@@ -143,16 +162,7 @@ function Bubble({
 
         {/* Timestamp — suppressHydrationWarning: tempo relativo difere entre SSR e cliente */}
         <span className="text-[9px] text-white/20 px-1" suppressHydrationWarning>
-          {(() => {
-            try {
-              return formatDistanceToNowStrict(parseISO(msg.createdAt), {
-                locale: ptBR,
-                addSuffix: false,
-              })
-            } catch {
-              return ''
-            }
-          })()}
+          {formatMsgTime(msg.createdAt)}
         </span>
       </div>
     </div>
@@ -174,6 +184,13 @@ export function ChatView({ conv, initialMessages, currentUserId }: Props) {
   const convName = isGroup
     ? (conv.title ?? 'Grupo')
     : (conv.otherUserName ?? 'Conversa')
+
+  // Ticker: força re-render a cada 30 s para atualizar os timestamps relativos
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000)
+    return () => clearInterval(id)
+  }, [])
 
   // Scroll para o fundo
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {

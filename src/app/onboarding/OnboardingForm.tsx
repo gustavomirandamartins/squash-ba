@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
 import { compressImage } from '@/lib/compress-image'
-import { Camera, User, Calendar, Phone, ChevronDown, Mail } from 'lucide-react'
+import { Camera, User, Calendar, Phone, ChevronDown, Mail, Award, Users } from 'lucide-react'
 import { Logo } from '@/components/Logo'
 
 type Gender = 'masculino' | 'feminino' | 'outro' | 'nao_informado'
@@ -15,6 +15,9 @@ interface Props {
   userId: string
   email: string
 }
+
+interface Category { id: string; name: string }
+interface Team     { id: string; name: string }
 
 const GENDER_OPTIONS: { value: Gender; label: string }[] = [
   { value: 'masculino', label: 'Masculino' },
@@ -44,12 +47,28 @@ export function OnboardingForm({ userId, email }: Props) {
   const [birthDate, setBirthDate] = useState('')
   const [gender, setGender] = useState<Gender>('nao_informado')
   const [phone, setPhone] = useState('')
+  const [categoryId, setCategoryId] = useState<string>('')
+  const [teamId, setTeamId] = useState<string>('')
+  const [categories, setCategories] = useState<Category[]>([])
+  const [teams, setTeams] = useState<Team[]>([])
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [compressing, setCompressing] = useState(false)
   const [consent, setConsent] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Carrega categorias e times
+  useEffect(() => {
+    const supabase = createClient()
+    Promise.all([
+      supabase.from('categories').select('id, name').order('name'),
+      supabase.from('teams').select('id, name').order('name'),
+    ]).then(([catRes, teamRes]) => {
+      if (catRes.data)  setCategories(catRes.data as Category[])
+      if (teamRes.data) setTeams(teamRes.data as Team[])
+    }).catch(() => { /* campos opcionais — falha silenciosa */ })
+  }, [])
 
   const canSubmit = fullName.trim().length > 0 && consent && !saving && !compressing
 
@@ -103,7 +122,9 @@ export function OnboardingForm({ userId, email }: Props) {
           full_name: fullName.trim(),
           birth_date: birthDate || null,
           gender,
-          ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
+          ...(avatarUrl     ? { avatar_url:   avatarUrl }       : {}),
+          ...(categoryId    ? { category_id:  categoryId }      : { category_id: null }),
+          ...(teamId        ? { team_id:      teamId }          : { team_id: null }),
           onboarding_completed: true,
         })
         .eq('id', userId)
@@ -281,6 +302,56 @@ export function OnboardingForm({ userId, email }: Props) {
               </select>
             </div>
           </div>
+
+          {/* Categoria */}
+          {categories.length > 0 && (
+            <div>
+              <label htmlFor="ob-categoria" className={LABEL_CLS}>
+                Categoria <span className="text-white/20 normal-case tracking-normal font-normal">(opcional)</span>
+              </label>
+              <div className="relative">
+                <Award className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+                <select
+                  id="ob-categoria"
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                  className="w-full appearance-none rounded-2xl border border-white/10 bg-white/5 py-3.5 pl-11 pr-11 text-sm text-white/80 outline-none transition focus:border-secondary/50 focus:bg-white/8"
+                  style={{ colorScheme: 'dark' }}
+                >
+                  <option value="" className="bg-[#1d2b45]">Selecionar categoria…</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id} className="bg-[#1d2b45]">{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Time */}
+          {teams.length > 0 && (
+            <div>
+              <label htmlFor="ob-time" className={LABEL_CLS}>
+                Time <span className="text-white/20 normal-case tracking-normal font-normal">(opcional)</span>
+              </label>
+              <div className="relative">
+                <Users className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+                <select
+                  id="ob-time"
+                  value={teamId}
+                  onChange={(e) => setTeamId(e.target.value)}
+                  className="w-full appearance-none rounded-2xl border border-white/10 bg-white/5 py-3.5 pl-11 pr-11 text-sm text-white/80 outline-none transition focus:border-secondary/50 focus:bg-white/8"
+                  style={{ colorScheme: 'dark' }}
+                >
+                  <option value="" className="bg-[#1d2b45]">Selecionar time…</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id} className="bg-[#1d2b45]">{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
 
           {/* Telefone */}
           <div>

@@ -4,19 +4,20 @@
  * ScoreScreen — tela de placar offline-first.
  *
  * Suporta:
- *   - counting='sets'   → placar por sets (toque incrementa/decrementa)
+ *   - counting='set'    → placar por sets (toque incrementa/decrementa)
  *   - counting='tempo'  → cronômetro + placar numérico lado a lado
  *   - counting='pontos' → placar contínuo por pontos
  *
  * Extras:
  *   - Badge offline (amarelo) com contagem de ações pendentes
  *   - Banner de conflito (âmbar) com resolução local/servidor
+ *   - Botão "Finalizar partida" para encerramento manual com resultado explícito
  */
 
 import { useState, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus } from 'lucide-react'
+import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, Flag } from 'lucide-react'
 import { useScoreEngine, type GameScore, type ConflictSnapshot, type ScoreEngineConfig } from '@/lib/score-engine/useScoreEngine'
 import { CourtTimer } from '@/lib/score-engine/CourtTimer'
 import { createClient } from '@/utils/supabase/client'
@@ -305,6 +306,80 @@ function TapZone({
   )
 }
 
+// ─── FinalizeDialog ───────────────────────────────────────────────────────────
+
+function FinalizeDialog({
+  sideA,
+  sideB,
+  onConfirm,
+  onCancel,
+  busy,
+}: {
+  sideA: SideInfo
+  sideB: SideInfo
+  onConfirm: (result: 'lado_a' | 'lado_b' | 'empate') => void
+  onCancel: () => void
+  busy: boolean
+}) {
+  const [chosen, setChosen] = useState<'lado_a' | 'lado_b' | 'empate' | null>(null)
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md glass glass-card p-5 space-y-4 rounded-3xl">
+        <p className="text-sm font-bold text-white text-center">Finalizar partida</p>
+        <p className="text-xs text-white/50 text-center leading-relaxed">
+          Selecione o resultado. Confirmar encerrará a partida e atualizará a classificação.
+        </p>
+
+        <div className="space-y-2">
+          {[
+            { value: 'lado_a' as const, label: sideA.name ?? 'Lado A' },
+            { value: 'lado_b' as const, label: sideB.name ?? 'Lado B' },
+            { value: 'empate' as const, label: 'Empate' },
+          ].map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setChosen(opt.value)}
+              className={[
+                'w-full rounded-2xl px-4 py-3 text-sm font-semibold text-left transition',
+                chosen === opt.value
+                  ? 'bg-secondary text-primary'
+                  : 'bg-white/8 text-white/70 hover:bg-white/12',
+              ].join(' ')}
+            >
+              {opt.label} vence
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-3 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="flex-1 rounded-2xl bg-white/8 py-2.5 text-sm font-semibold text-white/60 transition active:scale-95 disabled:opacity-40"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => chosen && onConfirm(chosen)}
+            disabled={!chosen || busy}
+            className="flex-1 rounded-2xl bg-secondary py-2.5 text-sm font-bold text-primary transition active:scale-95 disabled:opacity-40"
+          >
+            {busy ? (
+              <span className="flex items-center justify-center gap-1.5">
+                <span className="h-3.5 w-3.5 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+                Salvando…
+              </span>
+            ) : 'Confirmar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── ScoreScreen ──────────────────────────────────────────────────────────────
 
 export function ScoreScreen({
@@ -354,7 +429,9 @@ export function ScoreScreen({
     resolveConflict,
   } = engine
 
-  const isTempo  = counting === 'tempo'
+  const isTempo   = counting === 'tempo'
+  // 'set' (singular) é o valor persistido no banco; aceita também 'sets' para compatibilidade
+  const isSets    = counting === 'set' || counting === 'sets'
   const isFinished = status === 'finalizado'
   const editable = canManage && !isFinished && !hasConflict
 
@@ -367,8 +444,36 @@ export function ScoreScreen({
   const winnerA = result === 'lado_a'
   const winnerB = result === 'lado_b'
 
-  // Salva duration_seconds no Supabase ao encerrar cronômetro
+  // Finalização manual
+  const [showFinalizeDialog, setShowFinalizeDialog] = useState(false)
+  const [finalizing, setFinalizing] = useState(false)
+
+  // Supabase client
   const [supabase] = useState(() => createClient())
+
+  const handleFinalize = useCallback(
+    async (chosenResult: 'lado_a' | 'lado_b' | 'empate') => {
+      setFinalizing(true)
+      try {
+        // Garante que a fila offline está sincronizada antes de finalizar
+        await engine.finalize()
+        // Encerra a partida com o resultado explícito
+        const { error } = await supabase.rpc('finalize_match_manual', {
+          _match_id: matchId,
+          _result: chosenResult,
+        })
+        if (error) throw error
+        setShowFinalizeDialog(false)
+      } catch (e) {
+        console.error('Erro ao finalizar partida:', e)
+      } finally {
+        setFinalizing(false)
+      }
+    },
+    [supabase, matchId, engine],
+  )
+
+  // Salva duration_seconds no Supabase ao encerrar cronômetro
   const handleTimerStop = useCallback(
     async (seconds: number) => {
       await supabase.from('matches').update({ duration_seconds: seconds }).eq('id', matchId)
@@ -510,14 +615,14 @@ export function ScoreScreen({
             </div>
           )}
 
-          {/* Avançar set */}
-          {editable && counting === 'sets' && games.length < setsToPlay && (
+          {/* Avançar set — corrigido: 'set' (sem 's') é o valor do banco */}
+          {editable && isSets && games.length > 0 && games.length < setsToPlay && (
             <button
               type="button"
               onClick={() => void advanceGame()}
               className="w-full glass glass-card py-3 text-xs font-semibold text-white/40 hover:text-white/70 transition text-center rounded-2xl"
             >
-              + Próximo set
+              ↓ Encerrar set e avançar
             </button>
           )}
         </div>
@@ -539,9 +644,32 @@ export function ScoreScreen({
         </div>
       )}
 
+      {/* ── Finalizar partida (encerramento manual) ── */}
+      {editable && !hasConflict && (
+        <button
+          type="button"
+          onClick={() => setShowFinalizeDialog(true)}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-white/10 bg-white/[0.04] text-xs font-semibold text-white/40 hover:text-white/65 hover:border-white/20 transition"
+        >
+          <Flag className="h-3.5 w-3.5" />
+          Finalizar partida
+        </button>
+      )}
+
       {/* ── Error ── */}
       {engine.error && (
         <p className="text-xs text-red-400/80 text-center">{engine.error}</p>
+      )}
+
+      {/* ── FinalizeDialog ── */}
+      {showFinalizeDialog && (
+        <FinalizeDialog
+          sideA={sideA}
+          sideB={sideB}
+          onConfirm={(res) => void handleFinalize(res)}
+          onCancel={() => setShowFinalizeDialog(false)}
+          busy={finalizing}
+        />
       )}
     </div>
   )
