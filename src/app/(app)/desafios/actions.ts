@@ -130,3 +130,105 @@ export async function createDesafio1v1(
 
   return { id: champId }
 }
+
+// ─── Criar Desafio de Duplas (2v2) ────────────────────────────────────────────
+// "Organizador monta tudo": escolhe parceiro + dupla adversária. Sem convite —
+// ambas as duplas entram confirmadas e o desafio ativa imediatamente.
+
+export async function createDesafioDuplas(
+  config: ChallengeConfig,
+  partnerId: string,
+  opponentIds: [string, string],
+): Promise<{ id: string } | { error: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) return { error: 'Usuário não autenticado.' }
+
+  const teamA = [user.id, partnerId]
+  const teamB = opponentIds
+  const all = [...teamA, ...teamB]
+  if (new Set(all).size !== 4) {
+    return { error: 'Selecione 4 jogadores distintos (você, seu parceiro e a dupla adversária).' }
+  }
+
+  const allowDraw = config.counting === 'tempo' || config.setDrawEnabled
+
+  // 1. Championship (desafio, unit='pair') em rascunho
+  const { data: champ, error: champErr } = await supabase
+    .from('championships')
+    .insert({
+      name: config.name.trim(),
+      format: 'desafio',
+      unit: 'pair',
+      status: 'rascunho',
+      allow_draw: allowDraw,
+      points_win: config.pointsWin,
+      points_draw: allowDraw ? config.pointsDraw : 0,
+      points_loss: config.pointsLoss,
+      tiebreakers: config.tiebreakers,
+      created_by: user.id,
+    })
+    .select('id')
+    .single()
+
+  if (champErr || !champ) return { error: champErr?.message ?? 'Erro ao criar desafio.' }
+  const champId = champ.id
+
+  const cleanup = async (msg: string) => {
+    await supabase.from('championships').delete().eq('id', champId)
+    return { error: msg }
+  }
+
+  // 2. Fase única
+  const { error: stageErr } = await supabase.from('championship_stages').insert({
+    championship_id: champId,
+    name: 'Fase única',
+    ordering: 1,
+    kind: 'liga',
+    counting: config.counting,
+    rounds: config.rounds,
+    sets_to_play: config.setsToPlay,
+    points_per_set: config.pointsPerSet,
+    win_by_two: config.winByTwo,
+    set_draw_enabled: config.setDrawEnabled,
+    time_minutes: config.timeMinutes,
+  })
+  if (stageErr) return cleanup(stageErr.message)
+
+  // 3. Cria as duas duplas (participants kind='pair', confirmadas) + membros
+  async function createPair(memberIds: string[]): Promise<string | null> {
+    const { data: part, error: partErr } = await supabase
+      .from('participants')
+      .insert({
+        championship_id: champId,
+        kind: 'pair',
+        enrollment_source: 'organizador',
+        enrollment_status: 'confirmado',
+      })
+      .select('id')
+      .single()
+    if (partErr || !part) return null
+    const { error: memErr } = await supabase
+      .from('participant_members')
+      .insert(memberIds.map((uid) => ({ participant_id: part.id, user_id: uid })))
+    if (memErr) return null
+    return part.id
+  }
+
+  const pairA = await createPair(teamA)
+  if (!pairA) return cleanup('Erro ao criar a sua dupla.')
+  const pairB = await createPair(teamB)
+  if (!pairB) return cleanup('Erro ao criar a dupla adversária.')
+
+  // 4. Ativa → trigger gera o round-robin (rounds partidas entre as duas duplas)
+  const { error: activateErr } = await supabase
+    .from('championships')
+    .update({ status: 'ativo' })
+    .eq('id', champId)
+  if (activateErr) return cleanup(activateErr.message)
+
+  return { id: champId }
+}

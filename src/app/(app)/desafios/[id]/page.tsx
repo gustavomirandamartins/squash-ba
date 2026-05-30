@@ -58,12 +58,17 @@ export default async function DesafioPage({
     const memberIds = (p.participant_members ?? []).map(
       (m: { user_id: string }) => m.user_id,
     )
+    // Junta os nomes dos membros (duplas → "Fulano / Beltrano")
+    const names = memberIds
+      .map((uid: string) => profileMap.get(uid)?.full_name)
+      .filter(Boolean) as string[]
     const firstProfile = memberIds.length ? profileMap.get(memberIds[0]) : undefined
     return {
       id: p.id,
       enrollment_status: p.enrollment_status,
-      full_name: firstProfile?.full_name ?? null,
-      avatar_url: firstProfile?.avatar_url ?? null,
+      full_name: names.length ? names.join(' / ') : null,
+      // avatar só quando individual (1 membro)
+      avatar_url: memberIds.length === 1 ? (firstProfile?.avatar_url ?? null) : null,
     }
   })
 

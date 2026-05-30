@@ -17,11 +17,11 @@ import {
   Users,
   User,
 } from 'lucide-react'
-import { createDesafio1v1, type ChallengeConfig } from '@/app/(app)/desafios/actions'
+import { createDesafio1v1, createDesafioDuplas, type ChallengeConfig } from '@/app/(app)/desafios/actions'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ChallengeType = '1v1' | 'teams'
+type ChallengeType = '1v1' | 'duplas' | 'teams'
 
 interface Profile {
   id: string
@@ -32,6 +32,10 @@ interface Profile {
 interface WizardState extends ChallengeConfig {
   type: ChallengeType | null
   opponent: Profile | null
+  // Duplas (2v2)
+  partner: Profile | null
+  opp1: Profile | null
+  opp2: Profile | null
 }
 
 type Patch = Partial<WizardState>
@@ -59,6 +63,9 @@ const DEFAULT: WizardState = {
   pointsLoss: 0,
   tiebreakers: ['sets_ganhos', 'pontos_ganhos', 'pontos_sofridos_asc'],
   opponent: null,
+  partner: null,
+  opp1: null,
+  opp2: null,
 }
 
 const STEP_TITLES = ['Tipo de desafio', 'Configuração', 'Revisão']
@@ -169,6 +176,23 @@ function Step1({ onSelect }: { onSelect: (type: ChallengeType) => void }) {
 
       <button
         type="button"
+        onClick={() => onSelect('duplas')}
+        className="glass glass-card w-full flex items-start gap-4 px-5 py-5 text-left transition active:scale-[0.97] hover:border-secondary/30"
+      >
+        <div className="h-11 w-11 rounded-2xl bg-secondary/15 grid place-items-center shrink-0">
+          <Users className="h-5 w-5 text-secondary" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-base font-bold text-white">Desafio de Duplas</p>
+          <p className="text-sm text-white/45 mt-0.5 leading-snug">
+            2 vs 2. Você monta as duas duplas (você + parceiro vs dupla adversária).
+          </p>
+        </div>
+        <ChevronRight className="h-5 w-5 text-white/25 shrink-0 mt-0.5" />
+      </button>
+
+      <button
+        type="button"
         onClick={() => onSelect('teams')}
         className="glass glass-card w-full flex items-start gap-4 px-5 py-5 text-left transition active:scale-[0.97] hover:border-secondary/30 opacity-60"
       >
@@ -190,42 +214,10 @@ function Step1({ onSelect }: { onSelect: (type: ChallengeType) => void }) {
   )
 }
 
-// ─── Step 2: Configuração 1v1 ─────────────────────────────────────────────────
+// ─── ConfigFields (compartilhado: nome, partidas, contagem, pontuação, desempate) ─
 
-function Step2_1v1({
-  state,
-  onChange,
-  currentUserId,
-}: {
-  state: WizardState
-  onChange: (p: Patch) => void
-  currentUserId: string
-}) {
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<Profile[]>([])
-  const [searching, setSearching] = useState(false)
+function ConfigFields({ state, onChange }: { state: WizardState; onChange: (p: Patch) => void }) {
   const allowDraw = state.counting === 'tempo' || state.setDrawEnabled
-
-  // Debounced opponent search
-  useEffect(() => {
-    const t = setTimeout(async () => {
-      if (!query.trim() || query.trim().length < 2) {
-        setResults([])
-        return
-      }
-      setSearching(true)
-      const { data } = await createClient()
-        .from('profiles')
-        .select('id, full_name, avatar_url')
-        .ilike('full_name', `%${query.trim()}%`)
-        .neq('id', currentUserId)
-        .order('full_name')
-        .limit(10)
-      setResults(data ?? [])
-      setSearching(false)
-    }, 300)
-    return () => clearTimeout(t)
-  }, [query, currentUserId])
 
   function moveTiebreaker(idx: number, dir: -1 | 1) {
     const arr = [...state.tiebreakers]
@@ -246,7 +238,7 @@ function Step2_1v1({
           autoFocus
           value={state.name}
           onChange={(e) => onChange({ name: e.target.value })}
-          placeholder="Ex.: Desafio Gustavo × Pedro"
+          placeholder="Ex.: Desafio de sábado"
           className="w-full bg-transparent text-sm text-white placeholder-white/30 outline-none"
         />
       </div>
@@ -383,81 +375,183 @@ function Step2_1v1({
           </div>
         ))}
       </div>
+    </div>
+  )
+}
 
-      {/* Oponente */}
-      <div className="space-y-3">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40 px-1">
-          Oponente
-        </p>
+// ─── PlayerSearchPicker (seleciona 1 jogador, com exclusões) ───────────────────
 
-        {state.opponent ? (
-          <div className="glass glass-card flex items-center gap-3 px-4 py-3">
-            <PlayerAvatar profile={state.opponent} size={36} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-white truncate">
-                {state.opponent.full_name ?? 'Sem nome'}
-              </p>
-              <p className="text-xs text-secondary/70">Oponente selecionado</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onChange({ opponent: null })}
-              className="h-7 w-7 grid place-items-center rounded-full text-white/30 hover:bg-white/8 hover:text-red-400 transition"
-            >
-              <X className="h-4 w-4" />
-            </button>
+function PlayerSearchPicker({
+  label,
+  selected,
+  onSelect,
+  onClear,
+  excludeIds,
+}: {
+  label: string
+  selected: Profile | null
+  onSelect: (p: Profile) => void
+  onClear: () => void
+  excludeIds: string[]
+}) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<Profile[]>([])
+  const [searching, setSearching] = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      if (query.trim().length < 2) { setResults([]); return }
+      setSearching(true)
+      const { data } = await createClient()
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .ilike('full_name', `%${query.trim()}%`)
+        .order('full_name')
+        .limit(10)
+      setResults((data ?? []) as Profile[])
+      setSearching(false)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const filtered = results.filter((p) => !excludeIds.includes(p.id))
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40 px-1">{label}</p>
+      {selected ? (
+        <div className="glass glass-card flex items-center gap-3 px-4 py-3">
+          <PlayerAvatar profile={selected} size={36} />
+          <span className="flex-1 min-w-0 truncate text-sm font-semibold text-white">
+            {selected.full_name ?? 'Sem nome'}
+          </span>
+          <button
+            type="button"
+            onClick={onClear}
+            className="h-7 w-7 grid place-items-center rounded-full text-white/30 hover:bg-white/8 hover:text-red-400 transition"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="glass glass-card flex items-center gap-2 px-3.5 py-2.5">
+            <Search className="h-4 w-4 shrink-0 text-white/40" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar jogador por nome…"
+              className="flex-1 bg-transparent text-sm text-white placeholder-white/30 outline-none"
+            />
+            {query && (
+              <button type="button" onClick={() => setQuery('')}>
+                <X className="h-4 w-4 text-white/40" />
+              </button>
+            )}
           </div>
-        ) : (
-          <>
-            <div className="glass glass-card flex items-center gap-2 px-3.5 py-2.5">
-              <Search className="h-4 w-4 shrink-0 text-white/40" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscar jogador por nome…"
-                className="flex-1 bg-transparent text-sm text-white placeholder-white/30 outline-none"
-              />
-              {query && (
-                <button type="button" onClick={() => setQuery('')}>
-                  <X className="h-4 w-4 text-white/40" />
+          {searching && <p className="text-center text-xs text-white/35 py-2">Buscando…</p>}
+          {!searching && query.trim().length >= 2 && filtered.length === 0 && (
+            <p className="text-center text-xs text-white/35 py-2">Nenhum jogador disponível.</p>
+          )}
+          {!searching && filtered.length > 0 && (
+            <div className="space-y-1.5">
+              {filtered.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => { onSelect(p); setQuery(''); setResults([]) }}
+                  className="glass glass-card w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition active:scale-[0.98]"
+                >
+                  <PlayerAvatar profile={p} size={32} />
+                  <span className="flex-1 text-sm text-white/85">{p.full_name ?? 'Sem nome'}</span>
+                  <span className="text-xs font-semibold text-secondary/80">Escolher</span>
                 </button>
-              )}
+              ))}
             </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
 
-            {searching && (
-              <p className="text-center text-xs text-white/35 py-3">Buscando…</p>
-            )}
+// ─── Step 2: Configuração 1v1 ─────────────────────────────────────────────────
 
-            {!searching && query.trim().length >= 2 && results.length === 0 && (
-              <p className="text-center text-xs text-white/35 py-3">
-                Nenhum jogador encontrado para &ldquo;{query}&rdquo;.
-              </p>
-            )}
+function Step2_1v1({
+  state,
+  onChange,
+  currentUserId,
+}: {
+  state: WizardState
+  onChange: (p: Patch) => void
+  currentUserId: string
+}) {
+  return (
+    <div className="space-y-4">
+      <ConfigFields state={state} onChange={onChange} />
+      <PlayerSearchPicker
+        label="Oponente"
+        selected={state.opponent}
+        onSelect={(p) => onChange({ opponent: p })}
+        onClear={() => onChange({ opponent: null })}
+        excludeIds={[currentUserId]}
+      />
+    </div>
+  )
+}
 
-            {!searching && results.length > 0 && (
-              <div className="space-y-1.5">
-                {results.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => { onChange({ opponent: p }); setQuery(''); setResults([]) }}
-                    className="glass glass-card w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition active:scale-[0.98]"
-                  >
-                    <PlayerAvatar profile={p} size={32} />
-                    <span className="flex-1 text-sm text-white/85">{p.full_name ?? 'Sem nome'}</span>
-                    <span className="text-xs font-semibold text-secondary/80">Desafiar</span>
-                  </button>
-                ))}
-              </div>
-            )}
+// ─── Step 2: Configuração Duplas (2v2) ────────────────────────────────────────
 
-            {!query.trim() && (
-              <p className="text-center text-xs text-white/25 py-2">
-                Digite pelo menos 2 letras para buscar.
-              </p>
-            )}
-          </>
-        )}
+function Step2_Duplas({
+  state,
+  onChange,
+  currentUserId,
+}: {
+  state: WizardState
+  onChange: (p: Patch) => void
+  currentUserId: string
+}) {
+  const partnerId = state.partner?.id
+  const opp1Id = state.opp1?.id
+  const opp2Id = state.opp2?.id
+  const baseExclude = [currentUserId, partnerId, opp1Id, opp2Id].filter(Boolean) as string[]
+
+  return (
+    <div className="space-y-4">
+      <ConfigFields state={state} onChange={onChange} />
+
+      <div className="glass glass-card px-4 py-3 text-xs text-white/45 leading-relaxed">
+        Você monta as duas duplas. <span className="text-white/70">Sua dupla</span> = você + parceiro.
+        A dupla adversária recebe os dois jogadores que você escolher. Todos entram confirmados.
+      </div>
+
+      <div className="space-y-1">
+        <p className="px-1 text-[11px] font-bold uppercase tracking-widest text-secondary/70">Sua dupla</p>
+        <PlayerSearchPicker
+          label="Seu parceiro"
+          selected={state.partner}
+          onSelect={(p) => onChange({ partner: p })}
+          onClear={() => onChange({ partner: null })}
+          excludeIds={baseExclude}
+        />
+      </div>
+
+      <div className="space-y-3">
+        <p className="px-1 text-[11px] font-bold uppercase tracking-widest text-white/50">Dupla adversária</p>
+        <PlayerSearchPicker
+          label="Jogador 1"
+          selected={state.opp1}
+          onSelect={(p) => onChange({ opp1: p })}
+          onClear={() => onChange({ opp1: null })}
+          excludeIds={baseExclude}
+        />
+        <PlayerSearchPicker
+          label="Jogador 2"
+          selected={state.opp2}
+          onSelect={(p) => onChange({ opp2: p })}
+          onClear={() => onChange({ opp2: null })}
+          excludeIds={baseExclude}
+        />
       </div>
     </div>
   )
@@ -497,7 +591,7 @@ function Step3({
           Resumo do desafio
         </p>
         <SummaryRow label="Nome" value={state.name} />
-        <SummaryRow label="Tipo" value="Desafio 1v1" />
+        <SummaryRow label="Tipo" value={state.type === 'duplas' ? 'Desafio de duplas (2v2)' : 'Desafio 1v1'} />
         <div className="h-px bg-white/8" />
         <SummaryRow label="Partidas" value={`${state.rounds} ${state.rounds === 1 ? 'partida' : 'partidas'}`} />
         <SummaryRow label="Contagem" value={countingDesc} />
@@ -506,7 +600,7 @@ function Step3({
           value={`V ${state.pointsWin} · ${allowDraw ? `E ${state.pointsDraw} · ` : ''}D ${state.pointsLoss}`}
         />
         <div className="h-px bg-white/8" />
-        {state.opponent && (
+        {state.type === '1v1' && state.opponent && (
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs text-white/40 shrink-0">Oponente</span>
             <div className="flex items-center gap-2">
@@ -517,6 +611,18 @@ function Step3({
             </div>
           </div>
         )}
+        {state.type === 'duplas' && (
+          <div className="space-y-1.5">
+            <SummaryRow
+              label="Sua dupla"
+              value={`Você + ${state.partner?.full_name ?? '?'}`}
+            />
+            <SummaryRow
+              label="Adversários"
+              value={`${state.opp1?.full_name ?? '?'} + ${state.opp2?.full_name ?? '?'}`}
+            />
+          </div>
+        )}
       </div>
 
       <div className="glass glass-card px-4 py-3.5 flex items-start gap-3">
@@ -524,7 +630,9 @@ function Step3({
           <span className="text-[10px] font-bold text-secondary">!</span>
         </div>
         <p className="text-xs text-white/50 leading-relaxed">
-          O oponente receberá um convite. O desafio só começa após a aceitação.
+          {state.type === 'duplas'
+            ? 'As duas duplas já entram confirmadas e o desafio começa imediatamente.'
+            : 'O oponente receberá um convite. O desafio só começa após a aceitação.'}
         </p>
       </div>
 
@@ -548,6 +656,7 @@ function canAdvance(step: number, s: WizardState): boolean {
     if (!s.name.trim()) return false
     if (s.counting === 'tempo' && !s.timeMinutes) return false
     if (s.type === '1v1') return s.opponent !== null
+    if (s.type === 'duplas') return !!(s.partner && s.opp1 && s.opp2)
     return true // teams stub
   }
   return true
@@ -587,27 +696,32 @@ export function ChallengeWizard({ currentUserId }: Props) {
 
   function handleSubmit() {
     setError(null)
+    const cfg: ChallengeConfig = {
+      name: state.name,
+      rounds: state.rounds,
+      counting: state.counting,
+      setsToPlay: state.setsToPlay,
+      pointsPerSet: state.pointsPerSet,
+      winByTwo: state.winByTwo,
+      setDrawEnabled: state.setDrawEnabled,
+      timeMinutes: state.timeMinutes,
+      pointsWin: state.pointsWin,
+      pointsDraw: state.pointsDraw,
+      pointsLoss: state.pointsLoss,
+      tiebreakers: state.tiebreakers,
+    }
     startTransition(async () => {
       try {
         if (state.type === '1v1') {
           if (!state.opponent) { setError('Selecione um oponente.'); return }
-          const result = await createDesafio1v1(
-            {
-              name: state.name,
-              rounds: state.rounds,
-              counting: state.counting,
-              setsToPlay: state.setsToPlay,
-              pointsPerSet: state.pointsPerSet,
-              winByTwo: state.winByTwo,
-              setDrawEnabled: state.setDrawEnabled,
-              timeMinutes: state.timeMinutes,
-              pointsWin: state.pointsWin,
-              pointsDraw: state.pointsDraw,
-              pointsLoss: state.pointsLoss,
-              tiebreakers: state.tiebreakers,
-            },
-            state.opponent.id,
-          )
+          const result = await createDesafio1v1(cfg, state.opponent.id)
+          if ('error' in result) { setError(result.error); return }
+          router.push(`/desafios/${result.id}`)
+        } else if (state.type === 'duplas') {
+          if (!state.partner || !state.opp1 || !state.opp2) {
+            setError('Selecione seu parceiro e a dupla adversária.'); return
+          }
+          const result = await createDesafioDuplas(cfg, state.partner.id, [state.opp1.id, state.opp2.id])
           if ('error' in result) { setError(result.error); return }
           router.push(`/desafios/${result.id}`)
         }
@@ -661,6 +775,9 @@ export function ChallengeWizard({ currentUserId }: Props) {
         {step === 1 && <Step1 onSelect={handleTypeSelect} />}
         {step === 2 && state.type === '1v1' && (
           <Step2_1v1 state={state} onChange={onChange} currentUserId={currentUserId} />
+        )}
+        {step === 2 && state.type === 'duplas' && (
+          <Step2_Duplas state={state} onChange={onChange} currentUserId={currentUserId} />
         )}
         {step === 3 && (
           <Step3 state={state} onSubmit={handleSubmit} isPending={isPending} error={error} />
