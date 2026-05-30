@@ -37,26 +37,22 @@ export function EditChampionshipForm({ champ, stage }: Props) {
     if (!name.trim()) { setError('Informe um nome.'); return }
     setError(null)
     startTransition(async () => {
-      try {
-        await updateChampionshipSettings({
-          id: champ.id,
-          name,
-          draft,
-          ...(draft && {
-            pointsWin,
-            pointsDraw: champ.allow_draw ? pointsDraw : 0,
-            pointsLoss,
-            stageId: stage?.id ?? null,
-            setsToPlay,
-            pointsPerSet,
-            winByTwo,
-          }),
-        })
-        router.push(`/campeonatos/${champ.id}`)
-        router.refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Falha ao salvar.')
-      }
+      const result = await updateChampionshipSettings({
+        id: champ.id,
+        name,
+        draft,
+        ...(draft && {
+          pointsWin,
+          pointsDraw: champ.allow_draw ? pointsDraw : 0,
+          pointsLoss,
+          stageId: stage?.id ?? null,
+          setsToPlay,
+          pointsPerSet,
+          winByTwo,
+        }),
+      })
+      if (result.error) { setError(result.error); return }
+      router.push(`/campeonatos/${champ.id}`)
     })
   }
 

@@ -25,18 +25,14 @@ export function EditChallengeForm({ challenge, stageId, rounds: initialRounds }:
     if (!name.trim()) { setError('Informe um nome.'); return }
     setError(null)
     startTransition(async () => {
-      try {
-        await updateChallengeSettings({
-          id: challenge.id,
-          name,
-          draft,
-          ...(draft && { stageId, rounds }),
-        })
-        router.push(`/desafios/${challenge.id}`)
-        router.refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Falha ao salvar.')
-      }
+      const result = await updateChallengeSettings({
+        id: challenge.id,
+        name,
+        draft,
+        ...(draft && { stageId, rounds }),
+      })
+      if (result.error) { setError(result.error); return }
+      router.push(`/desafios/${challenge.id}`)
     })
   }
 

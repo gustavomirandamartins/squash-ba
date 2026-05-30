@@ -23,13 +23,12 @@ export function ManageBar({ id, basePath, listPath }: Props) {
   function handleDelete() {
     setError(null)
     startTransition(async () => {
-      try {
-        await deleteChampionship(id)
-        router.push(listPath)
-        router.refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Falha ao excluir.')
+      const result = await deleteChampionship(id)
+      if (result.error) {
+        setError(result.error)
+        return
       }
+      router.push(listPath)
     })
   }
 

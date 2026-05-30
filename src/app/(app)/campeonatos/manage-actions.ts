@@ -5,13 +5,17 @@ import { createClient } from '@/utils/supabase/server'
 
 // Exclusão (campeonato OU desafio — ambos são linhas de championships).
 // RLS championships_delete = can_manage_championship(id). Filhos têm ON DELETE CASCADE.
-export async function deleteChampionship(id: string) {
+// Retorna { error } em vez de lançar exception: em produção, Server Actions que
+// lançam exceções caem no error boundary do Next.js (mensagem genérica), não no
+// try/catch do componente chamador.
+export async function deleteChampionship(id: string): Promise<{ error: string | null }> {
   const supabase = await createClient()
   const { error } = await supabase.from('championships').delete().eq('id', id)
-  if (error) throw new Error(error.message)
+  if (error) return { error: error.message }
   revalidatePath('/campeonatos')
   revalidatePath('/jogos')
   revalidatePath('/')
+  return { error: null }
 }
 
 // Edição de campeonato. Renome sempre permitido; demais configurações só em rascunho
@@ -29,7 +33,7 @@ export type ChampSettingsPayload = {
   winByTwo?: boolean
 }
 
-export async function updateChampionshipSettings(p: ChampSettingsPayload) {
+export async function updateChampionshipSettings(p: ChampSettingsPayload): Promise<{ error: string | null }> {
   const supabase = await createClient()
 
   const champUpdate: Record<string, unknown> = { name: p.name.trim() }
@@ -39,7 +43,7 @@ export async function updateChampionshipSettings(p: ChampSettingsPayload) {
     if (p.pointsLoss != null) champUpdate.points_loss = p.pointsLoss
   }
   const { error: e1 } = await supabase.from('championships').update(champUpdate).eq('id', p.id)
-  if (e1) throw new Error(e1.message)
+  if (e1) return { error: e1.message }
 
   if (p.draft && p.stageId) {
     const stageUpdate: Record<string, unknown> = {}
@@ -48,12 +52,13 @@ export async function updateChampionshipSettings(p: ChampSettingsPayload) {
     if (p.winByTwo != null) stageUpdate.win_by_two = p.winByTwo
     if (Object.keys(stageUpdate).length) {
       const { error: e2 } = await supabase.from('championship_stages').update(stageUpdate).eq('id', p.stageId)
-      if (e2) throw new Error(e2.message)
+      if (e2) return { error: e2.message }
     }
   }
 
   revalidatePath(`/campeonatos/${p.id}`)
   revalidatePath('/')
+  return { error: null }
 }
 
 // Edição de desafio. Renome sempre; nº de partidas só em rascunho (antes do aceite/geração).
@@ -65,17 +70,18 @@ export type ChallengeSettingsPayload = {
   rounds?: number
 }
 
-export async function updateChallengeSettings(p: ChallengeSettingsPayload) {
+export async function updateChallengeSettings(p: ChallengeSettingsPayload): Promise<{ error: string | null }> {
   const supabase = await createClient()
 
   const { error: e1 } = await supabase.from('championships').update({ name: p.name.trim() }).eq('id', p.id)
-  if (e1) throw new Error(e1.message)
+  if (e1) return { error: e1.message }
 
   if (p.draft && p.stageId && p.rounds != null) {
     const { error: e2 } = await supabase.from('championship_stages').update({ rounds: p.rounds }).eq('id', p.stageId)
-    if (e2) throw new Error(e2.message)
+    if (e2) return { error: e2.message }
   }
 
   revalidatePath(`/desafios/${p.id}`)
   revalidatePath('/')
+  return { error: null }
 }
