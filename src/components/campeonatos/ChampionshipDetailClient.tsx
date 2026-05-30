@@ -393,7 +393,8 @@ export function ChampionshipDetailClient({
     {},
   )
   const rounds           = Object.keys(byRound).map(Number).sort((a, b) => a - b)
-  const isMultiRound     = stage ? stage.rounds > 1 : false
+  // Várias rodadas (matchdays) → rotular "Rodada N", mesmo em turno único.
+  const isMultiRound     = rounds.length > 1
   const elimMaxRound     = rounds.length > 0 ? Math.max(...rounds) : 0
 
   // === grupos_elim: split by stage ===

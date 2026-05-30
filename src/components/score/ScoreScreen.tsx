@@ -11,13 +11,13 @@
  * Extras:
  *   - Badge offline (amarelo) com contagem de ações pendentes
  *   - Banner de conflito (âmbar) com resolução local/servidor
- *   - Botão "Finalizar partida" para encerramento manual com resultado explícito
+ *   - A partida finaliza automaticamente pelo placar (sem confirmação manual)
  */
 
 import { useState, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, Flag } from 'lucide-react'
+import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus } from 'lucide-react'
 import { useScoreEngine, type GameScore, type ConflictSnapshot, type ScoreEngineConfig } from '@/lib/score-engine/useScoreEngine'
 import { CourtTimer } from '@/lib/score-engine/CourtTimer'
 import { createClient } from '@/utils/supabase/client'
@@ -306,104 +306,6 @@ function TapZone({
   )
 }
 
-// ─── FinalizeDialog ───────────────────────────────────────────────────────────
-
-function FinalizeDialog({
-  sideA,
-  sideB,
-  setsA,
-  setsB,
-  allowDraw,
-  suggested,
-  onConfirm,
-  onCancel,
-  busy,
-}: {
-  sideA: SideInfo
-  sideB: SideInfo
-  /** sets vencidos por cada lado (para exibição e sugestão) */
-  setsA: number
-  setsB: number
-  /** se empate é permitido na fase */
-  allowDraw: boolean
-  /** resultado sugerido pelo placar atual */
-  suggested: 'lado_a' | 'lado_b' | 'empate' | null
-  onConfirm: (result: 'lado_a' | 'lado_b' | 'empate') => void
-  onCancel: () => void
-  busy: boolean
-}) {
-  // Pré-seleciona o resultado sugerido pelo placar de sets
-  const [chosen, setChosen] = useState<'lado_a' | 'lado_b' | 'empate' | null>(suggested)
-
-  const options: { value: 'lado_a' | 'lado_b' | 'empate'; label: string }[] = [
-    { value: 'lado_a', label: sideA.name ?? 'Lado A' },
-    { value: 'lado_b', label: sideB.name ?? 'Lado B' },
-    ...(allowDraw ? [{ value: 'empate' as const, label: 'Empate' }] : []),
-  ]
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md glass glass-card p-5 space-y-4 rounded-3xl">
-        <p className="text-sm font-bold text-white text-center">Finalizar partida</p>
-
-        {/* Placar de sets atual */}
-        <div className="flex items-center justify-center gap-3 text-center">
-          <span className="text-xs text-white/50 truncate max-w-[40%]">{sideA.name ?? 'Lado A'}</span>
-          <span className="text-lg font-black tabular-nums text-white">
-            {setsA} <span className="text-white/30">×</span> {setsB}
-          </span>
-          <span className="text-xs text-white/50 truncate max-w-[40%]">{sideB.name ?? 'Lado B'}</span>
-        </div>
-        <p className="text-[11px] text-white/40 text-center leading-relaxed">
-          Vence quem tem mais sets. Confirme o resultado abaixo (já sugerido pelo placar).
-        </p>
-
-        <div className="space-y-2">
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setChosen(opt.value)}
-              className={[
-                'w-full rounded-2xl px-4 py-3 text-sm font-semibold text-left transition',
-                chosen === opt.value
-                  ? 'bg-secondary text-primary'
-                  : 'bg-white/8 text-white/70 hover:bg-white/12',
-              ].join(' ')}
-            >
-              {opt.value === 'empate' ? 'Empate' : `${opt.label} vence`}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex gap-3 pt-1">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="flex-1 rounded-2xl bg-white/8 py-2.5 text-sm font-semibold text-white/60 transition active:scale-95 disabled:opacity-40"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={() => chosen && onConfirm(chosen)}
-            disabled={!chosen || busy}
-            className="flex-1 rounded-2xl bg-secondary py-2.5 text-sm font-bold text-primary transition active:scale-95 disabled:opacity-40"
-          >
-            {busy ? (
-              <span className="flex items-center justify-center gap-1.5">
-                <span className="h-3.5 w-3.5 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-                Salvando…
-              </span>
-            ) : 'Confirmar'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── ScoreScreen ──────────────────────────────────────────────────────────────
 
 export function ScoreScreen({
@@ -468,56 +370,11 @@ export function ScoreScreen({
   const winnerA = result === 'lado_a'
   const winnerB = result === 'lado_b'
 
-  // Placar de sets atual (respeita win_by_two) — para o dialog de finalização
-  const { setsA, setsB } = (() => {
-    if (isTempo) {
-      const g = games[0]
-      return { setsA: g?.score_a ?? 0, setsB: g?.score_b ?? 0 }
-    }
-    let a = 0, b = 0
-    for (const g of games) {
-      if (winByTwo) {
-        if (g.score_a >= pointsPerSet && g.score_a - g.score_b >= 2) a++
-        else if (g.score_b >= pointsPerSet && g.score_b - g.score_a >= 2) b++
-      } else {
-        if (g.score_a >= pointsPerSet && g.score_a > g.score_b) a++
-        else if (g.score_b >= pointsPerSet && g.score_b > g.score_a) b++
-      }
-    }
-    return { setsA: a, setsB: b }
-  })()
-
-  const suggestedResult: 'lado_a' | 'lado_b' | 'empate' | null =
-    setsA > setsB ? 'lado_a' : setsB > setsA ? 'lado_b' : setDrawEnabled ? 'empate' : null
-
-  // Finalização manual
-  const [showFinalizeDialog, setShowFinalizeDialog] = useState(false)
-  const [finalizing, setFinalizing] = useState(false)
+  // A partida finaliza AUTOMATICAMENTE quando o placar decide (mais sets vence;
+  // empate só quando a fase permite e o resultado dá igual). Sem confirmação manual.
 
   // Supabase client
   const [supabase] = useState(() => createClient())
-
-  const handleFinalize = useCallback(
-    async (chosenResult: 'lado_a' | 'lado_b' | 'empate') => {
-      setFinalizing(true)
-      try {
-        // Garante que a fila offline está sincronizada antes de finalizar
-        await engine.finalize()
-        // Encerra a partida com o resultado explícito
-        const { error } = await supabase.rpc('finalize_match_manual', {
-          _match_id: matchId,
-          _result: chosenResult,
-        })
-        if (error) throw error
-        setShowFinalizeDialog(false)
-      } catch (e) {
-        console.error('Erro ao finalizar partida:', e)
-      } finally {
-        setFinalizing(false)
-      }
-    },
-    [supabase, matchId, engine],
-  )
 
   // Salva duration_seconds no Supabase ao encerrar cronômetro
   const handleTimerStop = useCallback(
@@ -690,36 +547,9 @@ export function ScoreScreen({
         </div>
       )}
 
-      {/* ── Finalizar partida (encerramento manual) ── */}
-      {editable && !hasConflict && (
-        <button
-          type="button"
-          onClick={() => setShowFinalizeDialog(true)}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-white/10 bg-white/[0.04] text-xs font-semibold text-white/40 hover:text-white/65 hover:border-white/20 transition"
-        >
-          <Flag className="h-3.5 w-3.5" />
-          Finalizar partida
-        </button>
-      )}
-
       {/* ── Error ── */}
       {engine.error && (
         <p className="text-xs text-red-400/80 text-center">{engine.error}</p>
-      )}
-
-      {/* ── FinalizeDialog ── */}
-      {showFinalizeDialog && (
-        <FinalizeDialog
-          sideA={sideA}
-          sideB={sideB}
-          setsA={setsA}
-          setsB={setsB}
-          allowDraw={setDrawEnabled}
-          suggested={suggestedResult}
-          onConfirm={(res) => void handleFinalize(res)}
-          onCancel={() => setShowFinalizeDialog(false)}
-          busy={finalizing}
-        />
       )}
     </div>
   )
