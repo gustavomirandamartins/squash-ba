@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { Logo } from '@/components/Logo'
 import { subscribePush } from '@/lib/push'
+import { PasswordSection } from './PasswordSection'
 
 type Gender = 'masculino' | 'feminino' | 'outro' | 'nao_informado'
 
@@ -490,6 +491,9 @@ export function EditProfileForm({ userId, email, categories, teams, initial }: P
             </div>
           )}
         </div>
+
+        {/* Senha de acesso (alternativa ao link mágico) */}
+        <PasswordSection />
       </div>
     </div>
   )
