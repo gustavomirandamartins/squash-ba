@@ -17,7 +17,12 @@ import {
   Users,
   User,
 } from 'lucide-react'
-import { createDesafio1v1, createDesafioDuplas, type ChallengeConfig } from '@/app/(app)/desafios/actions'
+import {
+  createDesafio1v1,
+  createDesafioDuplas,
+  createDesafioTimes,
+  type ChallengeConfig,
+} from '@/app/(app)/desafios/actions'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +41,15 @@ interface WizardState extends ChallengeConfig {
   partner: Profile | null
   opp1: Profile | null
   opp2: Profile | null
+  // Times (NxN)
+  totalPlayers: number
+  hasFinal: boolean
+  teamAId: string | null
+  teamAName: string | null
+  teamAPlayerIds: string[]
+  teamBId: string | null
+  teamBName: string | null
+  teamBPlayerIds: string[]
 }
 
 type Patch = Partial<WizardState>
@@ -66,6 +80,14 @@ const DEFAULT: WizardState = {
   partner: null,
   opp1: null,
   opp2: null,
+  totalPlayers: 2,
+  hasFinal: false,
+  teamAId: null,
+  teamAName: null,
+  teamAPlayerIds: [],
+  teamBId: null,
+  teamBName: null,
+  teamBPlayerIds: [],
 }
 
 const STEP_TITLES = ['Tipo de desafio', 'Configuração', 'Revisão']
@@ -194,21 +216,18 @@ function Step1({ onSelect }: { onSelect: (type: ChallengeType) => void }) {
       <button
         type="button"
         onClick={() => onSelect('teams')}
-        className="glass glass-card w-full flex items-start gap-4 px-5 py-5 text-left transition active:scale-[0.97] hover:border-secondary/30 opacity-60"
+        className="glass glass-card w-full flex items-start gap-4 px-5 py-5 text-left transition active:scale-[0.97] hover:border-secondary/30"
       >
-        <div className="h-11 w-11 rounded-2xl bg-white/8 grid place-items-center shrink-0">
-          <Users className="h-5 w-5 text-white/40" />
+        <div className="h-11 w-11 rounded-2xl bg-secondary/15 grid place-items-center shrink-0">
+          <Users className="h-5 w-5 text-secondary" />
         </div>
         <div className="min-w-0">
-          <p className="text-base font-bold text-white/70">Desafio por Times</p>
-          <p className="text-sm text-white/35 mt-0.5 leading-snug">
-            Times se enfrentam. Classificação dupla (individual + equipe).
+          <p className="text-base font-bold text-white">Desafio por Times</p>
+          <p className="text-sm text-white/45 mt-0.5 leading-snug">
+            NxN entre dois times. Jogos cruzados, classificação individual e por equipe.
           </p>
-          <span className="inline-block mt-1.5 rounded-full bg-white/8 px-2.5 py-0.5 text-[10px] font-semibold text-white/35 uppercase tracking-wide">
-            Em breve
-          </span>
         </div>
-        <ChevronRight className="h-5 w-5 text-white/15 shrink-0 mt-0.5" />
+        <ChevronRight className="h-5 w-5 text-white/25 shrink-0 mt-0.5" />
       </button>
     </div>
   )
@@ -557,6 +576,228 @@ function Step2_Duplas({
   )
 }
 
+// ─── Step 2: Configuração Times (NxN) ─────────────────────────────────────────
+
+interface RosterProfile extends Profile {
+  team_id: string | null
+}
+
+function TeamSide({
+  title,
+  half,
+  teams,
+  rosters,
+  selectedTeamId,
+  selectedPlayerIds,
+  excludeTeamId,
+  onPickTeam,
+  onTogglePlayer,
+}: {
+  title: string
+  half: number
+  teams: { id: string; name: string; count: number }[]
+  rosters: Map<string, RosterProfile[]>
+  selectedTeamId: string | null
+  selectedPlayerIds: string[]
+  excludeTeamId: string | null
+  onPickTeam: (id: string, name: string) => void
+  onTogglePlayer: (uid: string) => void
+}) {
+  const eligible = teams.filter((t) => t.count >= half && t.id !== excludeTeamId)
+  const roster = selectedTeamId ? (rosters.get(selectedTeamId) ?? []) : []
+
+  return (
+    <div className="space-y-2">
+      <p className="px-1 text-[11px] font-bold uppercase tracking-widest text-secondary/70">{title}</p>
+
+      {/* Seletor de time */}
+      <div className="glass glass-card px-2 py-1.5">
+        <select
+          value={selectedTeamId ?? ''}
+          onChange={(e) => {
+            const t = teams.find((x) => x.id === e.target.value)
+            if (t) onPickTeam(t.id, t.name)
+          }}
+          className="w-full appearance-none bg-transparent px-2 py-2 text-sm text-white outline-none"
+          style={{ colorScheme: 'dark' }}
+        >
+          <option value="" className="bg-[#1d2b45]">Selecionar time…</option>
+          {eligible.map((t) => (
+            <option key={t.id} value={t.id} className="bg-[#1d2b45]">
+              {t.name} ({t.count} jogadores)
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {eligible.length === 0 && (
+        <p className="px-1 text-xs text-white/35">
+          Nenhum time com pelo menos {half} jogador{half > 1 ? 'es' : ''}.
+        </p>
+      )}
+
+      {/* Jogadores do time */}
+      {selectedTeamId && (
+        <div className="space-y-1">
+          <p className="px-1 text-[11px] text-white/45">
+            Escolha {half} jogador{half > 1 ? 'es' : ''} ({selectedPlayerIds.length}/{half})
+          </p>
+          {roster.map((p) => {
+            const checked = selectedPlayerIds.includes(p.id)
+            const atLimit = selectedPlayerIds.length >= half && !checked
+            return (
+              <button
+                key={p.id}
+                type="button"
+                disabled={atLimit}
+                onClick={() => onTogglePlayer(p.id)}
+                className={`glass glass-card w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition active:scale-[0.98] ${
+                  checked ? 'ring-1 ring-secondary/50' : ''
+                } ${atLimit ? 'opacity-35' : ''}`}
+              >
+                <PlayerAvatar profile={p} size={30} />
+                <span className="flex-1 text-sm text-white/85">{p.full_name ?? 'Sem nome'}</span>
+                <span
+                  className={`h-4 w-4 shrink-0 rounded-full border ${
+                    checked ? 'border-secondary bg-secondary' : 'border-white/30'
+                  }`}
+                />
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Step2_Teams({ state, onChange }: { state: WizardState; onChange: (p: Patch) => void }) {
+  const [teams, setTeams] = useState<{ id: string; name: string; count: number }[]>([])
+  const [rosters, setRosters] = useState<Map<string, RosterProfile[]>>(new Map())
+  const [loading, setLoading] = useState(true)
+  const half = Math.floor(state.totalPlayers / 2)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const supabase = createClient()
+      const [teamsRes, rosterRes] = await Promise.all([
+        supabase.from('teams').select('id, name').order('name'),
+        supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, team_id')
+          .not('team_id', 'is', null)
+          .order('full_name'),
+      ])
+      if (cancelled) return
+      const rosterMap = new Map<string, RosterProfile[]>()
+      for (const p of (rosterRes.data ?? []) as RosterProfile[]) {
+        if (!p.team_id) continue
+        const arr = rosterMap.get(p.team_id) ?? []
+        arr.push(p)
+        rosterMap.set(p.team_id, arr)
+      }
+      const teamRows = ((teamsRes.data ?? []) as { id: string; name: string }[]).map((t) => ({
+        id: t.id,
+        name: t.name,
+        count: rosterMap.get(t.id)?.length ?? 0,
+      }))
+      setRosters(rosterMap)
+      setTeams(teamRows)
+      setLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  function pickTeam(side: 'A' | 'B', id: string, name: string) {
+    if (side === 'A') onChange({ teamAId: id, teamAName: name, teamAPlayerIds: [] })
+    else onChange({ teamBId: id, teamBName: name, teamBPlayerIds: [] })
+  }
+
+  function togglePlayer(side: 'A' | 'B', uid: string) {
+    const key = side === 'A' ? 'teamAPlayerIds' : 'teamBPlayerIds'
+    const current = side === 'A' ? state.teamAPlayerIds : state.teamBPlayerIds
+    const next = current.includes(uid)
+      ? current.filter((x) => x !== uid)
+      : current.length >= half
+        ? current
+        : [...current, uid]
+    onChange({ [key]: next } as Patch)
+  }
+
+  return (
+    <div className="space-y-4">
+      <ConfigFields state={state} onChange={onChange} />
+
+      {/* Total de jogadores */}
+      <div className="glass glass-card px-4 py-4 space-y-3">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">
+          Total de jogadores
+        </p>
+        <div className="flex gap-1.5">
+          {[2, 4, 6, 8, 10].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onChange({ totalPlayers: n, teamAPlayerIds: [], teamBPlayerIds: [] })}
+              className={`flex-1 rounded-xl py-2 text-sm font-semibold transition active:scale-95 ${
+                state.totalPlayers === n ? 'bg-secondary text-primary' : 'bg-white/10 text-white/50'
+              }`}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-white/35 leading-relaxed">
+          {half} de cada time. Cada jogador enfrenta todos os jogadores do time adversário.
+        </p>
+      </div>
+
+      {loading ? (
+        <p className="text-center text-xs text-white/35 py-4">Carregando times…</p>
+      ) : teams.length === 0 ? (
+        <div className="glass glass-card px-4 py-6 text-center text-sm text-white/40">
+          Nenhum time cadastrado. Cadastre times e jogadores na área de Gestão.
+        </div>
+      ) : (
+        <>
+          <TeamSide
+            title="Time 1"
+            half={half}
+            teams={teams}
+            rosters={rosters}
+            selectedTeamId={state.teamAId}
+            selectedPlayerIds={state.teamAPlayerIds}
+            excludeTeamId={state.teamBId}
+            onPickTeam={(id, name) => pickTeam('A', id, name)}
+            onTogglePlayer={(uid) => togglePlayer('A', uid)}
+          />
+          <TeamSide
+            title="Time 2"
+            half={half}
+            teams={teams}
+            rosters={rosters}
+            selectedTeamId={state.teamBId}
+            selectedPlayerIds={state.teamBPlayerIds}
+            excludeTeamId={state.teamAId}
+            onPickTeam={(id, name) => pickTeam('B', id, name)}
+            onTogglePlayer={(uid) => togglePlayer('B', uid)}
+          />
+        </>
+      )}
+
+      {/* Final */}
+      <div className="glass glass-card px-4 py-4">
+        <Toggle
+          label="Disputar final (melhor de cada time)"
+          value={state.hasFinal}
+          onChange={(v) => onChange({ hasFinal: v })}
+        />
+      </div>
+    </div>
+  )
+}
+
 // ─── Step 3: Revisão ──────────────────────────────────────────────────────────
 
 function Step3({
@@ -591,7 +832,16 @@ function Step3({
           Resumo do desafio
         </p>
         <SummaryRow label="Nome" value={state.name} />
-        <SummaryRow label="Tipo" value={state.type === 'duplas' ? 'Desafio de duplas (2v2)' : 'Desafio 1v1'} />
+        <SummaryRow
+          label="Tipo"
+          value={
+            state.type === 'duplas'
+              ? 'Desafio de duplas (2v2)'
+              : state.type === 'teams'
+                ? `Desafio por times (${Math.floor(state.totalPlayers / 2)}v${Math.floor(state.totalPlayers / 2)})`
+                : 'Desafio 1v1'
+          }
+        />
         <div className="h-px bg-white/8" />
         <SummaryRow label="Partidas" value={`${state.rounds} ${state.rounds === 1 ? 'partida' : 'partidas'}`} />
         <SummaryRow label="Contagem" value={countingDesc} />
@@ -623,6 +873,13 @@ function Step3({
             />
           </div>
         )}
+        {state.type === 'teams' && (
+          <div className="space-y-1.5">
+            <SummaryRow label="Times" value={`${state.teamAName ?? '?'} × ${state.teamBName ?? '?'}`} />
+            <SummaryRow label="Jogadores" value={`${state.teamAPlayerIds.length} × ${state.teamBPlayerIds.length}`} />
+            <SummaryRow label="Final" value={state.hasFinal ? 'Sim (melhor de cada time)' : 'Não'} />
+          </div>
+        )}
       </div>
 
       <div className="glass glass-card px-4 py-3.5 flex items-start gap-3">
@@ -630,9 +887,11 @@ function Step3({
           <span className="text-[10px] font-bold text-secondary">!</span>
         </div>
         <p className="text-xs text-white/50 leading-relaxed">
-          {state.type === 'duplas'
-            ? 'As duas duplas já entram confirmadas e o desafio começa imediatamente.'
-            : 'O oponente receberá um convite. O desafio só começa após a aceitação.'}
+          {state.type === '1v1'
+            ? 'O oponente receberá um convite. O desafio só começa após a aceitação.'
+            : state.type === 'teams'
+              ? 'Os jogos cruzados entre os times são gerados e o desafio começa imediatamente.'
+              : 'As duas duplas já entram confirmadas e o desafio começa imediatamente.'}
         </p>
       </div>
 
@@ -657,7 +916,16 @@ function canAdvance(step: number, s: WizardState): boolean {
     if (s.counting === 'tempo' && !s.timeMinutes) return false
     if (s.type === '1v1') return s.opponent !== null
     if (s.type === 'duplas') return !!(s.partner && s.opp1 && s.opp2)
-    return true // teams stub
+    if (s.type === 'teams') {
+      const half = Math.floor(s.totalPlayers / 2)
+      return (
+        !!s.teamAId && !!s.teamBId &&
+        s.teamAId !== s.teamBId &&
+        s.teamAPlayerIds.length === half &&
+        s.teamBPlayerIds.length === half
+      )
+    }
+    return true
   }
   return true
 }
@@ -724,6 +992,18 @@ export function ChallengeWizard({ currentUserId }: Props) {
           const result = await createDesafioDuplas(cfg, state.partner.id, [state.opp1.id, state.opp2.id])
           if ('error' in result) { setError(result.error); return }
           router.push(`/desafios/${result.id}`)
+        } else if (state.type === 'teams') {
+          if (!state.teamAId || !state.teamBId || !state.teamAName || !state.teamBName) {
+            setError('Selecione os dois times.'); return
+          }
+          const result = await createDesafioTimes(
+            cfg,
+            state.hasFinal,
+            { teamId: state.teamAId, name: state.teamAName, playerIds: state.teamAPlayerIds },
+            { teamId: state.teamBId, name: state.teamBName, playerIds: state.teamBPlayerIds },
+          )
+          if ('error' in result) { setError(result.error); return }
+          router.push(`/desafios/${result.id}`)
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao criar desafio.')
@@ -778,6 +1058,9 @@ export function ChallengeWizard({ currentUserId }: Props) {
         )}
         {step === 2 && state.type === 'duplas' && (
           <Step2_Duplas state={state} onChange={onChange} currentUserId={currentUserId} />
+        )}
+        {step === 2 && state.type === 'teams' && (
+          <Step2_Teams state={state} onChange={onChange} />
         )}
         {step === 3 && (
           <Step3 state={state} onSubmit={handleSubmit} isPending={isPending} error={error} />

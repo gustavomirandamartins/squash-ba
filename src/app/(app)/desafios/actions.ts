@@ -232,3 +232,132 @@ export async function createDesafioDuplas(
 
   return { id: champId }
 }
+
+// ─── Criar Desafio de Times (NxN) ─────────────────────────────────────────────
+// Organizador escolhe 2 times registrados e metade dos jogadores de cada um.
+// O backend (generate_team_challenge_matches) gera jogos cruzados entre times
+// opostos. has_final opcional → final entre o melhor de cada time (gerada depois).
+
+export type TeamSidePayload = {
+  teamId: string
+  name: string
+  playerIds: string[]
+}
+
+export async function createDesafioTimes(
+  config: ChallengeConfig,
+  hasFinal: boolean,
+  teamA: TeamSidePayload,
+  teamB: TeamSidePayload,
+): Promise<{ id: string } | { error: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Usuário não autenticado.' }
+
+  if (teamA.teamId === teamB.teamId) return { error: 'Escolha dois times diferentes.' }
+  if (teamA.playerIds.length < 1 || teamB.playerIds.length < 1) {
+    return { error: 'Selecione os jogadores dos dois times.' }
+  }
+  if (teamA.playerIds.length !== teamB.playerIds.length) {
+    return { error: 'Os dois times precisam ter a mesma quantidade de jogadores.' }
+  }
+  const all = [...teamA.playerIds, ...teamB.playerIds]
+  if (new Set(all).size !== all.length) {
+    return { error: 'Um jogador não pode estar nos dois times.' }
+  }
+
+  const allowDraw = config.counting === 'tempo' || config.setDrawEnabled
+
+  // 1. Championship (desafio, unit='team', has_final)
+  const { data: champ, error: champErr } = await supabase
+    .from('championships')
+    .insert({
+      name: config.name.trim(),
+      format: 'desafio',
+      unit: 'team',
+      status: 'rascunho',
+      allow_draw: allowDraw,
+      has_final: hasFinal,
+      points_win: config.pointsWin,
+      points_draw: allowDraw ? config.pointsDraw : 0,
+      points_loss: config.pointsLoss,
+      tiebreakers: config.tiebreakers,
+      created_by: user.id,
+    })
+    .select('id')
+    .single()
+  if (champErr || !champ) return { error: champErr?.message ?? 'Erro ao criar desafio.' }
+  const champId = champ.id
+
+  const cleanup = async (msg: string) => {
+    await supabase.from('championships').delete().eq('id', champId)
+    return { error: msg }
+  }
+
+  // 2. Fase única
+  const { error: stageErr } = await supabase.from('championship_stages').insert({
+    championship_id: champId,
+    name: 'Fase única',
+    ordering: 1,
+    kind: 'liga',
+    counting: config.counting,
+    rounds: config.rounds,
+    sets_to_play: config.setsToPlay,
+    points_per_set: config.pointsPerSet,
+    win_by_two: config.winByTwo,
+    set_draw_enabled: config.setDrawEnabled,
+    time_minutes: config.timeMinutes,
+  })
+  if (stageErr) return cleanup(stageErr.message)
+
+  // 3. Cria os 2 times do desafio + participantes de cada um
+  async function createTeamSide(side: TeamSidePayload, ordering: number): Promise<string | null> {
+    const { data: ct, error: ctErr } = await supabase
+      .from('championship_teams')
+      .insert({
+        championship_id: champId,
+        name: side.name,
+        team_id: side.teamId,
+        ordering,
+      })
+      .select('id')
+      .single()
+    if (ctErr || !ct) return ctErr?.message ?? 'Erro ao criar time.'
+
+    for (const uid of side.playerIds) {
+      const { data: part, error: partErr } = await supabase
+        .from('participants')
+        .insert({
+          championship_id: champId,
+          kind: 'player',
+          championship_team_id: ct.id,
+          enrollment_source: 'organizador',
+          enrollment_status: 'confirmado',
+        })
+        .select('id')
+        .single()
+      if (partErr || !part) return partErr?.message ?? 'Erro ao criar participante.'
+      const { error: memErr } = await supabase
+        .from('participant_members')
+        .insert({ participant_id: part.id, user_id: uid })
+      if (memErr) return memErr.message
+    }
+    return null
+  }
+
+  const errA = await createTeamSide(teamA, 0)
+  if (errA) return cleanup(errA)
+  const errB = await createTeamSide(teamB, 1)
+  if (errB) return cleanup(errB)
+
+  // 4. Ativa → trigger gera os jogos cruzados (cada jogador de A x cada de B)
+  const { error: activateErr } = await supabase
+    .from('championships')
+    .update({ status: 'ativo' })
+    .eq('id', champId)
+  if (activateErr) return cleanup(activateErr.message)
+
+  return { id: champId }
+}
