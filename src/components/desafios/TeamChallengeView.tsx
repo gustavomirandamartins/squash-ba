@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Users, User, Trophy, Flag } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { ManageBar } from '@/components/ManageBar'
+import { getQueuedGames } from '@/lib/score-engine/SyncEngine'
+import { computeStandings, resolveMatch, mergeGames, type StageCfg, type ChampCfg } from '@/lib/standings/compute'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -29,6 +31,7 @@ export type TeamMatch = {
   score_a: number
   score_b: number
   bracket_slot: number | null
+  match_games?: Array<{ game_number: number; score_a: number; score_b: number }>
 }
 
 export type GeneralStanding = {
@@ -71,6 +74,9 @@ type Props = {
   teamStandings: TeamStanding[]
   canManage: boolean
   finalExists: boolean
+  /** config p/ recálculo offline ao vivo (opcional) */
+  stage?: StageCfg
+  champ?: ChampCfg
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -106,7 +112,8 @@ type TabId = 'jogos' | 'geral' | 'times'
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 export function TeamChallengeView({
-  challenge, teams, participants, matches, general, teamStandings, canManage, finalExists,
+  challenge, teams, participants, matches, general, teamStandings, canManage,
+  stage, champ,
 }: Props) {
   const router = useRouter()
   const [tab, setTab] = useState<TabId>('times')
@@ -120,8 +127,86 @@ export function TeamChallengeView({
   const teamA = teams[0]
   const teamB = teams[1]
 
-  const mainMatches = matches.filter((m) => m.bracket_slot !== -1)
-  const finalMatch = matches.find((m) => m.bracket_slot === -1) ?? null
+  // ── Recálculo offline ao vivo (snapshot + fila de placares) ────────────────
+  const [offline, setOffline] = useState(false)
+  const [effMatches, setEffMatches] = useState<TeamMatch[]>(matches)
+  const [effGeneral, setEffGeneral] = useState<GeneralStanding[]>(general)
+  const [effTeam, setEffTeam] = useState<TeamStanding[]>(teamStandings)
+
+  const recompute = useCallback(async () => {
+    if (!stage || !champ) return
+    // 1) jogos efetivos
+    const em: TeamMatch[] = await Promise.all(
+      matches.map(async (m) => {
+        const queued = await getQueuedGames(m.id)
+        const games = mergeGames(m.match_games ?? [], queued)
+        const r = resolveMatch(games, stage)
+        return {
+          ...m,
+          score_a: r.setsA,
+          score_b: r.setsB,
+          result: r.result,
+          status: r.finalized ? 'finalizado' : games.length > 0 ? 'em_andamento' : m.status,
+        }
+      }),
+    )
+    setEffMatches(em)
+
+    // 2) classificação geral (só jogos da fase, sem a final bracket_slot=-1)
+    const cmatches = await Promise.all(
+      matches
+        .filter((m) => m.bracket_slot !== -1)
+        .map(async (m) => {
+          const queued = await getQueuedGames(m.id)
+          return {
+            side_a_participant_id: m.side_a_participant_id,
+            side_b_participant_id: m.side_b_participant_id,
+            games: mergeGames(m.match_games ?? [], queued),
+          }
+        }),
+    )
+    const parts = participants.map((p) => ({ id: p.id, name: p.full_name }))
+    const standings = computeStandings(cmatches, parts, stage, champ)
+    setEffGeneral(standings)
+
+    // 3) classificação por time (agrega a geral por championship_team_id)
+    const teamAgg = new Map<string, TeamStanding>()
+    for (const t of teams) {
+      teamAgg.set(t.id, {
+        championship_team_id: t.id, team_name: t.name,
+        v: 0, e: 0, d: 0, sets_ganhos: 0, sets_perdidos: 0, pontos_favor: 0, pontos_contra: 0,
+      })
+    }
+    for (const s of standings) {
+      const teamId = pById.get(s.participant_id)?.teamId
+      if (!teamId) continue
+      const agg = teamAgg.get(teamId)
+      if (!agg) continue
+      agg.v += s.v; agg.e += s.e; agg.d += s.d
+      agg.sets_ganhos += s.sets_ganhos; agg.sets_perdidos += s.sets_perdidos
+      agg.pontos_favor += s.pontos_favor; agg.pontos_contra += s.pontos_contra
+    }
+    setEffTeam([...teamAgg.values()])
+  }, [matches, participants, teams, stage, champ, pById])
+
+  useEffect(() => {
+    const isOff = typeof navigator !== 'undefined' && !navigator.onLine
+    setOffline(isOff)
+    if (isOff) void recompute()
+    else { setEffMatches(matches); setEffGeneral(general); setEffTeam(teamStandings) }
+
+    const onOnline = () => { setOffline(false); setEffMatches(matches); setEffGeneral(general); setEffTeam(teamStandings) }
+    const onOffline = () => { setOffline(true); void recompute() }
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
+  }, [matches, general, teamStandings, recompute])
+
+  const mainMatches = effMatches.filter((m) => m.bracket_slot !== -1)
+  const finalMatch = effMatches.find((m) => m.bracket_slot === -1) ?? null
   const allMainDone = mainMatches.length > 0 && mainMatches.every((m) => m.status === 'finalizado')
 
   async function handleGenerateFinal() {
@@ -138,7 +223,7 @@ export function TeamChallengeView({
 
   // standings internos por time (derivado da geral)
   const generalByTeam = (teamId: string) =>
-    general.filter((g) => pById.get(g.participant_id)?.teamId === teamId)
+    effGeneral.filter((g) => pById.get(g.participant_id)?.teamId === teamId)
 
   return (
     <div className="px-5 py-4 space-y-4">
@@ -164,10 +249,10 @@ export function TeamChallengeView({
       </div>
 
       {/* Placar agregado por time */}
-      {teamStandings.length === 2 && (
+      {effTeam.length === 2 && (
         <div className="glass glass-card px-5 py-4 flex items-center gap-3">
           {[0, 1].map((i) => {
-            const ts = teamStandings.find((t) => t.championship_team_id === teams[i]?.id)
+            const ts = effTeam.find((t) => t.championship_team_id === teams[i]?.id)
             return (
               <div key={i} className="flex-1 text-center min-w-0">
                 <p className="text-xs font-semibold text-white/70 truncate">{teams[i]?.name ?? '—'}</p>
@@ -177,6 +262,12 @@ export function TeamChallengeView({
             )
           })}
         </div>
+      )}
+
+      {offline && (
+        <p className="px-1 text-[11px] font-semibold text-yellow-400/80">
+          Offline · classificação recalculada neste dispositivo
+        </p>
       )}
 
       {/* Tabs */}
@@ -199,7 +290,7 @@ export function TeamChallengeView({
             <p className="px-4 pt-3 pb-2 text-[11px] font-semibold uppercase tracking-widest text-white/35">
               Classificação por equipe
             </p>
-            {teamStandings
+            {effTeam
               .slice()
               .sort((a, b) => b.v - a.v || (b.sets_ganhos - b.sets_perdidos) - (a.sets_ganhos - a.sets_perdidos))
               .map((ts, i) => (
@@ -236,10 +327,10 @@ export function TeamChallengeView({
           <p className="px-4 pt-3 pb-2 text-[11px] font-semibold uppercase tracking-widest text-white/35">
             Classificação geral
           </p>
-          {general.length === 0 ? (
+          {effGeneral.length === 0 ? (
             <p className="px-4 py-8 text-center text-sm text-white/30">Sem partidas finalizadas ainda.</p>
           ) : (
-            general.map((g, i) => (
+            effGeneral.map((g, i) => (
               <InternalRow
                 key={g.participant_id}
                 pos={i + 1}

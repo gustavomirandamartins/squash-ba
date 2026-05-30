@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { ChevronLeft, ChevronRight, Clock, Swords, User } from 'lucide-react'
 import { ManageBar } from '@/components/ManageBar'
+import { getQueuedGames } from '@/lib/score-engine/SyncEngine'
+import { resolveMatch, mergeGames, type StageCfg } from '@/lib/standings/compute'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +26,8 @@ export type ChallengeMatch = {
   side_b_participant_id: string | null
   score_a: number
   score_b: number
+  /** games crus — para recálculo offline (opcional) */
+  match_games?: Array<{ game_number: number; score_a: number; score_b: number }>
 }
 
 export type ChallengeData = {
@@ -42,6 +46,8 @@ type Props = {
   currentUserParticipantId: string | null
   isCreator: boolean
   canManage?: boolean
+  /** config da fase p/ recálculo offline ao vivo (opcional) */
+  stage?: StageCfg
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -340,10 +346,49 @@ export function ChallengeDetailClient({
   participants,
   matches,
   canManage = false,
+  stage,
 }: Props) {
   const badge = CHAMP_STATUS[challenge.status] ?? CHAMP_STATUS.rascunho
   const isPending = challenge.status === 'rascunho'
   const isActive = challenge.status === 'ativo'
+
+  // Offline → recalcula resultado/placar de cada jogo a partir do snapshot +
+  // fila de placares (motor offline). Online usa os valores do servidor (SSR).
+  const [effectiveMatches, setEffectiveMatches] = useState<ChallengeMatch[]>(matches)
+
+  const recompute = useCallback(async () => {
+    if (!stage) { setEffectiveMatches(matches); return }
+    const out = await Promise.all(
+      matches.map(async (m) => {
+        const queued = await getQueuedGames(m.id)
+        const games = mergeGames(m.match_games ?? [], queued)
+        const r = resolveMatch(games, stage)
+        return {
+          ...m,
+          score_a: r.setsA,
+          score_b: r.setsB,
+          result: r.result,
+          status: r.finalized ? 'finalizado' : games.length > 0 ? 'em_andamento' : m.status,
+        }
+      }),
+    )
+    setEffectiveMatches(out)
+  }, [matches, stage])
+
+  useEffect(() => {
+    const isOff = typeof navigator !== 'undefined' && !navigator.onLine
+    if (isOff) void recompute()
+    else setEffectiveMatches(matches)
+
+    const onOnline = () => setEffectiveMatches(matches)
+    const onOffline = () => void recompute()
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
+  }, [matches, recompute])
 
   return (
     <div className="px-5 py-4 space-y-4">
@@ -382,10 +427,10 @@ export function ChallengeDetailClient({
         <PendingHero challenge={challenge} participants={participants} />
       )}
       {isActive && (
-        <Active1v1 challenge={challenge} participants={participants} matches={matches} />
+        <Active1v1 challenge={challenge} participants={participants} matches={effectiveMatches} />
       )}
       {challenge.status === 'encerrado' && (
-        <Active1v1 challenge={challenge} participants={participants} matches={matches} />
+        <Active1v1 challenge={challenge} participants={participants} matches={effectiveMatches} />
       )}
     </div>
   )

@@ -32,7 +32,8 @@ export default async function DesafioPage({
     .from('championships')
     .select(
       `id, name, status, format, unit, has_final,
-       championship_stages(rounds)`,
+       points_win, points_draw, points_loss, tiebreakers,
+       championship_stages(rounds, counting, points_per_set, win_by_two, set_draw_enabled, sets_to_play)`,
     )
     .eq('id', id)
     .in('format', ['desafio'])
@@ -40,7 +41,23 @@ export default async function DesafioPage({
 
   if (!champ) notFound()
 
-  const rounds = champ.championship_stages?.[0]?.rounds ?? 1
+  const stageRaw = champ.championship_stages?.[0]
+  const rounds = stageRaw?.rounds ?? 1
+
+  // Config da fase (para recálculo offline de resultados/classificação).
+  const stageCfg = {
+    counting: (stageRaw?.counting as string) ?? 'set',
+    points_per_set: (stageRaw?.points_per_set as number) ?? 11,
+    win_by_two: (stageRaw?.win_by_two as boolean) ?? true,
+    set_draw_enabled: (stageRaw?.set_draw_enabled as boolean) ?? false,
+    sets_to_play: (stageRaw?.sets_to_play as number) ?? 3,
+  }
+  const champCfg = {
+    pointsWin: (champ.points_win as number) ?? 3,
+    pointsDraw: (champ.points_draw as number) ?? 1,
+    pointsLoss: (champ.points_loss as number) ?? 0,
+    tiebreakers: (champ.tiebreakers as string[]) ?? [],
+  }
 
   // ── 2. Participantes + membros + perfis ──────────────────────────
   const { data: participantsRaw } = await supabase
@@ -139,6 +156,7 @@ export default async function DesafioPage({
         score_a: s.a,
         score_b: s.b,
         bracket_slot: (m.bracket_slot as number | null) ?? null,
+        match_games: (m.match_games as { game_number: number; score_a: number; score_b: number }[]) ?? [],
       }
     })
 
@@ -162,6 +180,8 @@ export default async function DesafioPage({
         teamStandings={teamStandings}
         canManage={canManage}
         finalExists={finalExists}
+        stage={stageCfg}
+        champ={champCfg}
       />
     )
   }
@@ -187,6 +207,7 @@ export default async function DesafioPage({
       side_b_participant_id: m.side_b_participant_id ?? null,
       score_a: s.a,
       score_b: s.b,
+      match_games: (m.match_games as { game_number: number; score_a: number; score_b: number }[]) ?? [],
     }
   })
 
@@ -212,6 +233,7 @@ export default async function DesafioPage({
       currentUserParticipantId={currentUserParticipantId}
       isCreator={isCreator}
       canManage={canManage}
+      stage={stageCfg}
     />
   )
 }
