@@ -143,7 +143,7 @@ export default async function AdminPage() {
         <div className="mb-3 flex items-center gap-2">
           <ClipboardList className="h-4 w-4 text-white/40" />
           <h2 className="text-sm font-semibold uppercase tracking-wider text-white/40">
-            Solicitações pendentes
+            Solicitações de professor
           </h2>
           {pending.length > 0 && (
             <span

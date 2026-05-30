@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/utils/supabase/server'
 import { Trophy, Clock, XCircle, CheckCircle, ShieldCheck } from 'lucide-react'
 
-export const metadata = { title: 'Ser organizador' }
+export const metadata = { title: 'Ser professor' }
 
 // ── Server action: insere solicitação ────────────────────────────────────────
 async function requestOrganizer() {
@@ -61,7 +61,7 @@ export default async function OrganizadorPage() {
   } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // 1. Verifica se já é organizador
+  // 1. Verifica se já é professor (role = organizer)
   const { data: roleRow } = await supabase
     .from('user_roles')
     .select('role')
@@ -73,13 +73,13 @@ export default async function OrganizadorPage() {
     return (
       <div className="px-5 py-8">
         <h1 className="mb-6 font-display text-2xl font-extrabold tracking-tight text-white">
-          Ser organizador
+          Ser professor
         </h1>
         <StatusCard
           accent
           icon={<ShieldCheck className="h-8 w-8 text-secondary" />}
-          title="Você já é organizador"
-          description="Seu acesso de organizador está ativo. Você pode criar e gerenciar campeonatos."
+          title="Você já é professor"
+          description="Seu acesso de professor está ativo. Você pode criar e gerenciar campeonatos."
         />
       </div>
     )
@@ -96,7 +96,7 @@ export default async function OrganizadorPage() {
     return (
       <div className="px-5 py-8">
         <h1 className="mb-6 font-display text-2xl font-extrabold tracking-tight text-white">
-          Ser organizador
+          Ser professor
         </h1>
         <StatusCard
           icon={<Clock className="h-8 w-8 text-white/50" />}
@@ -111,7 +111,7 @@ export default async function OrganizadorPage() {
     return (
       <div className="px-5 py-8">
         <h1 className="mb-6 font-display text-2xl font-extrabold tracking-tight text-white">
-          Ser organizador
+          Ser professor
         </h1>
         <StatusCard
           icon={<XCircle className="h-8 w-8 text-red-400/70" />}
@@ -126,10 +126,10 @@ export default async function OrganizadorPage() {
   return (
     <div className="px-5 py-8">
       <h1 className="mb-2 font-display text-2xl font-extrabold tracking-tight text-white">
-        Ser organizador
+        Ser professor
       </h1>
       <p className="mb-8 text-sm text-white/55">
-        Organizadores podem criar campeonatos, cadastrar partidas e gerenciar chaves.
+        Professores podem criar campeonatos, cadastrar partidas e gerenciar chaves.
       </p>
 
       <div className="glass glass-card p-7">
@@ -154,7 +154,7 @@ export default async function OrganizadorPage() {
             className="w-full rounded-2xl py-3.5 font-display text-sm font-bold text-primary transition active:scale-95"
             style={{ background: '#cdfd51' }}
           >
-            Quero ser organizador
+            Quero ser professor
           </button>
         </form>
       </div>

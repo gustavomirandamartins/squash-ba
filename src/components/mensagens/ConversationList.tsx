@@ -1,13 +1,13 @@
 'use client'
 
 /**
- * ConversationList — lista de conversas com Realtime + "Nova conversa".
+ * ConversationList — lista de conversas com Realtime + "Nova conversa" + apagar.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { MessageSquare, Plus, User, Users, Search, X, Trophy, ChevronRight } from 'lucide-react'
+import { MessageSquare, Plus, User, Users, Search, X, Trophy, ChevronRight, Trash2, Pencil } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { formatDistanceToNowStrict, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -110,7 +110,7 @@ function NewConversationSheet({
     return () => clearTimeout(t)
   }, [query, supabase])
 
-  const [starting, setStarting] = useState<string | null>(null) // userId em criação
+  const [starting, setStarting] = useState<string | null>(null)
   const [startError, setStartError] = useState<string | null>(null)
 
   async function startConversation(userId: string) {
@@ -198,22 +198,75 @@ function NewConversationSheet({
   )
 }
 
+// ─── DeleteButton ─────────────────────────────────────────────────────────────
+
+/**
+ * Botão vermelho com dupla confirmação: primeiro toque mostra ícone de lixeira,
+ * segundo confirma. Reset automático em 2 s se não confirmado.
+ */
+function DeleteButton({
+  onConfirm,
+  busy,
+}: {
+  onConfirm: () => void
+  busy: boolean
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function handlePress() {
+    if (busy) return
+    if (!confirming) {
+      setConfirming(true)
+      timerRef.current = setTimeout(() => setConfirming(false), 2000)
+    } else {
+      if (timerRef.current) clearTimeout(timerRef.current)
+      onConfirm()
+    }
+  }
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
+
+  return (
+    <button
+      type="button"
+      onClick={handlePress}
+      disabled={busy}
+      aria-label="Apagar conversa"
+      className={[
+        'h-8 w-8 shrink-0 rounded-full grid place-items-center transition-all duration-200',
+        confirming
+          ? 'bg-red-500 scale-110'
+          : 'bg-red-500/15 hover:bg-red-500/30',
+        busy ? 'opacity-40' : '',
+      ].join(' ')}
+    >
+      {busy ? (
+        <span className="h-3.5 w-3.5 rounded-full border-2 border-red-400/30 border-t-red-400 animate-spin" />
+      ) : (
+        <Trash2 className={`h-3.5 w-3.5 ${confirming ? 'text-white' : 'text-red-400'}`} />
+      )}
+    </button>
+  )
+}
+
 // ─── ConversationList ─────────────────────────────────────────────────────────
 
 export function ConversationList({ initialConversations, currentUserId }: Props) {
   const router = useRouter()
   const [conversations, setConversations] = useState<ConvItem[]>(initialConversations)
   const [showNew, setShowNew] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [supabase] = useState(() => createClient())
 
   const refetch = useCallback(async () => {
-    // Re-fetch conversation list
     const { data: memberships } = await supabase
       .from('conversation_members')
       .select('conversation_id, last_read_at')
       .eq('user_id', currentUserId)
 
-    if (!memberships?.length) return
+    if (!memberships?.length) { setConversations([]); return }
 
     const convIds = memberships.map((m: { conversation_id: string }) => m.conversation_id)
     const readMap = new Map(memberships.map((m: { conversation_id: string; last_read_at: string | null }) => [m.conversation_id, m.last_read_at]))
@@ -225,7 +278,6 @@ export function ConversationList({ initialConversations, currentUserId }: Props)
 
     if (!convs) return
 
-    // Último message por conversa
     const msgPromises = convIds.map((cid: string) =>
       supabase
         .from('messages')
@@ -239,7 +291,6 @@ export function ConversationList({ initialConversations, currentUserId }: Props)
     const lastMsgs = await Promise.all(msgPromises)
     const lastMsgMap = new Map(lastMsgs.map(({ cid, msg }) => [cid, msg]))
 
-    // Para 1:1: busca o outro membro
     const directConvIds = convs.filter((c: { kind: string }) => c.kind === 'direct').map((c: { id: string }) => c.id)
     const { data: allMembers } = directConvIds.length
       ? await supabase
@@ -267,14 +318,9 @@ export function ConversationList({ initialConversations, currentUserId }: Props)
       const lastReadAt = readMap.get(c.id)
       const otherUid = c.kind === 'direct' ? (otherUserMap.get(c.id) ?? null) : null
       const otherProfile = otherUid ? (profileMap.get(otherUid) ?? null) : null
-
-      // Unread: count messages after last_read_at not from current user
-      // (simplificado: usamos a data da última mensagem vs last_read_at)
       const unread =
         lastMsg && lastMsg.sender_id !== currentUserId && lastReadAt
-          ? lastMsg.created_at > lastReadAt
-            ? 1
-            : 0
+          ? lastMsg.created_at > lastReadAt ? 1 : 0
           : 0
 
       return {
@@ -306,7 +352,6 @@ export function ConversationList({ initialConversations, currentUserId }: Props)
     let cancelled = false
 
     async function setup() {
-      // setAuth antes de subscribe — RLS exige JWT na conexão Realtime (ver ChatView)
       const { data: { session } } = await supabase.auth.getSession()
       if (cancelled) return
       if (session?.access_token) await supabase.realtime.setAuth(session.access_token)
@@ -330,12 +375,43 @@ export function ConversationList({ initialConversations, currentUserId }: Props)
     }
   }, [supabase, refetch])
 
+  // Sai do modo edição ao clicar fora da lista
+  useEffect(() => {
+    if (!editMode) return
+    function handler(e: MouseEvent) {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-conv-list]')) setEditMode(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [editMode])
+
   function handleCreated(id: string) {
     setShowNew(false)
     router.push(`/mensagens/${id}`)
   }
 
+  async function handleDelete(convId: string) {
+    setDeletingId(convId)
+    try {
+      // Remove o membership do usuário. Se a conversa ficou sem membros,
+      // a política/cascade do Supabase apaga a conversa também.
+      await supabase
+        .from('conversation_members')
+        .delete()
+        .eq('conversation_id', convId)
+        .eq('user_id', currentUserId)
+
+      // Atualiza local imediatamente
+      setConversations((prev) => prev.filter((c) => c.id !== convId))
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   const totalUnread = conversations.reduce((s, c) => s + c.unreadCount, 0)
+  // Apenas conversas diretas podem ser apagadas pelo usuário
+  const hasDeletable = conversations.some((c) => c.kind === 'direct')
 
   return (
     <div className="px-5 py-4 space-y-4">
@@ -344,20 +420,45 @@ export function ConversationList({ initialConversations, currentUserId }: Props)
         <div className="flex items-center gap-2">
           <MessageSquare className="h-5 w-5 text-secondary" />
           <h1 className="text-base font-bold text-white">Mensagens</h1>
-          {totalUnread > 0 && (
+          {totalUnread > 0 && !editMode && (
             <span className="h-5 min-w-5 px-1 rounded-full bg-secondary text-primary text-[10px] font-black grid place-items-center">
               {totalUnread > 99 ? '99+' : totalUnread}
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setShowNew(true)}
-          className="flex items-center gap-1.5 rounded-full bg-secondary/15 px-3 py-1.5 text-xs font-semibold text-secondary transition active:scale-95"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Nova
-        </button>
+        <div className="flex items-center gap-2">
+          {hasDeletable && (
+            <button
+              type="button"
+              onClick={() => setEditMode((v) => !v)}
+              className={[
+                'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition active:scale-95',
+                editMode
+                  ? 'bg-secondary/20 text-secondary'
+                  : 'bg-white/8 text-white/50 hover:text-white/80',
+              ].join(' ')}
+            >
+              {editMode ? (
+                <>Concluído</>
+              ) : (
+                <>
+                  <Pencil className="h-3 w-3" />
+                  Editar
+                </>
+              )}
+            </button>
+          )}
+          {!editMode && (
+            <button
+              type="button"
+              onClick={() => setShowNew(true)}
+              className="flex items-center gap-1.5 rounded-full bg-secondary/15 px-3 py-1.5 text-xs font-semibold text-secondary transition active:scale-95"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Nova
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Lista */}
@@ -368,49 +469,73 @@ export function ConversationList({ initialConversations, currentUserId }: Props)
           <p className="text-xs text-white/20">Toque em "Nova" para começar.</p>
         </div>
       ) : (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" data-conv-list>
           {conversations.map((conv) => {
             const name =
               conv.kind === 'direct'
                 ? (conv.otherUserName ?? 'Jogador')
                 : (conv.title ?? 'Grupo')
 
+            const canDelete = conv.kind === 'direct'
+
             return (
-              <button
+              <div
                 key={conv.id}
-                type="button"
-                onClick={() => router.push(`/mensagens/${conv.id}`)}
-                className="w-full glass glass-card px-3.5 py-3 flex items-center gap-3 text-left transition active:scale-[0.985]"
+                className="flex items-center gap-2"
               >
-                <Avatar item={conv} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-sm font-semibold text-white/85 truncate">{name}</span>
-                    {conv.kind === 'group' && (
-                      <span className="shrink-0 text-[9px] font-bold text-secondary/60 bg-secondary/10 rounded-full px-1.5 py-px">
-                        Grupo
-                      </span>
+                {/* Botão apagar — só em modo edição e apenas diretas */}
+                {editMode && canDelete && (
+                  <DeleteButton
+                    onConfirm={() => void handleDelete(conv.id)}
+                    busy={deletingId === conv.id}
+                  />
+                )}
+
+                {/* Card da conversa */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editMode) return
+                    router.push(`/mensagens/${conv.id}`)
+                  }}
+                  className={[
+                    'flex-1 glass glass-card px-3.5 py-3 flex items-center gap-3 text-left transition active:scale-[0.985]',
+                    editMode ? 'cursor-default' : '',
+                    deletingId === conv.id ? 'opacity-40' : '',
+                  ].join(' ')}
+                >
+                  <Avatar item={conv} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-sm font-semibold text-white/85 truncate">{name}</span>
+                      {conv.kind === 'group' && (
+                        <span className="shrink-0 text-[9px] font-bold text-secondary/60 bg-secondary/10 rounded-full px-1.5 py-px">
+                          Grupo
+                        </span>
+                      )}
+                    </div>
+                    {conv.lastMessageBody && (
+                      <p className={`text-xs mt-0.5 truncate ${conv.unreadCount > 0 ? 'text-white/65 font-medium' : 'text-white/35'}`}>
+                        {conv.lastMessageBody}
+                      </p>
                     )}
                   </div>
-                  {conv.lastMessageBody && (
-                    <p className={`text-xs mt-0.5 truncate ${conv.unreadCount > 0 ? 'text-white/65 font-medium' : 'text-white/35'}`}>
-                      {conv.lastMessageBody}
-                    </p>
+                  {!editMode && (
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      {conv.lastMessageAt && (
+                        <span className="text-[10px] text-white/25">{relativeTime(conv.lastMessageAt)}</span>
+                      )}
+                      {conv.unreadCount > 0 ? (
+                        <span className="h-4.5 min-w-4.5 px-1 rounded-full bg-secondary text-primary text-[9px] font-black grid place-items-center">
+                          {conv.unreadCount}
+                        </span>
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5 text-white/15" />
+                      )}
+                    </div>
                   )}
-                </div>
-                <div className="flex flex-col items-end gap-1.5 shrink-0">
-                  {conv.lastMessageAt && (
-                    <span className="text-[10px] text-white/25">{relativeTime(conv.lastMessageAt)}</span>
-                  )}
-                  {conv.unreadCount > 0 ? (
-                    <span className="h-4.5 min-w-4.5 px-1 rounded-full bg-secondary text-primary text-[9px] font-black grid place-items-center">
-                      {conv.unreadCount}
-                    </span>
-                  ) : (
-                    <ChevronRight className="h-3.5 w-3.5 text-white/15" />
-                  )}
-                </div>
-              </button>
+                </button>
+              </div>
             )
           })}
         </div>
