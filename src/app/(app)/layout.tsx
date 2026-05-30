@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server'
 import { TopBar } from '@/components/TopBar'
 import { BottomNav } from '@/components/BottomNav'
 import { DesktopSidebar } from '@/components/DesktopSidebar'
+import { OfflineSync } from '@/components/offline/OfflineSync'
 
 export default async function AppLayout({
   children,
@@ -64,6 +65,7 @@ export default async function AppLayout({
       </div>
 
       <BottomNav userId={user.id} />
+      <OfflineSync />
     </div>
   )
 }

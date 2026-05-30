@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
-import { createEliminatoriaChampionship, createGruposElimChampionship } from '@/app/(app)/campeonatos/actions'
+import { submitCreation } from '@/lib/offline/submit'
+import type { CreationOp } from '@/lib/offline/types'
 import {
   ChevronLeft,
   ChevronRight,
@@ -1463,100 +1464,101 @@ export function ChampionshipWizard() {
     setError(null)
     startTransition(async () => {
       try {
-        if (state.format === 'eliminatoria') {
-          const result = await createEliminatoriaChampionship({
-            name: state.name,
-            hasThirdPlace: state.hasThirdPlace,
-            counting: state.counting,
-            setsToPlay: state.setsToPlay,
-            pointsPerSet: state.pointsPerSet,
-            winByTwo: state.winByTwo,
-            setDrawEnabled: state.setDrawEnabled,
-            timeMinutes: state.counting === 'tempo' ? Number(state.timeMinutes) : null,
-            pointsWin: state.pointsWin,
-            pointsDraw: state.counting === 'tempo' || state.setDrawEnabled ? state.pointsDraw : 0,
-            pointsLoss: state.pointsLoss,
-            tiebreakers: state.tiebreakers,
-            players: state.players.map((p) => ({
-              userId: p.id,
-              seed: state.playerSeeds[p.id] ?? null,
-            })),
-            status: state.status,
-          })
-          if ('error' in result) throw new Error(result.error)
-          router.push(`/campeonatos/${result.id}`)
+        const FORMAT_LABEL: Record<string, string> = {
+          liga: 'Liga',
+          eliminatoria: 'Eliminatória',
+          grupos_elim: 'Grupos + Eliminatórias',
+        }
+        const snapshot = {
+          name: state.name,
+          subtitle: `${FORMAT_LABEL[state.format] ?? 'Campeonato'} · ${state.players.length} jogadores`,
+        }
 
+        let op: CreationOp
+        if (state.format === 'eliminatoria') {
+          op = {
+            type: 'champ_elim',
+            cfg: {
+              name: state.name,
+              hasThirdPlace: state.hasThirdPlace,
+              counting: state.counting,
+              setsToPlay: state.setsToPlay,
+              pointsPerSet: state.pointsPerSet,
+              winByTwo: state.winByTwo,
+              setDrawEnabled: state.setDrawEnabled,
+              timeMinutes: state.counting === 'tempo' ? Number(state.timeMinutes) : null,
+              pointsWin: state.pointsWin,
+              pointsDraw: state.counting === 'tempo' || state.setDrawEnabled ? state.pointsDraw : 0,
+              pointsLoss: state.pointsLoss,
+              tiebreakers: state.tiebreakers,
+              players: state.players.map((p) => ({ userId: p.id, seed: state.playerSeeds[p.id] ?? null })),
+              status: state.status,
+            },
+          }
         } else if (state.format === 'grupos_elim') {
-          // Converte alocação visual em ordem de player_ids para o snake draft do RPC
           const assignments =
             state.manualGroupAssign ?? computeSnakeDraft(state.players, state.numGroups)
           const groups = groupPlayersByAssignment(state.players, assignments, state.numGroups)
-          // Re-cria array de players na ordem correta para o snake draft
           const orderedPlayers = groups.flat()
-
-          const allowDraw =
-            state.groupsCounting === 'tempo' || state.groupsSetDrawEnabled
-
-          const result = await createGruposElimChampionship({
-            name: state.name,
-            numGroups: state.numGroups,
-            qualifiersPerGroup: state.qualifiersPerGroup,
-            pointsWin: state.pointsWin,
-            pointsDraw: allowDraw ? state.pointsDraw : 0,
-            pointsLoss: state.pointsLoss,
-            allowDraw,
-            tiebreakers: state.tiebreakers,
-            groupsCounting: state.groupsCounting,
-            groupsRounds: state.groupsRounds,
-            groupsSetsToPlay: state.groupsSetsToPlay,
-            groupsPointsPerSet: state.groupsPointsPerSet,
-            groupsWinByTwo: state.groupsWinByTwo,
-            groupsSetDrawEnabled: state.groupsSetDrawEnabled,
-            groupsTimeMinutes:
-              state.groupsCounting === 'tempo' ? Number(state.groupsTimeMinutes) : null,
-            elimCounting: state.counting,
-            elimSetsToPlay: state.setsToPlay,
-            elimPointsPerSet: state.pointsPerSet,
-            elimWinByTwo: state.winByTwo,
-            elimSetDrawEnabled: state.setDrawEnabled,
-            elimTimeMinutes: state.counting === 'tempo' ? Number(state.timeMinutes) : null,
-            hasThirdPlace: state.hasThirdPlace,
-            players: orderedPlayers.map((p) => ({
-              userId: p.id,
-              seed: state.playerSeeds[p.id] ?? null,
-            })),
-            status: 'ativo',  // RPC sempre ativa
-          })
-          if ('error' in result) throw new Error(result.error)
-          router.push(`/campeonatos/${result.id}`)
-
-        } else {
-          // Liga
-          const supabase = createClient()
-          const allowDraw = state.counting === 'tempo' || state.setDrawEnabled
-          const { data: id, error: rpcError } = await supabase.rpc(
-            'create_liga_championship',
-            {
-              _name: state.name,
-              _points_win: state.pointsWin,
-              _points_draw: allowDraw ? state.pointsDraw : 0,
-              _points_loss: state.pointsLoss,
-              _allow_draw: allowDraw,
-              _tiebreakers: state.tiebreakers,
-              _stage_counting: state.counting,
-              _rounds: state.rounds,
-              _sets_to_play: state.setsToPlay,
-              _points_per_set: state.pointsPerSet,
-              _win_by_two: state.winByTwo,
-              _set_draw_enabled: state.setDrawEnabled,
-              _time_minutes: state.counting === 'tempo' ? Number(state.timeMinutes) : null,
-              _player_ids: state.players.map((p) => p.id),
-              _status: state.status,
+          const allowDraw = state.groupsCounting === 'tempo' || state.groupsSetDrawEnabled
+          op = {
+            type: 'champ_grupos',
+            cfg: {
+              name: state.name,
+              numGroups: state.numGroups,
+              qualifiersPerGroup: state.qualifiersPerGroup,
+              pointsWin: state.pointsWin,
+              pointsDraw: allowDraw ? state.pointsDraw : 0,
+              pointsLoss: state.pointsLoss,
+              allowDraw,
+              tiebreakers: state.tiebreakers,
+              groupsCounting: state.groupsCounting,
+              groupsRounds: state.groupsRounds,
+              groupsSetsToPlay: state.groupsSetsToPlay,
+              groupsPointsPerSet: state.groupsPointsPerSet,
+              groupsWinByTwo: state.groupsWinByTwo,
+              groupsSetDrawEnabled: state.groupsSetDrawEnabled,
+              groupsTimeMinutes:
+                state.groupsCounting === 'tempo' ? Number(state.groupsTimeMinutes) : null,
+              elimCounting: state.counting,
+              elimSetsToPlay: state.setsToPlay,
+              elimPointsPerSet: state.pointsPerSet,
+              elimWinByTwo: state.winByTwo,
+              elimSetDrawEnabled: state.setDrawEnabled,
+              elimTimeMinutes: state.counting === 'tempo' ? Number(state.timeMinutes) : null,
+              hasThirdPlace: state.hasThirdPlace,
+              players: orderedPlayers.map((p) => ({ userId: p.id, seed: state.playerSeeds[p.id] ?? null })),
+              status: 'ativo',
             },
-          )
-          if (rpcError) throw new Error(rpcError.message)
-          router.push(`/campeonatos/${id}`)
+          }
+        } else {
+          const allowDraw = state.counting === 'tempo' || state.setDrawEnabled
+          op = {
+            type: 'champ_liga',
+            cfg: {
+              name: state.name,
+              pointsWin: state.pointsWin,
+              pointsDraw: allowDraw ? state.pointsDraw : 0,
+              pointsLoss: state.pointsLoss,
+              allowDraw,
+              tiebreakers: state.tiebreakers,
+              counting: state.counting,
+              rounds: state.rounds,
+              setsToPlay: state.setsToPlay,
+              pointsPerSet: state.pointsPerSet,
+              winByTwo: state.winByTwo,
+              setDrawEnabled: state.setDrawEnabled,
+              timeMinutes: state.counting === 'tempo' ? Number(state.timeMinutes) : null,
+              playerIds: state.players.map((p) => p.id),
+              status: state.status,
+            },
+          }
         }
+
+        const result = await submitCreation({ kind: 'campeonato', op, snapshot })
+        if ('error' in result) throw new Error(result.error)
+        // Offline → vai para a lista (card pendente); online → detalhe do campeonato.
+        router.push(result.queued ? '/campeonatos' : `/campeonatos/${result.id}`)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao criar campeonato.')
       }

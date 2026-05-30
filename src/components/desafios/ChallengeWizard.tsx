@@ -17,12 +17,9 @@ import {
   Users,
   User,
 } from 'lucide-react'
-import {
-  createDesafio1v1,
-  createDesafioDuplas,
-  createDesafioTimes,
-  type ChallengeConfig,
-} from '@/app/(app)/desafios/actions'
+import type { ChallengeConfig } from '@/app/(app)/desafios/actions'
+import { submitCreation } from '@/lib/offline/submit'
+import type { CreationOp } from '@/lib/offline/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -980,31 +977,43 @@ export function ChallengeWizard({ currentUserId }: Props) {
     }
     startTransition(async () => {
       try {
+        let op: CreationOp
+        let subtitle: string
+
         if (state.type === '1v1') {
           if (!state.opponent) { setError('Selecione um oponente.'); return }
-          const result = await createDesafio1v1(cfg, state.opponent.id)
-          if ('error' in result) { setError(result.error); return }
-          router.push(`/desafios/${result.id}`)
+          op = { type: 'desafio_1v1', cfg, opponentId: state.opponent.id }
+          subtitle = 'Desafio 1v1'
         } else if (state.type === 'duplas') {
           if (!state.partner || !state.opp1 || !state.opp2) {
             setError('Selecione seu parceiro e a dupla adversária.'); return
           }
-          const result = await createDesafioDuplas(cfg, state.partner.id, [state.opp1.id, state.opp2.id])
-          if ('error' in result) { setError(result.error); return }
-          router.push(`/desafios/${result.id}`)
+          op = { type: 'desafio_duplas', cfg, partnerId: state.partner.id, opponentIds: [state.opp1.id, state.opp2.id] }
+          subtitle = 'Desafio de duplas (2v2)'
         } else if (state.type === 'teams') {
           if (!state.teamAId || !state.teamBId || !state.teamAName || !state.teamBName) {
             setError('Selecione os dois times.'); return
           }
-          const result = await createDesafioTimes(
+          op = {
+            type: 'desafio_times',
             cfg,
-            state.hasFinal,
-            { teamId: state.teamAId, name: state.teamAName, playerIds: state.teamAPlayerIds },
-            { teamId: state.teamBId, name: state.teamBName, playerIds: state.teamBPlayerIds },
-          )
-          if ('error' in result) { setError(result.error); return }
-          router.push(`/desafios/${result.id}`)
+            hasFinal: state.hasFinal,
+            teamA: { teamId: state.teamAId, name: state.teamAName, playerIds: state.teamAPlayerIds },
+            teamB: { teamId: state.teamBId, name: state.teamBName, playerIds: state.teamBPlayerIds },
+          }
+          subtitle = `Desafio por times (${state.teamAName} × ${state.teamBName})`
+        } else {
+          setError('Selecione o tipo de desafio.'); return
         }
+
+        const result = await submitCreation({
+          kind: 'desafio',
+          op,
+          snapshot: { name: state.name, subtitle },
+        })
+        if ('error' in result) { setError(result.error); return }
+        // Offline → vai para a lista de jogos (card pendente); online → detalhe.
+        router.push(result.queued ? '/jogos' : `/desafios/${result.id}`)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao criar desafio.')
       }

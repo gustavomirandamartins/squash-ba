@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Plus, Trophy } from 'lucide-react'
 import { createClient } from '@/utils/supabase/server'
 import { CampeonatosListClient } from '@/components/campeonatos/CampeonatosListClient'
+import { PendingList } from '@/components/offline/PendingList'
 
 export const metadata = { title: 'Campeonatos' }
 
@@ -28,6 +29,9 @@ export default async function CampeonatosPage() {
           Criar
         </Link>
       </div>
+
+      {/* Criações pendentes de sincronização (feitas offline) */}
+      <PendingList kind="campeonato" />
 
       {/* Empty state (no championships at all) */}
       {list.length === 0 ? (

@@ -1,6 +1,7 @@
 import { Plus, Swords, Trophy } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
+import { PendingList } from '@/components/offline/PendingList'
 
 export const metadata = { title: 'Jogos' }
 
@@ -86,6 +87,9 @@ export default async function JogosPage() {
           Criar desafio
         </Link>
       </div>
+
+      {/* Criações pendentes de sincronização (feitas offline) */}
+      <PendingList kind="desafio" />
 
       {/* ── Meus desafios ── */}
       <section className="space-y-2">

@@ -16,12 +16,21 @@
 // o app, abrir um campeonato/jogo já visto e ALIMENTAR placares offline — que
 // sincronizam e recalculam a classificação ao reconectar.
 
-const VERSION = 'v4';
+const VERSION = 'v5';
 const STATIC_CACHE = `squashba-static-${VERSION}`;
 const PAGE_CACHE = `squashba-pages-${VERSION}`;
 
-// Rotas que valem pré-carregar (o "caminho" base do app).
-const CORE_ROUTES = ['/', '/campeonatos', '/jogos', '/mensagens', '/comunidade'];
+// Rotas que valem pré-carregar (o "caminho" base do app + telas de criação,
+// para permitir criar campeonato/desafio offline mesmo sem visita prévia).
+const CORE_ROUTES = [
+  '/',
+  '/campeonatos',
+  '/campeonatos/novo',
+  '/jogos',
+  '/desafios/novo',
+  '/mensagens',
+  '/comunidade',
+];
 
 self.addEventListener('install', () => {
   self.skipWaiting();

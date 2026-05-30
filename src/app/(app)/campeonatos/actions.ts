@@ -2,6 +2,52 @@
 
 import { createClient } from '@/utils/supabase/server'
 
+// ─── Liga (wrap do RPC create_liga_championship como server action) ───────────
+
+export type LigaCfg = {
+  name: string
+  pointsWin: number
+  pointsDraw: number
+  pointsLoss: number
+  allowDraw: boolean
+  tiebreakers: string[]
+  counting: 'set' | 'tempo'
+  rounds: number
+  setsToPlay: number
+  pointsPerSet: number
+  winByTwo: boolean
+  setDrawEnabled: boolean
+  timeMinutes: number | null
+  playerIds: string[]
+  status: 'rascunho' | 'ativo'
+}
+
+export async function createLigaChampionship(
+  cfg: LigaCfg,
+): Promise<{ id: string } | { error: string }> {
+  const supabase = await createClient()
+  const { data: id, error } = await supabase.rpc('create_liga_championship', {
+    _name: cfg.name.trim(),
+    _points_win: cfg.pointsWin,
+    _points_draw: cfg.allowDraw ? cfg.pointsDraw : 0,
+    _points_loss: cfg.pointsLoss,
+    _allow_draw: cfg.allowDraw,
+    _tiebreakers: cfg.tiebreakers,
+    _stage_counting: cfg.counting,
+    _rounds: cfg.rounds,
+    _sets_to_play: cfg.setsToPlay,
+    _points_per_set: cfg.pointsPerSet,
+    _win_by_two: cfg.winByTwo,
+    _set_draw_enabled: cfg.setDrawEnabled,
+    _time_minutes: cfg.timeMinutes,
+    _player_ids: cfg.playerIds,
+    _status: cfg.status,
+  })
+  if (error) return { error: error.message }
+  if (!id) return { error: 'Campeonato não foi criado.' }
+  return { id: id as string }
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type EliminatoriaCfg = {
