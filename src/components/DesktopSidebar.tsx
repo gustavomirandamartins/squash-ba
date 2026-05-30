@@ -85,6 +85,7 @@ export function DesktopSidebar({ name, avatarUrl, isAdmin, canManage, userId }: 
           isAdmin={isAdmin}
           canManage={canManage}
           placement="up"
+          align="left"
         />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-white/85">{name ?? 'Jogador'}</p>

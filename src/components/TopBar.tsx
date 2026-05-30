@@ -54,10 +54,11 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage }: Props) {
         }}
       >
         {/* Col 1 — Logo (collapses to 0 when search opens). Leva à home.
-            No desktop fica no rail lateral → oculto aqui. */}
-        <div className="overflow-hidden lg:hidden">
+            No desktop o conteúdo é ocultado (logo está no rail), mas a CÉLULA do
+            grid permanece — senão o auto-flow desloca a busca para a coluna 0fr. */}
+        <div className="overflow-hidden">
           <div
-            className="transition-opacity duration-200"
+            className="transition-opacity duration-200 lg:hidden"
             style={{ opacity: searchOpen ? 0 : 1 }}
           >
             <Link href="/" aria-label="Ir para a página inicial" className="inline-flex">
@@ -79,14 +80,17 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage }: Props) {
         {/* Col 4 — gap (handled by grid column width) */}
         <div />
 
-        {/* Col 5 — Avatar menu (no desktop fica no rail lateral → oculto aqui) */}
-        <div className="lg:hidden">
-          <UserAvatarMenu
-            name={name}
-            avatarUrl={avatarUrl}
-            isAdmin={isAdmin}
-            canManage={canManage}
-          />
+        {/* Col 5 — Avatar menu (no desktop fica no rail → conteúdo oculto, mas a
+            célula do grid permanece p/ não deslocar a busca). */}
+        <div>
+          <div className="lg:hidden">
+            <UserAvatarMenu
+              name={name}
+              avatarUrl={avatarUrl}
+              isAdmin={isAdmin}
+              canManage={canManage}
+            />
+          </div>
         </div>
       </div>
     </header>

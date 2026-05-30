@@ -14,9 +14,11 @@ interface Props {
   canManage?: boolean
   /** 'down' (padrão, TopBar) ou 'up' (rail desktop, avatar embaixo) */
   placement?: 'down' | 'up'
+  /** 'right' (padrão, alinha à direita) ou 'left' (rail desktop) */
+  align?: 'left' | 'right'
 }
 
-export function UserAvatarMenu({ name, avatarUrl, isAdmin, canManage, placement = 'down' }: Props) {
+export function UserAvatarMenu({ name, avatarUrl, isAdmin, canManage, placement = 'down', align = 'right' }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -64,9 +66,9 @@ export function UserAvatarMenu({ name, avatarUrl, isAdmin, canManage, placement 
 
       {open && (
         <div
-          className={`glass glass-card absolute right-0 z-50 min-w-[160px] overflow-hidden p-1 ${
+          className={`glass glass-card absolute z-50 min-w-[160px] overflow-hidden p-1 ${
             placement === 'up' ? 'bottom-12' : 'top-12'
-          }`}
+          } ${align === 'left' ? 'left-0' : 'right-0'}`}
           style={{ borderRadius: 16 }}
         >
           {name && (
