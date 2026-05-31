@@ -506,42 +506,41 @@ export function BracketView({
         </div>
       )}
 
-      {/* Bracket horizontal scroll */}
-      <div className="overflow-x-auto pb-2">
-        <div
-          className="flex items-start"
-          style={{ height: totalHeight, minWidth: rounds.length * (CARD_W + CONN_W) + CARD_W }}
-        >
-          {rounds.map((roundMatches, ri) => {
-            const slotH = SLOT_BASE * Math.pow(2, ri)
-            const label = getRoundLabel(ri, rounds.length)
-            const pairsCount = Math.floor(roundMatches.length / 2)
+      {/* Bracket horizontal scroll
+          Os labels de round ficam numa faixa separada ACIMA do grid de partidas,
+          para que o cálculo de altura (totalHeight) seja exato e o overflow-x-auto
+          não corte os cards verticalmente. */}
+      <div className="overflow-x-auto pb-4">
+        <div style={{ minWidth: rounds.length * (CARD_W + CONN_W) + CARD_W }}>
 
-            return (
-              <div key={ri} className="flex items-start" style={{ height: totalHeight }}>
-                {/* Round column */}
-                <div style={{ width: CARD_W }}>
-                  {/* Round label */}
-                  <div
-                    className="flex items-center justify-center mb-2"
-                    style={{ height: 20 }}
-                  >
-                    <span className="text-[9px] font-semibold uppercase tracking-widest text-white/30">
-                      {label}
-                    </span>
-                  </div>
+          {/* ── Faixa de labels ── */}
+          <div className="flex items-center mb-3">
+            {rounds.map((_, ri) => (
+              <div key={ri} className="flex items-center shrink-0">
+                <div style={{ width: CARD_W }} className="text-center">
+                  <span className="text-[9px] font-semibold uppercase tracking-widest text-white/30">
+                    {getRoundLabel(ri, rounds.length)}
+                  </span>
+                </div>
+                {ri < rounds.length - 1 && <div style={{ width: CONN_W }} />}
+              </div>
+            ))}
+          </div>
 
-                  {/* Match cards */}
-                  {roundMatches.map((match, mi) => {
-                    const topPad = slotH / 2 - CARD_H / 2
-                    return (
+          {/* ── Grid de partidas ── */}
+          <div className="flex items-start" style={{ height: totalHeight }}>
+            {rounds.map((roundMatches, ri) => {
+              const slotH = SLOT_BASE * Math.pow(2, ri)
+              const pairsCount = Math.floor(roundMatches.length / 2)
+
+              return (
+                <div key={ri} className="flex items-start shrink-0" style={{ height: totalHeight }}>
+                  {/* Coluna de cards */}
+                  <div style={{ width: CARD_W }}>
+                    {roundMatches.map((match) => (
                       <div
                         key={match.id}
-                        style={{
-                          height: slotH,
-                          paddingTop: mi === 0 ? topPad + 22 : topPad,  // +22 for label on first
-                          paddingBottom: mi === 0 ? 0 : 0,
-                        }}
+                        style={{ height: slotH, paddingTop: slotH / 2 - CARD_H / 2 }}
                       >
                         <MatchCard
                           match={match}
@@ -550,37 +549,34 @@ export function BracketView({
                           champId={championshipId}
                           participantGroupLabels={participantGroupLabels}
                           onClick={
-                            match.status !== 'finalizado' ||
-                            (match.side_a_participant_id !== null &&
-                              match.side_b_participant_id !== null)
-                              ? match.side_a_participant_id !== null &&
-                                match.side_b_participant_id !== null
-                                ? () => router.push(`/campeonatos/${championshipId}/jogos/${match.id}`)
-                                : undefined
+                            match.side_a_participant_id !== null &&
+                            match.side_b_participant_id !== null
+                              ? () => router.push(`/campeonatos/${championshipId}/jogos/${match.id}`)
                               : undefined
                           }
                         />
                       </div>
-                    )
-                  })}
-                </div>
-
-                {/* Connector SVG (only between rounds) */}
-                {ri < rounds.length - 1 && (
-                  <div style={{ paddingTop: 22, height: totalHeight }}>
-                    <BracketConnector
-                      matchCount={roundMatches.length}
-                      roundIndex={ri}
-                      totalHeight={totalHeight}
-                      completedPairs={Array.from({ length: pairsCount }, (_, i) =>
-                        isCompletedPair(ri, i),
-                      )}
-                    />
+                    ))}
                   </div>
-                )}
-              </div>
-            )
-          })}
+
+                  {/* Conector SVG (apenas entre rodadas) */}
+                  {ri < rounds.length - 1 && (
+                    <div style={{ height: totalHeight }}>
+                      <BracketConnector
+                        matchCount={roundMatches.length}
+                        roundIndex={ri}
+                        totalHeight={totalHeight}
+                        completedPairs={Array.from({ length: pairsCount }, (_, i) =>
+                          isCompletedPair(ri, i),
+                        )}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
         </div>
       </div>
 
