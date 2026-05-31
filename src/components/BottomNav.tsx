@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, CalendarDays, Play, MessageSquare, type LucideIcon } from 'lucide-react'
+import { Home, Trophy, Swords, Users, MessageSquare, type LucideIcon } from 'lucide-react'
 import { useUnreadCount } from '@/lib/use-unread-count'
 
 interface Item {
@@ -14,8 +14,9 @@ interface Item {
 
 const items: Item[] = [
   { href: '/', label: 'Início', icon: Home },
-  { href: '/campeonatos', label: 'Campeonatos', icon: CalendarDays, matchPrefix: true },
-  { href: '/jogos', label: 'Jogos', icon: Play, matchPrefix: true },
+  { href: '/campeonatos', label: 'Campeonatos', icon: Trophy, matchPrefix: true },
+  { href: '/jogos', label: 'Desafios', icon: Swords, matchPrefix: true },
+  { href: '/comunidade', label: 'Comunidade', icon: Users, matchPrefix: true },
   { href: '/mensagens', label: 'Mensagens', icon: MessageSquare, matchPrefix: true },
 ]
 

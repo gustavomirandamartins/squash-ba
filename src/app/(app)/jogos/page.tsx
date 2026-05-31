@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import { PendingList } from '@/components/offline/PendingList'
 
-export const metadata = { title: 'Jogos' }
+export const metadata = { title: 'Desafios' }
 
 export default async function JogosPage() {
   const supabase = await createClient()
@@ -76,7 +76,7 @@ export default async function JogosPage() {
       {/* Header + botão criar */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-base font-bold text-white">Jogos</h1>
+          <h1 className="text-base font-bold text-white">Desafios</h1>
           <p className="text-xs text-white/40 mt-0.5">Seus desafios e campeonatos</p>
         </div>
         <Link

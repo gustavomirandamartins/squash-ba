@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ChevronLeft, ChevronRight, Clock, Swords, User } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, Swords, User, Check, X } from 'lucide-react'
 import { ManageBar } from '@/components/ManageBar'
 import { getQueuedGames } from '@/lib/score-engine/SyncEngine'
 import { resolveMatch, mergeGames, type StageCfg } from '@/lib/standings/compute'
+import { createClient } from '@/utils/supabase/client'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -102,12 +103,42 @@ function Avatar({ p, size = 36 }: { p: ChallengeParticipant | undefined; size?: 
 function PendingHero({
   challenge,
   participants,
+  currentUserParticipantId,
 }: {
   challenge: ChallengeData
   participants: ChallengeParticipant[]
+  currentUserParticipantId: string | null
 }) {
   const pA = participants.find((p) => p.enrollment_status === 'confirmado')
   const pB = participants.find((p) => p.enrollment_status === 'pendente')
+
+  // O usuário logado é o convidado pendente?
+  const isInvitee = !!pB && pB.id === currentUserParticipantId
+
+  const [busy, setBusy] = useState<null | 'accept' | 'decline'>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function respond(accept: boolean) {
+    if (busy) return
+    setBusy(accept ? 'accept' : 'decline')
+    setError(null)
+    try {
+      const supabase = createClient()
+      const { error: rpcError } = await supabase.rpc('respond_challenge_invite', {
+        _championship_id: challenge.id,
+        _accept: accept,
+      })
+      if (rpcError) {
+        setError('Não foi possível responder ao convite. Tente novamente.')
+        setBusy(null)
+        return
+      }
+      window.location.reload()
+    } catch {
+      setError('Não foi possível responder ao convite. Tente novamente.')
+      setBusy(null)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -149,18 +180,58 @@ function PendingHero({
         </div>
       </div>
 
-      {/* Status card */}
-      <div className="glass glass-card px-4 py-4 space-y-2 text-center">
-        <div className="h-9 w-9 rounded-full bg-yellow-500/10 grid place-items-center mx-auto">
-          <Clock className="h-4.5 w-4.5 text-yellow-400" />
+      {/* Status card / Ação do convidado */}
+      {isInvitee ? (
+        <div className="glass glass-card px-4 py-4 space-y-3">
+          <div className="text-center space-y-1">
+            <p className="text-sm font-semibold text-white/85">Você foi desafiado!</p>
+            <p className="text-xs text-white/45 leading-relaxed max-w-[280px] mx-auto">
+              <span className="text-white/65">{pA?.full_name ?? 'O criador'}</span> quer jogar com você.
+              Aceite para começar o desafio.
+            </p>
+          </div>
+          {error && <p className="text-xs text-red-400 text-center">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void respond(true)}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-2xl bg-secondary py-3 text-sm font-bold text-primary transition active:scale-95 disabled:opacity-50"
+            >
+              {busy === 'accept' ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+              ) : (
+                <Check className="h-4 w-4" />
+              )}
+              Aceitar
+            </button>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void respond(false)}
+              className="flex items-center justify-center gap-1.5 rounded-2xl border border-white/12 bg-white/5 px-4 py-3 text-sm font-semibold text-white/65 transition active:scale-95 hover:bg-white/8 disabled:opacity-50"
+            >
+              {busy === 'decline' ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+              ) : (
+                <X className="h-4 w-4" />
+              )}
+              Recusar
+            </button>
+          </div>
         </div>
-        <p className="text-sm font-semibold text-white/80">Aguardando confirmação</p>
-        <p className="text-xs text-white/40 leading-relaxed max-w-[260px] mx-auto">
-          O desafio começa assim que{' '}
-          <span className="text-white/65">{pB?.full_name ?? 'o oponente'}</span> aceitar o convite em{' '}
-          <span className="text-secondary/70">/convites</span>.
-        </p>
-      </div>
+      ) : (
+        <div className="glass glass-card px-4 py-4 space-y-2 text-center">
+          <div className="h-9 w-9 rounded-full bg-yellow-500/10 grid place-items-center mx-auto">
+            <Clock className="h-4.5 w-4.5 text-yellow-400" />
+          </div>
+          <p className="text-sm font-semibold text-white/80">Aguardando confirmação</p>
+          <p className="text-xs text-white/40 leading-relaxed max-w-[260px] mx-auto">
+            O desafio começa assim que{' '}
+            <span className="text-white/65">{pB?.full_name ?? 'o oponente'}</span> aceitar o convite.
+          </p>
+        </div>
+      )}
 
       {/* Regras resumidas */}
       <div className="glass glass-card px-4 py-3.5">
@@ -345,6 +416,7 @@ export function ChallengeDetailClient({
   challenge,
   participants,
   matches,
+  currentUserParticipantId,
   canManage = false,
   stage,
 }: Props) {
@@ -424,7 +496,11 @@ export function ChallengeDetailClient({
 
       {/* Conteúdo por estado */}
       {isPending && (
-        <PendingHero challenge={challenge} participants={participants} />
+        <PendingHero
+          challenge={challenge}
+          participants={participants}
+          currentUserParticipantId={currentUserParticipantId}
+        />
       )}
       {isActive && (
         <Active1v1 challenge={challenge} participants={participants} matches={effectiveMatches} />

@@ -12,6 +12,7 @@ export default async function CampeonatosPage() {
   const { data: championships } = await supabase
     .from('championships')
     .select('id, name, format, status, created_at')
+    .neq('format', 'desafio') // desafios ficam na aba Desafios
     .order('created_at', { ascending: false })
 
   const list = championships ?? []

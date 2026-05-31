@@ -42,8 +42,8 @@ const FORMAT_ICON: Record<string, ReactNode> = {
 const FILTER_OPTIONS: { label: string; value: string | null }[] = [
   { label: 'Todos',          value: null          },
   { label: 'Liga',           value: 'liga'        },
+  { label: 'Grupos + Elim.', value: 'grupos_elim' },
   { label: 'Eliminatória',   value: 'eliminatoria'},
-  { label: 'Desafio',        value: 'desafio'     },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────

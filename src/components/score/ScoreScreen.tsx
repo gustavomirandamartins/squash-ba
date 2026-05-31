@@ -17,10 +17,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, CalendarDays } from 'lucide-react'
 import { useScoreEngine, type GameScore, type ConflictSnapshot, type ScoreEngineConfig } from '@/lib/score-engine/useScoreEngine'
 import { CourtTimer } from '@/lib/score-engine/CourtTimer'
+import { clearQueue } from '@/lib/score-engine/SyncEngine'
 import { createClient } from '@/utils/supabase/client'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -383,7 +383,6 @@ export function ScoreScreen({
   // A partida finaliza AUTOMATICAMENTE quando o placar decide (mais sets vence;
   // empate só quando a fase permite e o resultado dá igual). Sem confirmação manual.
 
-  const router = useRouter()
   const [reopening, setReopening] = useState(false)
   const [reopenError, setReopenError] = useState<string | null>(null)
 
@@ -398,7 +397,12 @@ export function ScoreScreen({
         setReopening(false)
         return
       }
-      router.refresh()
+      // Limpa a fila local para que itens antigos não re-finalizem a partida,
+      // e recarrega a página: o motor de placar reinicializa do estado do
+      // servidor (status=em_andamento) — router.refresh() não remonta o
+      // componente, então o status do engine ficava preso em 'finalizado'.
+      await clearQueue(matchId)
+      window.location.reload()
     } catch {
       setReopenError('Não foi possível reabrir a partida.')
       setReopening(false)
