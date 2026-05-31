@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSerwist } from "@serwist/turbopack";
 
 // Hostname do Supabase (ex.: rghlwuucqkvyzyycewje.supabase.co) para liberar
 // os avatares do Storage no next/image. Derivado da env var, sem hardcode.
@@ -25,4 +26,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSerwist(nextConfig);

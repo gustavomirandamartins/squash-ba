@@ -3,10 +3,11 @@
 import { useEffect } from "react";
 import { loadPlayerPool, loadCategories } from "@/lib/offline/players-cache";
 
-// Rotas que devem abrir offline mesmo sem visita manual. Espelha CORE_ROUTES do
-// service worker. Aquecidas pelo CLIENTE (não só no activate do SW), pois o
-// pré-cache no activate só funciona se houver rede no exato instante da ativação
-// — frágil. Aqui garantimos o cache em toda abertura online.
+// O registro do service worker é feito pelo <SerwistProvider> no layout.
+// Este componente cuida apenas do AQUECIMENTO de cache offline:
+//   • pool de jogadores + categorias (IndexedDB) → criar campeonato/desafio offline
+//   • páginas principais (documento + RSC) → o Serwist as cacheia em runtime
+// Assim, ao ficar offline, criar e navegar funcionam mesmo sem visita manual.
 const WARM_ROUTES = [
   "/",
   "/campeonatos",
@@ -18,33 +19,15 @@ const WARM_ROUTES = [
 ];
 
 export function ServiceWorkerRegister() {
-  useEffect(() => {
-    if (process.env.NODE_ENV !== "production") return;
-    if (!("serviceWorker" in navigator)) return;
-    const onLoad = () => {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
-        /* instalabilidade é best-effort nesta fase */
-      });
-    };
-    window.addEventListener("load", onLoad);
-    return () => window.removeEventListener("load", onLoad);
-  }, []);
-
-  // Aquece o cache offline (pool de jogadores + categorias) a cada abertura
-  // online, para que a criação de campeonatos/desafios offline funcione mesmo
-  // que o usuário nunca tenha aberto um wizard antes.
+  // Aquece o cache de dados (pool de jogadores + categorias) a cada abertura online.
   useEffect(() => {
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
     void loadPlayerPool();
     void loadCategories();
   }, []);
 
-  // Aquece o cache de PÁGINAS (documento + payload RSC) das rotas principais.
-  // Dispara as requisições com o SW já ativo; ele as intercepta e cacheia por
-  // pathname (network-first). Assim, clicar em "Criar" offline acha o snapshot
-  // — sem depender do pré-cache no activate do SW.
+  // Aquece o cache de páginas principais via runtime caching do Serwist.
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production") return;
     if (!("serviceWorker" in navigator)) return;
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
 
@@ -52,19 +35,10 @@ export function ServiceWorkerRegister() {
     navigator.serviceWorker.ready
       .then(() => {
         if (cancelled) return;
-        // Pequeno atraso para não competir com a renderização inicial.
-        setTimeout(() => {
-          if (cancelled) return;
-          for (const path of WARM_ROUTES) {
-            // Documento (hard nav / reload)
-            fetch(path, { credentials: "same-origin" }).catch(() => {});
-            // Payload RSC (navegação client-side via <Link>)
-            fetch(path, {
-              credentials: "same-origin",
-              headers: { RSC: "1" },
-            }).catch(() => {});
-          }
-        }, 1500);
+        for (const path of WARM_ROUTES) {
+          fetch(path, { credentials: "same-origin" }).catch(() => {});
+          fetch(path, { credentials: "same-origin", headers: { RSC: "1" } }).catch(() => {});
+        }
       })
       .catch(() => {});
     return () => {
