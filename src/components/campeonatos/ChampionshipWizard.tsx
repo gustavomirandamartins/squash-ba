@@ -599,17 +599,18 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
         <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40 px-1">
           Formato
         </p>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 grid-rows-2 gap-2">
           {FORMAT_OPTIONS.map((f) => {
             const active = state.format === f.value
+            const isSpanning = f.value === 'grupos_elim'
             return (
               <button
                 key={f.value}
                 type="button"
                 onClick={() => f.enabled && onChange({ format: f.value })}
                 className={`glass glass-card flex flex-col items-start gap-1.5 px-3 py-3 text-left transition active:scale-[0.97] relative ${
-                  active ? 'border-secondary/50 bg-secondary/10' : ''
-                } ${!f.enabled ? 'opacity-45' : ''}`}
+                  isSpanning ? 'row-span-2' : ''
+                } ${active ? 'border-secondary/50 bg-secondary/10' : ''} ${!f.enabled ? 'opacity-45' : ''}`}
               >
                 <span className={active ? 'text-secondary' : 'text-white/40'}>
                   {f.icon}
