@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Sora, Inter } from "next/font/google";
 import { SerwistProvider } from "@serwist/turbopack/react";
 import "./globals.css";
-import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
 const sora = Sora({
   variable: "--font-sora",
@@ -68,7 +67,6 @@ export default function RootLayout({
           }}
         />
         <SerwistProvider swUrl="/serwist/sw.js">{children}</SerwistProvider>
-        <ServiceWorkerRegister />
       </body>
     </html>
   );
