@@ -3,6 +3,7 @@ import { Plus, Trophy } from 'lucide-react'
 import { createClient } from '@/utils/supabase/server'
 import { CampeonatosListClient } from '@/components/campeonatos/CampeonatosListClient'
 import { PendingList } from '@/components/offline/PendingList'
+import { RouteWarmer } from '@/components/offline/RouteWarmer'
 
 export const metadata = { title: 'Campeonatos' }
 
@@ -49,6 +50,9 @@ export default async function CampeonatosPage() {
       ) : (
         <CampeonatosListClient championships={list} />
       )}
+
+      {/* Aquece o cache das ligas listadas para abrirem offline */}
+      <RouteWarmer paths={list.map((c) => `/campeonatos/${c.id}`)} />
     </div>
   )
 }

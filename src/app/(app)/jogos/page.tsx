@@ -2,6 +2,7 @@ import { Plus, Swords, Trophy } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import { PendingList } from '@/components/offline/PendingList'
+import { RouteWarmer } from '@/components/offline/RouteWarmer'
 
 export const metadata = { title: 'Desafios' }
 
@@ -170,6 +171,14 @@ export default async function JogosPage() {
           })}
         </section>
       )}
+
+      {/* Aquece o cache dos desafios/campeonatos do usuário para abrirem offline */}
+      <RouteWarmer
+        paths={[
+          ...desafios.map((d) => `/desafios/${d.id}`),
+          ...campeonatos.map((c) => `/campeonatos/${c.id}`),
+        ]}
+      />
     </div>
   )
 }
