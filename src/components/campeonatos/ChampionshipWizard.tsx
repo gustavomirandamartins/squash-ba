@@ -19,7 +19,6 @@ import {
   Trophy,
   Layers,
   GitMerge,
-  Swords,
   User,
   Users,
   Medal,
@@ -110,13 +109,6 @@ const FORMAT_OPTIONS: { value: Format; label: string; desc: string; icon: React.
     desc: 'Chaveamento direto. Quem perde, sai.',
     icon: <GitMerge className="h-5 w-5" />,
     enabled: true,
-  },
-  {
-    value: 'desafio',
-    label: 'Desafio',
-    desc: 'Confrontos avulsos livres.',
-    icon: <Swords className="h-5 w-5" />,
-    enabled: false,
   },
 ]
 
