@@ -20,6 +20,8 @@ export type LigaCfg = {
   setDrawEnabled: boolean
   timeMinutes: number | null
   playerIds: string[]
+  /** Modo duplas: passa pairs em vez de playerIds */
+  pairs?: { p1: string; p2: string }[]
   status: 'rascunho' | 'ativo'
 }
 
@@ -27,6 +29,77 @@ export async function createLigaChampionship(
   cfg: LigaCfg,
 ): Promise<{ id: string } | { error: string }> {
   const supabase = await createClient()
+
+  // ── Modo duplas: criação manual (o RPC só suporta unit='player') ──────────
+  if (cfg.pairs?.length) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Usuário não autenticado.' }
+
+    const { data: champ, error: champErr } = await supabase
+      .from('championships')
+      .insert({
+        name: cfg.name.trim(),
+        format: 'liga',
+        unit: 'pair',
+        status: 'rascunho',
+        start_date: cfg.startDate ?? null,
+        allow_draw: cfg.allowDraw,
+        points_win: cfg.pointsWin,
+        points_draw: cfg.allowDraw ? cfg.pointsDraw : 0,
+        points_loss: cfg.pointsLoss,
+        tiebreakers: cfg.tiebreakers,
+        created_by: user.id,
+      })
+      .select('id')
+      .single()
+    if (champErr || !champ) return { error: champErr?.message ?? 'Erro ao criar campeonato.' }
+    const champId = champ.id as string
+
+    const { error: stageErr } = await supabase.from('championship_stages').insert({
+      championship_id: champId,
+      name: 'Liga',
+      ordering: 1,
+      kind: 'liga',
+      counting: cfg.counting,
+      rounds: cfg.rounds,
+      sets_to_play: cfg.setsToPlay,
+      points_per_set: cfg.pointsPerSet,
+      win_by_two: cfg.winByTwo,
+      set_draw_enabled: cfg.setDrawEnabled,
+      time_minutes: cfg.timeMinutes,
+    })
+    if (stageErr) {
+      await supabase.from('championships').delete().eq('id', champId)
+      return { error: stageErr.message }
+    }
+
+    for (const pair of cfg.pairs) {
+      const { data: part, error: partErr } = await supabase
+        .from('participants')
+        .insert({ championship_id: champId, kind: 'pair', enrollment_source: 'organizador', enrollment_status: 'confirmado' })
+        .select('id')
+        .single()
+      if (partErr || !part) {
+        await supabase.from('championships').delete().eq('id', champId)
+        return { error: partErr?.message ?? 'Erro ao criar dupla.' }
+      }
+      const { error: membErr } = await supabase
+        .from('participant_members')
+        .insert([{ participant_id: part.id, user_id: pair.p1 }, { participant_id: part.id, user_id: pair.p2 }])
+      if (membErr) {
+        await supabase.from('championships').delete().eq('id', champId)
+        return { error: membErr.message }
+      }
+    }
+
+    if (cfg.status === 'ativo') {
+      const { error: actErr } = await supabase.from('championships').update({ status: 'ativo' }).eq('id', champId)
+      if (actErr) return { error: actErr.message }
+    }
+    return { id: champId }
+  }
+
+  // ── Modo jogador: usa o RPC existente ─────────────────────────────────────
   const { data: id, error } = await supabase.rpc('create_liga_championship', {
     _name: cfg.name.trim(),
     _points_win: cfg.pointsWin,
@@ -70,6 +143,8 @@ export type EliminatoriaCfg = {
   pointsLoss: number
   tiebreakers: string[]
   players: { userId: string; seed: number | null }[]
+  /** Modo duplas: passa pairs em vez de players */
+  pairs?: { p1: string; p2: string; seed?: number | null }[]
   status: 'rascunho' | 'ativo'
 }
 
@@ -92,13 +167,15 @@ export async function createEliminatoriaChampionship(
   // quem vence avança, quem perde é eliminado. Forçamos sem-empate.
   const allowDraw = false
 
+  const isPairMode = !!(cfg.pairs?.length)
+
   // 1. Cria campeonato como rascunho (RLS: championships_insert ok pois created_by = auth.uid())
   const { data: champ, error: champErr } = await supabase
     .from('championships')
     .insert({
       name: cfg.name.trim(),
       format: 'eliminatoria',
-      unit: 'player',
+      unit: isPairMode ? 'pair' : 'player',
       status: 'rascunho',
       start_date: cfg.startDate ?? null,
       allow_draw: allowDraw,
@@ -135,16 +212,21 @@ export async function createEliminatoriaChampionship(
     return { error: stageErr.message }
   }
 
-  // 3. Participantes com seeds (trg_participants_guard: status='rascunho' → ok)
-  for (const player of cfg.players) {
+  // 3. Participantes com seeds
+  // Normaliza para lista unificada independente de ser jogador ou dupla
+  const entries = isPairMode
+    ? (cfg.pairs ?? []).map((p) => ({ userIds: [p.p1, p.p2], seed: p.seed ?? null, kind: 'pair' as const }))
+    : cfg.players.map((p) => ({ userIds: [p.userId], seed: p.seed, kind: 'player' as const }))
+
+  for (const entry of entries) {
     const { data: part, error: partErr } = await supabase
       .from('participants')
       .insert({
         championship_id: champId,
-        kind: 'player',
+        kind: entry.kind,
         enrollment_source: 'organizador',
         enrollment_status: 'confirmado',
-        seed: player.seed ?? null,
+        seed: entry.seed ?? null,
       })
       .select('id')
       .single()
@@ -154,13 +236,14 @@ export async function createEliminatoriaChampionship(
       return { error: partErr?.message ?? 'Erro ao criar participante.' }
     }
 
-    const { error: memberErr } = await supabase
-      .from('participant_members')
-      .insert({ participant_id: part.id, user_id: player.userId })
-
-    if (memberErr) {
-      await supabase.from('championships').delete().eq('id', champId)
-      return { error: memberErr.message }
+    for (const userId of entry.userIds) {
+      const { error: memberErr } = await supabase
+        .from('participant_members')
+        .insert({ participant_id: part.id, user_id: userId })
+      if (memberErr) {
+        await supabase.from('championships').delete().eq('id', champId)
+        return { error: memberErr.message }
+      }
     }
   }
 
@@ -211,6 +294,8 @@ export type GruposElimCfg = {
   hasThirdPlace: boolean
   // Jogadores na ordem de envio (índice determina grupo via snake draft no SQL)
   players: { userId: string; seed: number | null }[]
+  /** Modo duplas: cada par carrega o groupIndex calculado no wizard */
+  pairs?: { p1: string; p2: string; seed?: number | null; groupIndex: number }[]
   status: 'rascunho' | 'ativo'
 }
 
@@ -224,6 +309,125 @@ export async function createGruposElimChampionship(
 
   if (!user) return { error: 'Usuário não autenticado.' }
 
+  // ── Modo duplas: criação manual (o RPC só conhece unit='player') ──────────
+  if (cfg.pairs?.length) {
+    const { data: champ, error: champErr } = await supabase
+      .from('championships')
+      .insert({
+        name: cfg.name.trim(),
+        format: 'grupos_elim',
+        unit: 'pair',
+        status: 'rascunho',
+        start_date: cfg.startDate ?? null,
+        allow_draw: cfg.allowDraw,
+        points_win: cfg.pointsWin,
+        points_draw: cfg.allowDraw ? cfg.pointsDraw : 0,
+        points_loss: cfg.pointsLoss,
+        tiebreakers: cfg.tiebreakers,
+        has_third_place: cfg.hasThirdPlace,
+        created_by: user.id,
+      })
+      .select('id')
+      .single()
+    if (champErr || !champ) return { error: champErr?.message ?? 'Erro ao criar campeonato.' }
+    const champId = champ.id as string
+
+    // Fase de grupos
+    const { data: gruposStage, error: gsErr } = await supabase
+      .from('championship_stages')
+      .insert({
+        championship_id: champId,
+        name: 'Grupos',
+        ordering: 1,
+        kind: 'grupos',
+        counting: cfg.groupsCounting,
+        rounds: cfg.groupsRounds,
+        sets_to_play: cfg.groupsSetsToPlay,
+        points_per_set: cfg.groupsPointsPerSet,
+        win_by_two: cfg.groupsWinByTwo,
+        set_draw_enabled: cfg.groupsSetDrawEnabled,
+        time_minutes: cfg.groupsTimeMinutes,
+      })
+      .select('id')
+      .single()
+    if (gsErr || !gruposStage) {
+      await supabase.from('championships').delete().eq('id', champId)
+      return { error: gsErr?.message ?? 'Erro ao criar fase de grupos.' }
+    }
+
+    // Fase eliminatória
+    const { error: esErr } = await supabase.from('championship_stages').insert({
+      championship_id: champId,
+      name: 'Eliminatórias',
+      ordering: 2,
+      kind: 'eliminatoria',
+      counting: cfg.elimCounting,
+      rounds: 1,
+      sets_to_play: cfg.elimSetsToPlay,
+      points_per_set: cfg.elimPointsPerSet,
+      win_by_two: cfg.elimWinByTwo,
+      set_draw_enabled: false,
+      time_minutes: cfg.elimTimeMinutes,
+    })
+    if (esErr) {
+      await supabase.from('championships').delete().eq('id', champId)
+      return { error: esErr.message }
+    }
+
+    // Grupos (A, B, C, …)
+    const GROUP_NAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+    const groupIds: string[] = []
+    for (let gi = 0; gi < cfg.numGroups; gi++) {
+      const { data: grp, error: grpErr } = await supabase
+        .from('groups')
+        .insert({ stage_id: gruposStage.id, name: `Grupo ${GROUP_NAMES[gi] ?? String(gi + 1)}`, ordering: gi + 1 })
+        .select('id')
+        .single()
+      if (grpErr || !grp) {
+        await supabase.from('championships').delete().eq('id', champId)
+        return { error: grpErr?.message ?? 'Erro ao criar grupo.' }
+      }
+      groupIds.push(grp.id as string)
+    }
+
+    // Participantes (duplas) com group_id
+    for (const pair of cfg.pairs) {
+      const groupId = groupIds[pair.groupIndex] ?? groupIds[0]
+      const { data: part, error: partErr } = await supabase
+        .from('participants')
+        .insert({
+          championship_id: champId,
+          kind: 'pair',
+          group_id: groupId,
+          enrollment_source: 'organizador',
+          enrollment_status: 'confirmado',
+          seed: pair.seed ?? null,
+        })
+        .select('id')
+        .single()
+      if (partErr || !part) {
+        await supabase.from('championships').delete().eq('id', champId)
+        return { error: partErr?.message ?? 'Erro ao criar dupla.' }
+      }
+      const { error: membErr } = await supabase
+        .from('participant_members')
+        .insert([{ participant_id: part.id, user_id: pair.p1 }, { participant_id: part.id, user_id: pair.p2 }])
+      if (membErr) {
+        await supabase.from('championships').delete().eq('id', champId)
+        return { error: membErr.message }
+      }
+    }
+
+    // Ativa → trigger gera os jogos da fase de grupos
+    const { error: actErr } = await supabase.from('championships').update({ status: 'ativo' }).eq('id', champId)
+    if (actErr) return { error: actErr.message }
+    if (cfg.startDate) {
+      await supabase.from('championships').update({ start_date: cfg.startDate }).eq('id', champId)
+    }
+    return { id: champId }
+  }
+
+  // ── Modo jogador: usa o RPC existente ─────────────────────────────────────
   const { data: id, error: rpcError } = await supabase.rpc(
     'create_grupos_elim_championship',
     {

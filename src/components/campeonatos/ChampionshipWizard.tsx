@@ -37,6 +37,13 @@ interface PlayerResult {
   avatar_url: string | null
 }
 
+// Uma dupla (2 jogadores) confirmada no wizard de criação
+type PairEntry = {
+  id: string          // chave local (randomUUID)
+  p1: PlayerResult
+  p2: PlayerResult
+}
+
 interface Category {
   id: string
   name: string
@@ -75,11 +82,15 @@ interface WizardState {
   pointsDraw: number
   pointsLoss: number
   tiebreakers: string[]
-  // Step 4
+  // Step 4 — Jogador (unit='player')
   players: PlayerResult[]
   playerSeeds: Record<string, number | null>
-  // Step 4 grupos_elim — alocação manual (null = usa snake draft automático)
+  // Step 4 grupos_elim — alocação manual de jogadores (null = snake draft)
   manualGroupAssign: Record<string, number> | null
+  // Step 4 — Dupla (unit='pair')
+  pairs: PairEntry[]
+  pairSeeds: Record<string, number | null>    // pair.id → seed (para elim)
+  manualPairGroupAssign: Record<string, number> | null  // pair.id → groupIdx
   // Step 5
   status: 'rascunho' | 'ativo'
 }
@@ -167,6 +178,9 @@ const DEFAULT_STATE: WizardState = {
   players: [],
   playerSeeds: {},
   manualGroupAssign: null,
+  pairs: [],
+  pairSeeds: {},
+  manualPairGroupAssign: null,
   status: 'ativo',
 }
 
@@ -178,13 +192,28 @@ function nextPow2(n: number): number {
   return s
 }
 
-function bracketNote(n: number): string | null {
+function bracketNote(n: number, unit: 'player' | 'pair' = 'player'): string | null {
+  const word = unit === 'pair' ? 'duplas' : 'jogadores'
   if (n < 2) return null
-  if (n === 3) return '3 jogadores: será gerado triangular (todos jogam entre si).'
+  if (n === 3) return `3 ${word}: será gerado triangular (todos jogam entre si).`
   const size = nextPow2(n)
   if (size === n) return null
   const byes = size - n
   return `Com ${n} participantes será gerado bracket de ${size} posições (${byes} bye${byes > 1 ? 's' : ''}). Seeds 1 e 2 avançam automaticamente.`
+}
+
+/** Snake draft para duplas: pair.id → groupIndex (0-based). */
+function computeSnakeDraftPairs(pairs: PairEntry[], numGroups: number): Record<string, number> {
+  if (numGroups < 1) return {}
+  const assignments: Record<string, number> = {}
+  let cur = 0, dir = 1
+  for (const p of pairs) {
+    assignments[p.id] = cur
+    cur += dir
+    if (cur >= numGroups) { dir = -1; cur = numGroups - 1 }
+    else if (cur < 0)     { dir =  1; cur = 0 }
+  }
+  return assignments
 }
 
 /** Calcula alocação snake draft: player index → group index (0-based). */
@@ -501,7 +530,7 @@ function canAdvance(step: number, s: WizardState): boolean {
     if (!s.name.trim()) return false
     return (
       (s.format === 'liga' || s.format === 'eliminatoria' || s.format === 'grupos_elim') &&
-      s.unit === 'player'
+      (s.unit === 'player' || s.unit === 'pair')
     )
   }
   if (step === 2) {
@@ -522,7 +551,10 @@ function canAdvance(step: number, s: WizardState): boolean {
     if (s.counting === 'tempo') return s.timeMinutes !== '' && Number(s.timeMinutes) > 0
     return true
   }
-  if (step === 4) return s.players.length >= 2
+  if (step === 4) {
+    if (s.unit === 'pair') return s.pairs.length >= 2
+    return s.players.length >= 2
+  }
   return true
 }
 
@@ -533,7 +565,7 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
     (state.format !== 'liga' &&
       state.format !== 'eliminatoria' &&
       state.format !== 'grupos_elim') ||
-    state.unit !== 'player'
+    state.unit === 'team'  // 'player' e 'pair' são suportados; 'team' ainda não
 
   return (
     <div className="space-y-5">
@@ -1035,6 +1067,323 @@ function GroupPreview({
   )
 }
 
+// ─── Step 4 — Duplas ──────────────────────────────────────────────────────────
+//  UX: clica 1° jogador → banner "montando" aparece → clica 2° → par confirmado.
+
+function Step4Pairs({ state, onChange }: { state: WizardState; onChange: (p: Patch) => void }) {
+  const [query, setQuery]                   = useState('')
+  const [categories, setCategories]         = useState<Category[]>([])
+  const [filterCategories, setFilterCategories] = useState<string[]>([])
+  const [pool, setPool]                     = useState<PlayerResult[]>([])
+  const [loadingPool, setLoadingPool]       = useState(true)
+  const [buildingP1, setBuildingP1]         = useState<PlayerResult | null>(null)
+
+  const isElim       = state.format === 'eliminatoria'
+  const isGruposElim = state.format === 'grupos_elim'
+  const showSeeds    = isElim || isGruposElim
+
+  useEffect(() => {
+    createClient()
+      .from('categories')
+      .select('id, name')
+      .order('name')
+      .then(({ data }) => setCategories(data ?? []))
+  }, [])
+
+  useEffect(() => {
+    setLoadingPool(true)
+    const supabase = createClient()
+    let q = supabase
+      .from('profiles')
+      .select('id, full_name, avatar_url')
+      .not('full_name', 'is', null)
+      .order('full_name')
+      .limit(150)
+    if (filterCategories.length > 0) q = q.in('category_id', filterCategories)
+    q.then(({ data }) => { setPool(data ?? []); setLoadingPool(false) })
+  }, [filterCategories])
+
+  // IDs já alocados em alguma dupla
+  const usedIds = new Set(state.pairs.flatMap((p) => [p.p1.id, p.p2.id]))
+
+  const available = pool.filter(
+    (p) =>
+      !usedIds.has(p.id) &&
+      p.id !== buildingP1?.id &&
+      (!query.trim() || (p.full_name ?? '').toLowerCase().includes(query.trim().toLowerCase())),
+  )
+
+  function toggleCategory(id: string) {
+    setFilterCategories((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id])
+  }
+
+  function handlePlayerClick(player: PlayerResult) {
+    if (!buildingP1) {
+      setBuildingP1(player)
+    } else {
+      // Confirma a dupla
+      const newPair: PairEntry = {
+        id:
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : String(Date.now()) + Math.random().toString(36).slice(2),
+        p1: buildingP1,
+        p2: player,
+      }
+      onChange({ pairs: [...state.pairs, newPair], manualPairGroupAssign: null })
+      setBuildingP1(null)
+    }
+  }
+
+  function removePair(pairId: string) {
+    const newSeeds = { ...state.pairSeeds }
+    delete newSeeds[pairId]
+    const cur = state.manualPairGroupAssign ?? {}
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { [pairId]: _removed, ...restAssign } = cur
+    onChange({
+      pairs: state.pairs.filter((p) => p.id !== pairId),
+      pairSeeds: newSeeds,
+      manualPairGroupAssign: Object.keys(restAssign).length ? restAssign : null,
+    })
+  }
+
+  function setPairSeed(pairId: string, seed: number | null) {
+    onChange({ pairSeeds: { ...state.pairSeeds, [pairId]: seed } })
+  }
+
+  function movePair(pairId: string, newGroupIdx: number) {
+    const cur = state.manualPairGroupAssign ?? computeSnakeDraftPairs(state.pairs, state.numGroups)
+    onChange({ manualPairGroupAssign: { ...cur, [pairId]: newGroupIdx } })
+  }
+
+  // Para GroupPreview: converte pairs em PlayerResult-like (usa pair.id como id)
+  const pairsAsPlayers: PlayerResult[] = state.pairs.map((pair) => ({
+    id: pair.id,
+    full_name: `${pair.p1.full_name?.split(' ')[0] ?? '?'} + ${pair.p2.full_name?.split(' ')[0] ?? '?'}`,
+    avatar_url: null,
+  }))
+  const pairGroupAssignments =
+    state.manualPairGroupAssign ?? computeSnakeDraftPairs(state.pairs, state.numGroups)
+
+  const note = isElim ? bracketNote(state.pairs.length, 'pair') : null
+
+  return (
+    <div className="space-y-4">
+      {/* Banner "montando dupla" */}
+      {buildingP1 && (
+        <div
+          className="glass glass-card px-4 py-3 space-y-2"
+          style={{ borderColor: 'rgba(205,253,81,0.3)' }}
+        >
+          <p className="text-[11px] font-semibold text-secondary/70 uppercase tracking-wider">
+            Selecione o 2° jogador da dupla
+          </p>
+          <div className="flex items-center gap-3">
+            <PlayerAvatar player={buildingP1} size={32} />
+            <span className="flex-1 text-sm font-semibold text-white/85 truncate">
+              {buildingP1.full_name ?? 'Jogador'}
+            </span>
+            <span className="text-secondary/60 text-sm font-bold shrink-0">+ ?</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBuildingP1(null)}
+            className="text-xs text-white/35 hover:text-white/60 transition"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
+
+      {/* Filtro por categoria */}
+      {categories.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40 px-1">
+            Filtrar por categoria{' '}
+            <span className="normal-case font-normal text-white/30">(opcional)</span>
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {categories.map((c) => {
+              const active = filterCategories.includes(c.id)
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => toggleCategory(c.id)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition active:scale-95 ${
+                    active ? 'bg-secondary text-primary' : 'glass border-white/10 text-white/55 hover:text-white/80'
+                  }`}
+                >
+                  {c.name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Busca */}
+      <div className="glass glass-card flex items-center gap-2 px-3.5 py-2.5">
+        <Search className="h-4 w-4 shrink-0 text-white/40" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={buildingP1 ? 'Selecione o 2° jogador…' : 'Filtrar por nome…'}
+          className="flex-1 bg-transparent text-sm text-white placeholder-white/30 outline-none"
+        />
+        {query && (
+          <button type="button" onClick={() => setQuery('')}>
+            <X className="h-4 w-4 text-white/40" />
+          </button>
+        )}
+      </div>
+
+      {/* Disponíveis */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between px-1">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">
+            {buildingP1 ? '2° jogador' : 'Disponíveis'}
+          </p>
+          {!loadingPool && <span className="text-xs text-white/30">{available.length}</span>}
+        </div>
+        {loadingPool ? (
+          <p className="py-6 text-center text-xs text-white/35">Carregando jogadores…</p>
+        ) : available.length === 0 ? (
+          <p className="py-6 text-center text-xs text-white/35">
+            {query.trim()
+              ? `Nenhum resultado para "${query.trim()}".`
+              : 'Nenhum jogador disponível.'}
+          </p>
+        ) : (
+          available.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => handlePlayerClick(p)}
+              className="glass glass-card w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition active:scale-[0.98]"
+            >
+              <PlayerAvatar player={p} size={32} />
+              <span className="flex-1 text-sm text-white/85">{p.full_name ?? 'Sem nome'}</span>
+              <span className="text-xs font-semibold text-secondary/80">
+                {buildingP1 ? '+ Par' : '+ Selecionar'}
+              </span>
+            </button>
+          ))
+        )}
+      </div>
+
+      {state.pairs.length > 0 && <div className="h-px bg-white/8" />}
+
+      {/* Duplas confirmadas */}
+      {state.pairs.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">
+              {showSeeds ? 'Duplas + seeds' : 'Duplas'}
+            </p>
+            <span
+              className={`text-xs font-semibold ${
+                state.pairs.length < 2 ? 'text-white/30' : 'text-secondary'
+              }`}
+            >
+              {state.pairs.length} {state.pairs.length === 1 ? 'dupla' : 'duplas'}
+              {state.pairs.length < 2 && ' (mín. 2)'}
+            </span>
+          </div>
+
+          {state.pairs.map((pair) => (
+            <div key={pair.id} className="glass glass-card flex items-center gap-3 px-3.5 py-2.5">
+              {/* Mini-avatares sobrepostos */}
+              <div className="flex -space-x-2 shrink-0">
+                <PlayerAvatar player={pair.p1} size={26} />
+                <PlayerAvatar player={pair.p2} size={26} />
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-white/85 truncate">
+                  {pair.p1.full_name?.split(' ')[0] ?? '?'}
+                  <span className="text-white/30 mx-1">/</span>
+                  {pair.p2.full_name?.split(' ')[0] ?? '?'}
+                </p>
+              </div>
+
+              {/* Seed (eliminatória / grupos) */}
+              {showSeeds && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-xs text-white/30 mr-1">Seed</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cur = state.pairSeeds[pair.id] ?? null
+                      if (cur !== null && cur > 1) setPairSeed(pair.id, cur - 1)
+                      else if (cur === 1) setPairSeed(pair.id, null)
+                    }}
+                    className="h-6 w-6 rounded-full bg-white/10 text-white/50 grid place-items-center text-xs leading-none transition active:scale-95"
+                  >
+                    −
+                  </button>
+                  <span className="w-7 text-center text-xs font-bold text-secondary">
+                    {state.pairSeeds[pair.id] ?? '—'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cur = state.pairSeeds[pair.id] ?? null
+                      const next = cur === null ? 1 : cur + 1
+                      if (next <= state.pairs.length) setPairSeed(pair.id, next)
+                    }}
+                    className="h-6 w-6 rounded-full bg-white/10 text-white/50 grid place-items-center text-xs leading-none transition active:scale-95"
+                  >
+                    +
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => removePair(pair.id)}
+                className="h-7 w-7 grid place-items-center rounded-full text-white/30 hover:bg-white/8 hover:text-red-400 transition active:scale-95 shrink-0"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+
+          {note && (
+            <div
+              className="glass glass-card flex items-start gap-2.5 px-3.5 py-3"
+              style={{ borderColor: 'rgba(205,253,81,0.2)' }}
+            >
+              <Info className="h-3.5 w-3.5 text-secondary/60 shrink-0 mt-0.5" />
+              <p className="text-xs text-white/50 leading-relaxed">{note}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Prévia de grupos (grupos_elim) */}
+      {isGruposElim && state.pairs.length >= 2 && (
+        <>
+          <div className="h-px bg-white/8" />
+          <GroupPreview
+            players={pairsAsPlayers}
+            numGroups={state.numGroups}
+            assignments={pairGroupAssignments}
+            onMove={movePair}
+          />
+        </>
+      )}
+
+      {state.pairs.length === 0 && !loadingPool && available.length > 0 && !buildingP1 && (
+        <p className="text-center text-xs text-white/25">
+          Selecione um jogador para começar a montar a dupla.
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ─── Step 4 ───────────────────────────────────────────────────────────────────
 
 function Step4({ state, onChange }: { state: WizardState; onChange: (p: Patch) => void }) {
@@ -1307,8 +1656,11 @@ function Step5({
       ? `Por set — ${setsToPlay === 1 ? '1 set' : `MD${setsToPlay}`}, ${pointsPerSet} pts/set`
       : `Por tempo — ${timeMinutes} min`
 
+  const isPairMode = state.unit === 'pair'
   const seededPlayers = state.players.filter((p) => state.playerSeeds[p.id] != null)
   const unseededPlayers = state.players.filter((p) => state.playerSeeds[p.id] == null)
+  const seededPairs = state.pairs.filter((p) => state.pairSeeds[p.id] != null)
+  const unseededPairs = state.pairs.filter((p) => state.pairSeeds[p.id] == null)
 
   return (
     <div className="space-y-4">
@@ -1352,15 +1704,22 @@ function Step5({
               value={`V ${state.pointsWin} · ${allowDraw ? `E ${state.pointsDraw} · ` : ''}D ${state.pointsLoss}`}
             />
             <div className="h-px bg-white/8" />
-            <SummaryRow label="Participantes" value={`${state.players.length} jogadores`} />
+            <SummaryRow
+              label="Participantes"
+              value={isPairMode ? `${state.pairs.length} duplas` : `${state.players.length} jogadores`}
+            />
           </>
         ) : isElim ? (
           <>
             <SummaryRow label="3º lugar" value={state.hasThirdPlace ? 'Sim' : 'Não'} />
             <SummaryRow label="Contagem" value={countingDesc(state.counting, state.setsToPlay, state.pointsPerSet, state.timeMinutes)} />
             <div className="h-px bg-white/8" />
-            <SummaryRow label="Participantes" value={`${state.players.length} jogadores`} />
-            {seededPlayers.length > 0 && (
+            <SummaryRow
+              label="Participantes"
+              value={isPairMode ? `${state.pairs.length} duplas` : `${state.players.length} jogadores`}
+            />
+            {/* Seeds — jogadores */}
+            {!isPairMode && seededPlayers.length > 0 && (
               <div>
                 <p className="text-xs text-white/40 mb-1.5">Seeds</p>
                 <div className="space-y-1">
@@ -1383,6 +1742,32 @@ function Step5({
                 </div>
               </div>
             )}
+            {/* Seeds — duplas */}
+            {isPairMode && seededPairs.length > 0 && (
+              <div>
+                <p className="text-xs text-white/40 mb-1.5">Seeds</p>
+                <div className="space-y-1">
+                  {state.pairs
+                    .filter((p) => state.pairSeeds[p.id] != null)
+                    .sort((a, b) => (state.pairSeeds[a.id] ?? 99) - (state.pairSeeds[b.id] ?? 99))
+                    .map((p) => (
+                      <div key={p.id} className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-secondary w-5 text-right">
+                          {state.pairSeeds[p.id]}
+                        </span>
+                        <span className="text-xs text-white/60">
+                          {p.p1.full_name?.split(' ')[0]} / {p.p2.full_name?.split(' ')[0]}
+                        </span>
+                      </div>
+                    ))}
+                  {unseededPairs.length > 0 && (
+                    <p className="text-xs text-white/30 mt-1">
+                      {unseededPairs.length} sem seed (distribuídas após as seedadas)
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -1393,7 +1778,10 @@ function Step5({
               value={`V ${state.pointsWin} · ${allowDraw ? `E ${state.pointsDraw} · ` : ''}D ${state.pointsLoss}`}
             />
             <div className="h-px bg-white/8" />
-            <SummaryRow label="Participantes" value={`${state.players.length} jogadores`} />
+            <SummaryRow
+              label="Participantes"
+              value={isPairMode ? `${state.pairs.length} duplas` : `${state.players.length} jogadores`}
+            />
             <div>
               <p className="text-xs text-white/40 mb-1.5">Desempate</p>
               <ol className="list-decimal list-inside space-y-0.5">
@@ -1498,9 +1886,11 @@ export function ChampionshipWizard() {
           eliminatoria: 'Eliminatória',
           grupos_elim: 'Grupos + Eliminatórias',
         }
+        const isPairMode = state.unit === 'pair'
+        const participantCount = isPairMode ? state.pairs.length : state.players.length
         const snapshot = {
           name: state.name,
-          subtitle: `${FORMAT_LABEL[state.format] ?? 'Campeonato'} · ${state.players.length} jogadores`,
+          subtitle: `${FORMAT_LABEL[state.format] ?? 'Campeonato'} · ${participantCount} ${isPairMode ? 'duplas' : 'jogadores'}`,
         }
 
         let op: CreationOp
@@ -1521,11 +1911,58 @@ export function ChampionshipWizard() {
               pointsDraw: state.counting === 'tempo' || state.setDrawEnabled ? state.pointsDraw : 0,
               pointsLoss: state.pointsLoss,
               tiebreakers: state.tiebreakers,
-              players: state.players.map((p) => ({ userId: p.id, seed: state.playerSeeds[p.id] ?? null })),
+              players: isPairMode
+                ? []
+                : state.players.map((p) => ({ userId: p.id, seed: state.playerSeeds[p.id] ?? null })),
+              pairs: isPairMode
+                ? state.pairs.map((p) => ({ p1: p.p1.id, p2: p.p2.id, seed: state.pairSeeds[p.id] ?? null }))
+                : undefined,
               status: state.status,
             },
           }
         } else if (state.format === 'grupos_elim') {
+          if (isPairMode) {
+            const pairAssignments =
+              state.manualPairGroupAssign ?? computeSnakeDraftPairs(state.pairs, state.numGroups)
+            const allowDraw = state.groupsCounting === 'tempo' || state.groupsSetDrawEnabled
+            op = {
+              type: 'champ_grupos',
+              cfg: {
+                name: state.name,
+                startDate: state.startDate || null,
+                numGroups: state.numGroups,
+                qualifiersPerGroup: state.qualifiersPerGroup,
+                pointsWin: state.pointsWin,
+                pointsDraw: allowDraw ? state.pointsDraw : 0,
+                pointsLoss: state.pointsLoss,
+                allowDraw,
+                tiebreakers: state.tiebreakers,
+                groupsCounting: state.groupsCounting,
+                groupsRounds: state.groupsRounds,
+                groupsSetsToPlay: state.groupsSetsToPlay,
+                groupsPointsPerSet: state.groupsPointsPerSet,
+                groupsWinByTwo: state.groupsWinByTwo,
+                groupsSetDrawEnabled: state.groupsSetDrawEnabled,
+                groupsTimeMinutes:
+                  state.groupsCounting === 'tempo' ? Number(state.groupsTimeMinutes) : null,
+                elimCounting: state.counting,
+                elimSetsToPlay: state.setsToPlay,
+                elimPointsPerSet: state.pointsPerSet,
+                elimWinByTwo: state.winByTwo,
+                elimSetDrawEnabled: false,
+                elimTimeMinutes: state.counting === 'tempo' ? Number(state.timeMinutes) : null,
+                hasThirdPlace: state.hasThirdPlace,
+                players: [],
+                pairs: state.pairs.map((p) => ({
+                  p1: p.p1.id,
+                  p2: p.p2.id,
+                  seed: state.pairSeeds[p.id] ?? null,
+                  groupIndex: pairAssignments[p.id] ?? 0,
+                })),
+                status: 'ativo',
+              },
+            }
+          } else {
           const assignments =
             state.manualGroupAssign ?? computeSnakeDraft(state.players, state.numGroups)
           const groups = groupPlayersByAssignment(state.players, assignments, state.numGroups)
@@ -1562,7 +1999,9 @@ export function ChampionshipWizard() {
               status: 'ativo',
             },
           }
+          } // end !isPairMode
         } else {
+          // Liga
           const allowDraw = state.counting === 'tempo' || state.setDrawEnabled
           op = {
             type: 'champ_liga',
@@ -1581,7 +2020,10 @@ export function ChampionshipWizard() {
               winByTwo: state.winByTwo,
               setDrawEnabled: state.setDrawEnabled,
               timeMinutes: state.counting === 'tempo' ? Number(state.timeMinutes) : null,
-              playerIds: state.players.map((p) => p.id),
+              playerIds: isPairMode ? [] : state.players.map((p) => p.id),
+              pairs: isPairMode
+                ? state.pairs.map((p) => ({ p1: p.p1.id, p2: p.p2.id }))
+                : undefined,
               status: state.status,
             },
           }
@@ -1601,7 +2043,7 @@ export function ChampionshipWizard() {
     (state.format !== 'liga' &&
       state.format !== 'eliminatoria' &&
       state.format !== 'grupos_elim') ||
-    state.unit !== 'player'
+    (state.unit !== 'player' && state.unit !== 'pair')
 
   const canGoForward = canAdvance(step, state)
 
@@ -1668,7 +2110,8 @@ export function ChampionshipWizard() {
           <Step2Liga state={state} onChange={onChange} />
         )}
         {step === 3 && <Step3 state={state} onChange={onChange} />}
-        {step === 4 && <Step4 state={state} onChange={onChange} />}
+        {step === 4 && state.unit === 'pair'   && <Step4Pairs state={state} onChange={onChange} />}
+        {step === 4 && state.unit !== 'pair'   && <Step4 state={state} onChange={onChange} />}
         {step === 5 && (
           <Step5
             state={state}
