@@ -8,17 +8,22 @@
 //   • Assets do build (/_next/static, /icons, /brand, manifest): cache-first (SWR).
 //   • Navegações (documento) e RSC (navegação client-side do Next): network-first
 //     → caem no snapshot cacheado da MESMA rota → home → página offline.
-//   • Rotas principais são pré-cacheadas na ativação (online) para já abrirem
-//     offline mesmo sem visita manual.
+//   • Rotas principais são pré-cacheadas na ativação (online), TANTO o documento
+//     QUANTO o payload RSC, para abrirem offline mesmo sem visita manual.
 //   • Demais GETs (dados Supabase): seguem à rede; offline falham e o app trata.
 //
-// Combinado com o motor de placar (fila offline em IndexedDB), permite: navegar
-// o app, abrir um campeonato/jogo já visto e ALIMENTAR placares offline — que
-// sincronizam e recalculam a classificação ao reconectar.
+// IMPORTANTE — chave normalizada por pathname:
+//   O Next faz navegação client-side via requisições RSC com query param volátil
+//   (?_rsc=<hash>) e header Vary, o que quebrava o cache (match por URL exata).
+//   Aqui cacheamos documentos e RSC usando APENAS o pathname como chave, ignorando
+//   query string e Vary — assim um clique offline em <Link> sempre acha o snapshot.
 
-const VERSION = 'v5';
+const VERSION = 'v6';
 const STATIC_CACHE = `squashba-static-${VERSION}`;
 const PAGE_CACHE = `squashba-pages-${VERSION}`;
+const RSC_CACHE = `squashba-rsc-${VERSION}`;
+
+const KNOWN_CACHES = [STATIC_CACHE, PAGE_CACHE, RSC_CACHE];
 
 // Rotas que valem pré-carregar (o "caminho" base do app + telas de criação,
 // para permitir criar campeonato/desafio offline mesmo sem visita prévia).
@@ -39,21 +44,40 @@ self.addEventListener('install', () => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      // Purga caches de versões anteriores (inclui o "/" congelado do bug antigo).
+      // Purga caches de versões anteriores.
       const keys = await caches.keys();
       await Promise.all(
-        keys.filter((k) => k !== STATIC_CACHE && k !== PAGE_CACHE).map((k) => caches.delete(k)),
+        keys.filter((k) => !KNOWN_CACHES.includes(k)).map((k) => caches.delete(k)),
       );
       await self.clients.claim();
 
       // Pré-cache best-effort das rotas principais (estamos online ao ativar).
-      const cache = await caches.open(PAGE_CACHE);
+      // Cacheamos o DOCUMENTO (hard nav) e o PAYLOAD RSC (client-side nav).
+      const pageCache = await caches.open(PAGE_CACHE);
+      const rscCache = await caches.open(RSC_CACHE);
       await Promise.all(
         CORE_ROUTES.map(async (path) => {
+          // Documento HTML
           try {
             const res = await fetch(path, { credentials: 'same-origin' });
-            if (res.ok && !res.redirected && (res.headers.get('content-type') || '').includes('text/html')) {
-              await cache.put(path, res.clone());
+            if (
+              res.ok &&
+              !res.redirected &&
+              (res.headers.get('content-type') || '').includes('text/html')
+            ) {
+              await pageCache.put(path, res.clone());
+            }
+          } catch {
+            /* offline / falhou — ignora */
+          }
+          // Payload RSC (Flight) — o que o <Link> busca na navegação client-side
+          try {
+            const rscRes = await fetch(path, {
+              credentials: 'same-origin',
+              headers: { RSC: '1' },
+            });
+            if (rscRes.ok && !rscRes.redirected) {
+              await rscCache.put(path, rscRes.clone());
             }
           } catch {
             /* offline / falhou — ignora */
@@ -97,23 +121,39 @@ async function staleWhileRevalidate(request, cacheName) {
   return cached || (await network) || Response.error();
 }
 
-// Network-first; offline cai no snapshot cacheado da mesma URL.
-async function networkFirst(request, { isNavigation } = {}) {
+// RSC: network-first; chave normalizada = pathname (ignora ?_rsc e Vary).
+// Offline cai no snapshot RSC cacheado da MESMA rota.
+async function rscFirst(request) {
+  const key = new URL(request.url).pathname;
+  const cache = await caches.open(RSC_CACHE);
+  try {
+    const res = await fetch(request);
+    if (res && res.ok && !res.redirected) cache.put(key, res.clone());
+    return res;
+  } catch {
+    const cached = await cache.match(key);
+    if (cached) return cached;
+    // RSC sem cache: 503 → o Next mostra o boundary client-side. (Raro: só
+    // rotas nunca visitadas online e fora das CORE_ROUTES pré-cacheadas.)
+    return new Response('', { status: 503, statusText: 'Offline' });
+  }
+}
+
+// Navegação (documento): network-first; chave normalizada = pathname.
+// Offline cai no snapshot da rota → home → página offline.
+async function navigationFirst(request) {
+  const key = new URL(request.url).pathname;
   const cache = await caches.open(PAGE_CACHE);
   try {
     const res = await fetch(request);
-    if (res && res.ok && !res.redirected) cache.put(request, res.clone());
+    if (res && res.ok && !res.redirected) cache.put(key, res.clone());
     return res;
   } catch {
-    const cached = await cache.match(request);
+    const cached = await cache.match(key);
     if (cached) return cached;
-    if (isNavigation) {
-      const home = await cache.match('/');
-      if (home) return home;
-      return offlineHtml();
-    }
-    // RSC sem cache: 503 → o Next mostra o boundary de erro client-side.
-    return new Response('', { status: 503, statusText: 'Offline' });
+    const home = await cache.match('/');
+    if (home) return home;
+    return offlineHtml();
   }
 }
 
@@ -151,13 +191,13 @@ self.addEventListener('fetch', (event) => {
 
   // RSC (navegação client-side do App Router) → network-first c/ snapshot.
   if (request.headers.get('RSC') === '1') {
-    event.respondWith(networkFirst(request, { isNavigation: false }));
+    event.respondWith(rscFirst(request));
     return;
   }
 
   // Navegação de documento (reload / hard nav) → network-first c/ snapshot.
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirst(request, { isNavigation: true }));
+    event.respondWith(navigationFirst(request));
     return;
   }
 

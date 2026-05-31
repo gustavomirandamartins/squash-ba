@@ -4,8 +4,8 @@ import { useState, useEffect, useTransition, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
-import { createClient } from '@/utils/supabase/client'
 import { submitCreation } from '@/lib/offline/submit'
+import { loadCategories, loadPlayerPool, type CachedPlayer } from '@/lib/offline/players-cache'
 import type { CreationOp } from '@/lib/offline/types'
 import {
   ChevronLeft,
@@ -1075,7 +1075,7 @@ function Step4Pairs({ state, onChange }: { state: WizardState; onChange: (p: Pat
   const [query, setQuery]                   = useState('')
   const [categories, setCategories]         = useState<Category[]>([])
   const [filterCategories, setFilterCategories] = useState<string[]>([])
-  const [pool, setPool]                     = useState<PlayerResult[]>([])
+  const [pool, setPool]                     = useState<CachedPlayer[]>([])
   const [loadingPool, setLoadingPool]       = useState(true)
   const [buildingP1, setBuildingP1]         = useState<PlayerResult | null>(null)
 
@@ -1083,34 +1083,26 @@ function Step4Pairs({ state, onChange }: { state: WizardState; onChange: (p: Pat
   const isGruposElim = state.format === 'grupos_elim'
   const showSeeds    = isElim || isGruposElim
 
+  // Online: busca e cacheia; offline: lê o último snapshot do IndexedDB.
   useEffect(() => {
-    createClient()
-      .from('categories')
-      .select('id, name')
-      .order('name')
-      .then(({ data }) => setCategories(data ?? []))
+    loadCategories().then(setCategories)
   }, [])
 
   useEffect(() => {
     setLoadingPool(true)
-    const supabase = createClient()
-    let q = supabase
-      .from('profiles')
-      .select('id, full_name, avatar_url')
-      .not('full_name', 'is', null)
-      .order('full_name')
-      .limit(150)
-    if (filterCategories.length > 0) q = q.in('category_id', filterCategories)
-    q.then(({ data }) => { setPool(data ?? []); setLoadingPool(false) })
-  }, [filterCategories])
+    loadPlayerPool().then((data) => { setPool(data); setLoadingPool(false) })
+  }, [])
 
   // IDs já alocados em alguma dupla
   const usedIds = new Set(state.pairs.flatMap((p) => [p.p1.id, p.p2.id]))
 
+  // Filtro por categoria aplicado no CLIENTE (funciona offline).
   const available = pool.filter(
     (p) =>
       !usedIds.has(p.id) &&
       p.id !== buildingP1?.id &&
+      (filterCategories.length === 0 ||
+        (p.category_id !== null && filterCategories.includes(p.category_id))) &&
       (!query.trim() || (p.full_name ?? '').toLowerCase().includes(query.trim().toLowerCase())),
   )
 
@@ -1391,32 +1383,21 @@ function Step4({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
   const [query, setQuery] = useState('')
   const [categories, setCategories] = useState<Category[]>([])
   const [filterCategories, setFilterCategories] = useState<string[]>([])
-  const [pool, setPool] = useState<PlayerResult[]>([])
+  const [pool, setPool] = useState<CachedPlayer[]>([])
   const [loadingPool, setLoadingPool] = useState(true)
   const isElim = state.format === 'eliminatoria'
   const isGruposElim = state.format === 'grupos_elim'
   const showSeeds = isElim || isGruposElim
 
+  // Online: busca e cacheia; offline: lê o último snapshot do IndexedDB.
   useEffect(() => {
-    createClient()
-      .from('categories')
-      .select('id, name')
-      .order('name')
-      .then(({ data }) => setCategories(data ?? []))
+    loadCategories().then(setCategories)
   }, [])
 
   useEffect(() => {
     setLoadingPool(true)
-    const supabase = createClient()
-    let q = supabase
-      .from('profiles')
-      .select('id, full_name, avatar_url')
-      .not('full_name', 'is', null)
-      .order('full_name')
-      .limit(150)
-    if (filterCategories.length > 0) q = q.in('category_id', filterCategories)
-    q.then(({ data }) => { setPool(data ?? []); setLoadingPool(false) })
-  }, [filterCategories])
+    loadPlayerPool().then((data) => { setPool(data); setLoadingPool(false) })
+  }, [])
 
   // Current group assignments (snake or manual)
   const groupAssignments = state.manualGroupAssign ?? computeSnakeDraft(state.players, state.numGroups)
@@ -1427,9 +1408,12 @@ function Step4({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
     )
   }
 
+  // Filtro por categoria aplicado no CLIENTE (funciona offline).
   const available = pool.filter(
     (p) =>
       !state.players.find((s) => s.id === p.id) &&
+      (filterCategories.length === 0 ||
+        (p.category_id !== null && filterCategories.includes(p.category_id))) &&
       (!query.trim() || p.full_name?.toLowerCase().includes(query.trim().toLowerCase())),
   )
 

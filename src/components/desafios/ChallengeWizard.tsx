@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
+import { loadPlayerPool } from '@/lib/offline/players-cache'
 import {
   ChevronLeft,
   ChevronRight,
@@ -411,26 +412,29 @@ function PlayerSearchPicker({
   excludeIds: string[]
 }) {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<Profile[]>([])
-  const [searching, setSearching] = useState(false)
+  const [pool, setPool] = useState<Profile[]>([])
+  const [searching, setSearching] = useState(true)
 
+  // Carrega o pool uma vez (online busca e cacheia; offline lê o snapshot).
   useEffect(() => {
-    const t = setTimeout(async () => {
-      if (query.trim().length < 2) { setResults([]); return }
-      setSearching(true)
-      const { data } = await createClient()
-        .from('profiles')
-        .select('id, full_name, avatar_url')
-        .ilike('full_name', `%${query.trim()}%`)
-        .order('full_name')
-        .limit(10)
-      setResults((data ?? []) as Profile[])
+    loadPlayerPool().then((data) => {
+      setPool(data.map((p) => ({ id: p.id, full_name: p.full_name, avatar_url: p.avatar_url })))
       setSearching(false)
-    }, 300)
-    return () => clearTimeout(t)
-  }, [query])
+    })
+  }, [])
 
-  const filtered = results.filter((p) => !excludeIds.includes(p.id))
+  // Filtro client-side por nome (funciona offline).
+  const q = query.trim().toLowerCase()
+  const filtered =
+    q.length < 2
+      ? []
+      : pool
+          .filter(
+            (p) =>
+              !excludeIds.includes(p.id) &&
+              (p.full_name ?? '').toLowerCase().includes(q),
+          )
+          .slice(0, 10)
 
   return (
     <div className="space-y-2">
@@ -475,7 +479,7 @@ function PlayerSearchPicker({
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => { onSelect(p); setQuery(''); setResults([]) }}
+                  onClick={() => { onSelect(p); setQuery('') }}
                   className="glass glass-card w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition active:scale-[0.98]"
                 >
                   <PlayerAvatar profile={p} size={32} />
