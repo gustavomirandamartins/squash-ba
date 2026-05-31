@@ -157,6 +157,7 @@ export function EditProfileForm({ userId, email, categories, teams, initial }: P
 
       setSaved(true)
       router.refresh()
+      router.back()
       // Ativa Web Push best-effort (não bloqueia se o usuário recusar)
       void subscribePush()
     } catch (err) {

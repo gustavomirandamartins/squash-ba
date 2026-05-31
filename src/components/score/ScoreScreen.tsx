@@ -17,6 +17,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, CalendarDays } from 'lucide-react'
 import { useScoreEngine, type GameScore, type ConflictSnapshot, type ScoreEngineConfig } from '@/lib/score-engine/useScoreEngine'
 import { CourtTimer } from '@/lib/score-engine/CourtTimer'
@@ -365,6 +366,8 @@ export function ScoreScreen({
     resolveConflict,
   } = engine
 
+  const router = useRouter()
+
   const isTempo   = counting === 'tempo'
   // 'set' (singular) é o valor persistido no banco; aceita também 'sets' para compatibilidade
   const isSets    = counting === 'set' || counting === 'sets'
@@ -382,6 +385,15 @@ export function ScoreScreen({
 
   // A partida finaliza AUTOMATICAMENTE quando o placar decide (mais sets vence;
   // empate só quando a fase permite e o resultado dá igual). Sem confirmação manual.
+
+  // Volta para a página anterior quando a partida finaliza NESTA sessão.
+  // (Se já estava finalizada ao carregar, não redireciona.)
+  const wasFinishedOnMountRef = useRef(initialStatus === 'finalizado')
+  useEffect(() => {
+    if (isFinished && !wasFinishedOnMountRef.current) {
+      router.push(backHref)
+    }
+  }, [isFinished, backHref, router])
 
   const [reopening, setReopening] = useState(false)
   const [reopenError, setReopenError] = useState<string | null>(null)
