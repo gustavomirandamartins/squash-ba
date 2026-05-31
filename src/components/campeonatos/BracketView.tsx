@@ -418,7 +418,11 @@ export function BracketView({
 
   // ── Detecta triangular (N=3) ───────────────────────────────────────────────
   const isBracketMatch = matches.some((m) => (m.bracket_slot ?? 0) > 0)
-  if (!isBracketMatch) {
+  // Só é triangular quando HÁ jogos gerados (round-robin) sem bracket_slot.
+  // Sem nenhum jogo = bracket ainda não gerado (rascunho) → não mostrar classificação.
+  const isTriangular = !isBracketMatch && matches.length > 0
+
+  if (isTriangular) {
     // N=3: round-robin triangular → mostra tabela de classificação
     return (
       <div className="space-y-4">
@@ -435,6 +439,21 @@ export function BracketView({
           currentUserParticipantId={currentUserParticipantId}
           participantAvatars={participantAvatars}
         />
+      </div>
+    )
+  }
+
+  if (!isBracketMatch) {
+    // Eliminatória sem jogos gerados ainda (rascunho)
+    return (
+      <div className="glass glass-card px-5 py-10 text-center space-y-2">
+        <Zap className="h-8 w-8 text-white/15 mx-auto" />
+        <p className="text-sm font-medium text-white/35 mt-2">Bracket ainda não gerado</p>
+        <p className="text-xs text-white/20 max-w-xs mx-auto leading-relaxed">
+          {champStatus === 'rascunho'
+            ? 'Ative o campeonato para gerar o chaveamento eliminatório.'
+            : 'O chaveamento aparecerá aqui assim que for gerado.'}
+        </p>
       </div>
     )
   }

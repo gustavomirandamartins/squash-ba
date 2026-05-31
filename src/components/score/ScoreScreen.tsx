@@ -14,11 +14,11 @@
  *   - A partida finaliza automaticamente pelo placar (sem confirmação manual)
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw } from 'lucide-react'
+import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, CalendarDays } from 'lucide-react'
 import { useScoreEngine, type GameScore, type ConflictSnapshot, type ScoreEngineConfig } from '@/lib/score-engine/useScoreEngine'
 import { CourtTimer } from '@/lib/score-engine/CourtTimer'
 import { createClient } from '@/utils/supabase/client'
@@ -44,6 +44,10 @@ export type ScoreScreenProps = {
   canManage: boolean
   /** Server Action — reabre partida finalizada (apenas organizers/admins) */
   onReopenMatch?: () => Promise<{ error: string | null }>
+  /** Data/hora agendada da partida (ISO) ou null */
+  scheduledAt?: string | null
+  /** Server Action — atualiza a data do jogo (scheduled_at) */
+  onUpdateSchedule?: (iso: string | null) => Promise<{ error: string | null }>
   // SSR initial state
   initialGames: GameScore[]
   initialStatus: string
@@ -324,6 +328,8 @@ export function ScoreScreen({
   timeMinutes,
   canManage,
   onReopenMatch,
+  scheduledAt,
+  onUpdateSchedule,
   initialGames,
   initialStatus,
   initialResult,
@@ -399,6 +405,57 @@ export function ScoreScreen({
     }
   }
 
+  // ── Data do jogo (#2) ──────────────────────────────────────────────────────
+  const [scheduledLocal, setScheduledLocal] = useState<string | null>(scheduledAt ?? null)
+  const [savingDate, setSavingDate] = useState(false)
+  const autoSetRef = useRef(false)
+
+  // 'YYYY-MM-DD' para o <input type="date"> (em horário local)
+  function isoToDateInput(iso: string | null): string {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+
+  const saveSchedule = useCallback(
+    async (iso: string | null) => {
+      if (!onUpdateSchedule) return
+      setSavingDate(true)
+      setScheduledLocal(iso)
+      try {
+        await onUpdateSchedule(iso)
+      } catch {
+        // offline ou falha de rede: mantém o valor local (data é informativa)
+      } finally {
+        setSavingDate(false)
+      }
+    },
+    [onUpdateSchedule],
+  )
+
+  function handleDateChange(value: string) {
+    if (!value) { void saveSchedule(null); return }
+    // Salva ao meio-dia local para evitar “voltar um dia” por fuso ao reexibir
+    const iso = new Date(`${value}T12:00:00`).toISOString()
+    void saveSchedule(iso)
+  }
+
+  // Define automaticamente a data de hoje ao iniciar o jogo, se ainda não houver.
+  useEffect(() => {
+    if (autoSetRef.current) return
+    if (!canManage || !onUpdateSchedule) return
+    if (scheduledLocal) return
+    if (status === 'em_andamento' || status === 'finalizado') {
+      autoSetRef.current = true
+      const iso = new Date(new Date().setHours(12, 0, 0, 0)).toISOString()
+      void saveSchedule(iso)
+    }
+  }, [status, canManage, onUpdateSchedule, scheduledLocal, saveSchedule])
+
   // Supabase client
   const [supabase] = useState(() => createClient())
 
@@ -439,6 +496,35 @@ export function ScoreScreen({
           )}
         </div>
       </div>
+
+      {/* ── Data do jogo (#2) ── */}
+      {onUpdateSchedule && canManage ? (
+        <div className="glass glass-card px-4 py-2.5 flex items-center gap-2.5">
+          <CalendarDays className="h-4 w-4 text-secondary/70 shrink-0" />
+          <span className="text-xs font-medium text-white/55 shrink-0">Data do jogo</span>
+          <input
+            type="date"
+            value={isoToDateInput(scheduledLocal)}
+            onChange={(e) => handleDateChange(e.target.value)}
+            className="ml-auto bg-white/[0.06] rounded-lg px-2.5 py-1.5 text-sm text-white outline-none [color-scheme:dark]"
+          />
+          {savingDate && (
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/60 shrink-0" />
+          )}
+        </div>
+      ) : scheduledLocal ? (
+        <div className="glass glass-card px-4 py-2.5 flex items-center gap-2.5">
+          <CalendarDays className="h-4 w-4 text-secondary/70 shrink-0" />
+          <span className="text-xs font-medium text-white/55">Data do jogo</span>
+          <span className="ml-auto text-sm text-white/80">
+            {new Date(scheduledLocal).toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+            })}
+          </span>
+        </div>
+      ) : null}
 
       {/* ── Conflict banner ── */}
       {hasConflict && (

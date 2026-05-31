@@ -22,7 +22,7 @@ export default async function ChampionshipPage({
   const { data: champ } = await supabase
     .from('championships')
     .select(
-      `id, name, format, unit, status, allow_draw, has_third_place,
+      `id, name, format, unit, status, start_date, allow_draw, has_third_place,
        points_win, points_draw, points_loss, tiebreakers, created_at, created_by,
        championship_stages(
          id, name, kind, counting, rounds,
@@ -193,6 +193,7 @@ export default async function ChampionshipPage({
         format: champ.format,
         unit: champ.unit,
         status: champ.status,
+        start_date: (champ as { start_date?: string | null }).start_date ?? null,
         allow_draw: champ.allow_draw ?? false,
         has_third_place: (champ.has_third_place as boolean) ?? false,
         points_win: champ.points_win ?? 3,

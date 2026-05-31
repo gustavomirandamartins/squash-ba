@@ -11,6 +11,7 @@ interface Props {
     id: string
     name: string
     status: string
+    start_date: string | null
     allow_draw: boolean
     points_win: number
     points_draw: number
@@ -26,6 +27,7 @@ export function EditChampionshipForm({ champ, stage }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   const [name, setName] = useState(champ.name)
+  const [startDate, setStartDate] = useState(champ.start_date ?? '')
   const [pointsWin, setPointsWin] = useState(champ.points_win)
   const [pointsDraw, setPointsDraw] = useState(champ.points_draw)
   const [pointsLoss, setPointsLoss] = useState(champ.points_loss)
@@ -41,6 +43,7 @@ export function EditChampionshipForm({ champ, stage }: Props) {
         id: champ.id,
         name,
         draft,
+        startDate: startDate || null,
         ...(draft && {
           pointsWin,
           pointsDraw: champ.allow_draw ? pointsDraw : 0,
@@ -80,6 +83,15 @@ export function EditChampionshipForm({ champ, stage }: Props) {
           onChange={(e) => setName(e.target.value)}
           className="w-full rounded-xl bg-white/[0.06] px-3 py-2.5 text-sm text-white outline-none placeholder-white/30"
           placeholder="Nome do campeonato"
+        />
+      </Field>
+
+      <Field label="Data de início (opcional)">
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="w-full rounded-xl bg-white/[0.06] px-3 py-2.5 text-sm text-white outline-none [color-scheme:dark]"
         />
       </Field>
 

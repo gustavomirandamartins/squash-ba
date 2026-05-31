@@ -24,6 +24,7 @@ export type ChampSettingsPayload = {
   id: string
   name: string
   draft: boolean
+  startDate?: string | null
   pointsWin?: number
   pointsDraw?: number
   pointsLoss?: number
@@ -37,6 +38,8 @@ export async function updateChampionshipSettings(p: ChampSettingsPayload): Promi
   const supabase = await createClient()
 
   const champUpdate: Record<string, unknown> = { name: p.name.trim() }
+  // Data de início pode ser alterada a qualquer momento (informativa).
+  if (p.startDate !== undefined) champUpdate.start_date = p.startDate || null
   if (p.draft) {
     if (p.pointsWin != null) champUpdate.points_win = p.pointsWin
     if (p.pointsDraw != null) champUpdate.points_draw = p.pointsDraw
@@ -57,6 +60,30 @@ export async function updateChampionshipSettings(p: ChampSettingsPayload): Promi
   }
 
   revalidatePath(`/campeonatos/${p.id}`)
+  revalidatePath('/')
+  return { error: null }
+}
+
+// Ativa um campeonato em rascunho. O trigger championship_status gera os jogos
+// (liga → round-robin; eliminatoria → bracket). RLS de UPDATE em championships
+// já exige can_manage_championship.
+export async function activateChampionship(id: string): Promise<{ error: string | null }> {
+  const supabase = await createClient()
+
+  const { data: champ } = await supabase
+    .from('championships')
+    .select('status')
+    .eq('id', id)
+    .single()
+
+  if (!champ) return { error: 'Campeonato não encontrado.' }
+  if (champ.status !== 'rascunho') return { error: 'O campeonato não está em rascunho.' }
+
+  const { error } = await supabase.from('championships').update({ status: 'ativo' }).eq('id', id)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/campeonatos/${id}`)
+  revalidatePath('/campeonatos')
   revalidatePath('/')
   return { error: null }
 }

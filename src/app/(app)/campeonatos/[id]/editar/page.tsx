@@ -20,7 +20,7 @@ export default async function EditChampionshipPage({
   const { data: champ } = await supabase
     .from('championships')
     .select(
-      `id, name, status, allow_draw, points_win, points_draw, points_loss,
+      `id, name, status, start_date, allow_draw, points_win, points_draw, points_loss,
        championship_stages(id, kind, sets_to_play, points_per_set, win_by_two)`,
     )
     .eq('id', id)
@@ -49,6 +49,7 @@ export default async function EditChampionshipPage({
         id: champ.id,
         name: champ.name,
         status: champ.status,
+        start_date: (champ as { start_date?: string | null }).start_date ?? null,
         allow_draw: champ.allow_draw ?? false,
         points_win: champ.points_win ?? 3,
         points_draw: champ.points_draw ?? 1,

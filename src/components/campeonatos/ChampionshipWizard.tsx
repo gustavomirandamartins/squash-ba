@@ -46,6 +46,7 @@ interface Category {
 interface WizardState {
   // Step 1
   name: string
+  startDate: string  // 'YYYY-MM-DD' ou '' (sem data definida)
   format: Format
   unit: Unit
   // Step 2 — Liga
@@ -147,6 +148,7 @@ const GROUP_NAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
 const DEFAULT_STATE: WizardState = {
   name: '',
+  startDate: '',
   format: 'liga',
   unit: 'player',
   rounds: 1,
@@ -392,6 +394,7 @@ function CountingBlock({
   winByTwo,
   setDrawEnabled,
   timeMinutes,
+  allowDrawOption = true,
   onChange,
 }: {
   label?: string
@@ -401,6 +404,8 @@ function CountingBlock({
   winByTwo: boolean
   setDrawEnabled: boolean
   timeMinutes: string
+  /** #5 — em eliminatórias não há empate; oculta o toggle quando false */
+  allowDrawOption?: boolean
   onChange: (patch: {
     counting?: Counting
     setsToPlay?: 1 | 3 | 5
@@ -468,11 +473,13 @@ function CountingBlock({
             value={winByTwo}
             onChange={(v) => onChange({ winByTwo: v })}
           />
-          <Toggle
-            label={`Empate em ${pointsPerSet}×${pointsPerSet}`}
-            value={setDrawEnabled}
-            onChange={(v) => onChange({ setDrawEnabled: v })}
-          />
+          {allowDrawOption && (
+            <Toggle
+              label={`Empate em ${pointsPerSet}×${pointsPerSet}`}
+              value={setDrawEnabled}
+              onChange={(v) => onChange({ setDrawEnabled: v })}
+            />
+          )}
         </div>
       ) : (
         <div className="flex items-center justify-between gap-3">
@@ -548,6 +555,19 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
           onChange={(e) => onChange({ name: e.target.value })}
           placeholder="Ex.: Liga Baiana 2026"
           className="w-full bg-transparent text-sm text-white placeholder-white/30 outline-none"
+        />
+      </div>
+
+      <div className="glass glass-card px-4 py-3.5 space-y-1.5">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">
+          Data de início{' '}
+          <span className="normal-case font-normal text-white/30">(opcional)</span>
+        </p>
+        <input
+          type="date"
+          value={state.startDate}
+          onChange={(e) => onChange({ startDate: e.target.value })}
+          className="w-full bg-transparent text-sm text-white placeholder-white/30 outline-none [color-scheme:dark]"
         />
       </div>
 
@@ -750,6 +770,7 @@ function Step2GruposElim({ state, onChange }: { state: WizardState; onChange: (p
 
 function Step3({ state, onChange }: { state: WizardState; onChange: (p: Patch) => void }) {
   const isGruposElim = state.format === 'grupos_elim'
+  const isElim = state.format === 'eliminatoria'
   const [groupsOpen, setGroupsOpen] = useState(true)
   const [elimOpen, setElimOpen] = useState(false)
 
@@ -838,6 +859,7 @@ function Step3({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
                   winByTwo={state.winByTwo}
                   setDrawEnabled={state.setDrawEnabled}
                   timeMinutes={state.timeMinutes}
+                  allowDrawOption={false}
                   onChange={(p) => onChange({
                     counting: p.counting ?? state.counting,
                     setsToPlay: p.setsToPlay ?? state.setsToPlay,
@@ -864,6 +886,7 @@ function Step3({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
             winByTwo={state.winByTwo}
             setDrawEnabled={state.setDrawEnabled}
             timeMinutes={state.timeMinutes}
+            allowDrawOption={!isElim}
             onChange={(p) => onChange({
               counting: p.counting ?? state.counting,
               setsToPlay: p.setsToPlay ?? state.setsToPlay,
@@ -876,19 +899,22 @@ function Step3({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
         </div>
       )}
 
-      {/* Table scoring */}
-      <div className="glass glass-card px-4 py-4 space-y-3">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">
-          Pontuação da tabela
-        </p>
-        <NumberField label="Vitória" value={state.pointsWin} onChange={(v) => onChange({ pointsWin: v })} min={0} max={9} />
-        {allowDraw && (
-          <NumberField label="Empate" value={state.pointsDraw} onChange={(v) => onChange({ pointsDraw: v })} min={0} max={9} />
-        )}
-        <NumberField label="Derrota" value={state.pointsLoss} onChange={(v) => onChange({ pointsLoss: v })} min={0} max={9} />
-      </div>
+      {/* Table scoring — eliminatória pura não tem classificação/pontuação (#5) */}
+      {!isElim && (
+        <div className="glass glass-card px-4 py-4 space-y-3">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">
+            Pontuação da tabela
+          </p>
+          <NumberField label="Vitória" value={state.pointsWin} onChange={(v) => onChange({ pointsWin: v })} min={0} max={9} />
+          {allowDraw && (
+            <NumberField label="Empate" value={state.pointsDraw} onChange={(v) => onChange({ pointsDraw: v })} min={0} max={9} />
+          )}
+          <NumberField label="Derrota" value={state.pointsLoss} onChange={(v) => onChange({ pointsLoss: v })} min={0} max={9} />
+        </div>
+      )}
 
-      {/* Tiebreakers */}
+      {/* Tiebreakers — idem, só onde há classificação */}
+      {!isElim && (
       <div className="space-y-2">
         <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40 px-1">
           Desempate (ordem de prioridade)
@@ -918,6 +944,7 @@ function Step3({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
           </div>
         ))}
       </div>
+      )}
     </div>
   )
 }
@@ -1302,6 +1329,16 @@ function Step5({
 
       <div className="glass glass-card px-4 py-4 space-y-2.5">
         <SummaryRow label="Nome" value={state.name} />
+        {state.startDate && (
+          <SummaryRow
+            label="Início"
+            value={new Date(state.startDate + 'T00:00:00').toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+            })}
+          />
+        )}
         <SummaryRow label="Formato" value={FORMAT_LABEL[state.format]} />
         <SummaryRow label="Unidade" value={UNIT_LABEL[state.unit]} />
         <div className="h-px bg-white/8" />
@@ -1480,6 +1517,7 @@ export function ChampionshipWizard() {
             type: 'champ_elim',
             cfg: {
               name: state.name,
+              startDate: state.startDate || null,
               hasThirdPlace: state.hasThirdPlace,
               counting: state.counting,
               setsToPlay: state.setsToPlay,
@@ -1505,6 +1543,7 @@ export function ChampionshipWizard() {
             type: 'champ_grupos',
             cfg: {
               name: state.name,
+              startDate: state.startDate || null,
               numGroups: state.numGroups,
               qualifiersPerGroup: state.qualifiersPerGroup,
               pointsWin: state.pointsWin,
@@ -1524,7 +1563,7 @@ export function ChampionshipWizard() {
               elimSetsToPlay: state.setsToPlay,
               elimPointsPerSet: state.pointsPerSet,
               elimWinByTwo: state.winByTwo,
-              elimSetDrawEnabled: state.setDrawEnabled,
+              elimSetDrawEnabled: false, // #5 — eliminatória nunca tem empate
               elimTimeMinutes: state.counting === 'tempo' ? Number(state.timeMinutes) : null,
               hasThirdPlace: state.hasThirdPlace,
               players: orderedPlayers.map((p) => ({ userId: p.id, seed: state.playerSeeds[p.id] ?? null })),
@@ -1537,6 +1576,7 @@ export function ChampionshipWizard() {
             type: 'champ_liga',
             cfg: {
               name: state.name,
+              startDate: state.startDate || null,
               pointsWin: state.pointsWin,
               pointsDraw: allowDraw ? state.pointsDraw : 0,
               pointsLoss: state.pointsLoss,

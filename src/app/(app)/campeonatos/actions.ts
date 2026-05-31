@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/server'
 
 export type LigaCfg = {
   name: string
+  startDate?: string | null
   pointsWin: number
   pointsDraw: number
   pointsLoss: number
@@ -45,6 +46,10 @@ export async function createLigaChampionship(
   })
   if (error) return { error: error.message }
   if (!id) return { error: 'Campeonato não foi criado.' }
+  // Data de início (RPC não recebe; grava em seguida se informada)
+  if (cfg.startDate) {
+    await supabase.from('championships').update({ start_date: cfg.startDate }).eq('id', id as string)
+  }
   return { id: id as string }
 }
 
@@ -52,6 +57,7 @@ export async function createLigaChampionship(
 
 export type EliminatoriaCfg = {
   name: string
+  startDate?: string | null
   hasThirdPlace: boolean
   counting: 'set' | 'tempo'
   setsToPlay: 1 | 3 | 5
@@ -82,7 +88,9 @@ export async function createEliminatoriaChampionship(
 
   if (!user) return { error: 'Usuário não autenticado.' }
 
-  const allowDraw = cfg.counting === 'tempo' || cfg.setDrawEnabled
+  // #5 — Eliminatória nunca tem empate nem pontuação de tabela:
+  // quem vence avança, quem perde é eliminado. Forçamos sem-empate.
+  const allowDraw = false
 
   // 1. Cria campeonato como rascunho (RLS: championships_insert ok pois created_by = auth.uid())
   const { data: champ, error: champErr } = await supabase
@@ -92,10 +100,11 @@ export async function createEliminatoriaChampionship(
       format: 'eliminatoria',
       unit: 'player',
       status: 'rascunho',
+      start_date: cfg.startDate ?? null,
       allow_draw: allowDraw,
       has_third_place: cfg.hasThirdPlace,
       points_win: cfg.pointsWin,
-      points_draw: allowDraw ? cfg.pointsDraw : 0,
+      points_draw: 0,
       points_loss: cfg.pointsLoss,
       tiebreakers: cfg.tiebreakers,
       created_by: user.id,
@@ -106,7 +115,7 @@ export async function createEliminatoriaChampionship(
   if (champErr || !champ) return { error: champErr?.message ?? 'Erro ao criar campeonato.' }
   const champId = champ.id
 
-  // 2. Fase (can_manage = true porque criador)
+  // 2. Fase (can_manage = true porque criador). set_draw_enabled sempre false (#5).
   const { error: stageErr } = await supabase.from('championship_stages').insert({
     championship_id: champId,
     name: 'Eliminatória',
@@ -117,7 +126,7 @@ export async function createEliminatoriaChampionship(
     sets_to_play: cfg.setsToPlay,
     points_per_set: cfg.pointsPerSet,
     win_by_two: cfg.winByTwo,
-    set_draw_enabled: cfg.setDrawEnabled,
+    set_draw_enabled: false,
     time_minutes: cfg.timeMinutes,
   })
 
@@ -176,6 +185,7 @@ export async function createEliminatoriaChampionship(
 
 export type GruposElimCfg = {
   name: string
+  startDate?: string | null
   numGroups: number
   qualifiersPerGroup: number
   pointsWin: number
@@ -251,6 +261,10 @@ export async function createGruposElimChampionship(
   // TODO: o RPC atual sempre ativa. Quando status='rascunho' desejado,
   // usar uma variante que não ativa — por ora aceitamos esse comportamento.
   if (!id) return { error: 'Campeonato não foi criado.' }
+  // Data de início (RPC não recebe; grava em seguida se informada)
+  if (cfg.startDate) {
+    await supabase.from('championships').update({ start_date: cfg.startDate }).eq('id', id as string)
+  }
   return { id: id as string }
 }
 

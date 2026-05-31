@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { ScoreScreen } from '@/components/score/ScoreScreen'
-import { reopenMatch } from '@/app/(app)/jogos/actions'
+import { reopenMatch, updateMatchSchedule } from '@/app/(app)/jogos/actions'
 import type { GameScore, ConflictSnapshot } from '@/lib/score-engine/useScoreEngine'
 
 export const metadata = { title: 'Placar' }
@@ -22,7 +22,7 @@ export default async function DesafioScorePage({
   const { data: matchRaw } = await supabase
     .from('matches')
     .select(
-      `id, status, result, conflict_server_snapshot,
+      `id, status, result, conflict_server_snapshot, scheduled_at,
        side_a_participant_id, side_b_participant_id, championship_id,
        match_games(game_number, score_a, score_b)`,
     )
@@ -121,6 +121,11 @@ export default async function DesafioScorePage({
     return reopenMatch(matchId)
   }
 
+  async function handleUpdateSchedule(iso: string | null) {
+    'use server'
+    return updateMatchSchedule(matchId, iso)
+  }
+
   // ── Initial state ─────────────────────────────────────────────────────────
   const initialGames = (
     (matchRaw.match_games as GameScore[] | null) ?? []
@@ -145,6 +150,8 @@ export default async function DesafioScorePage({
       timeMinutes={stage?.time_minutes ?? null}
       canManage={canManage}
       onReopenMatch={isOrganizer ? handleReopenMatch : undefined}
+      scheduledAt={(matchRaw as { scheduled_at?: string | null }).scheduled_at ?? null}
+      onUpdateSchedule={canManage ? handleUpdateSchedule : undefined}
       initialGames={initialGames}
       initialStatus={matchRaw.status}
       initialResult={(matchRaw.result as string | null) ?? null}

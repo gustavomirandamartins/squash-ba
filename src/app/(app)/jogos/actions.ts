@@ -42,3 +42,31 @@ export async function reopenMatch(matchId: string): Promise<{ error: string | nu
   revalidatePath('/', 'layout')
   return { error: null }
 }
+
+/**
+ * Atualiza a data/hora agendada de uma partida (scheduled_at).
+ * Quem pode gerir o jogo (organizer ou participante) pode editar.
+ * `iso` deve ser uma string ISO (ex.: '2026-05-30T14:00:00.000Z') ou null.
+ */
+export async function updateMatchSchedule(
+  matchId: string,
+  iso: string | null,
+): Promise<{ error: string | null }> {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Não autenticado.' }
+
+  // RLS de matches já restringe UPDATE a quem pode gerir o jogo.
+  const { error } = await supabase
+    .from('matches')
+    .update({ scheduled_at: iso })
+    .eq('id', matchId)
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { error: null }
+}

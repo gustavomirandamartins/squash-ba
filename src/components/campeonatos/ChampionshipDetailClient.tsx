@@ -1,14 +1,16 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ChevronLeft, ChevronRight, Trophy, User, Medal, GitMerge, Layers, MessageSquare } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Trophy, User, Medal, GitMerge, Layers, MessageSquare, CalendarDays, Rocket } from 'lucide-react'
 import { StandingsTable, type Standing } from './StandingsTable'
 import { BracketView } from './BracketView'
 import { GroupsView, type Group } from './GroupsView'
 import { StatsTab } from './StatsTab'
 import { ManageBar } from '@/components/ManageBar'
+import { activateChampionship } from '@/app/(app)/campeonatos/manage-actions'
 
 // ─── Tipos exportados (reutilizados em page.tsx) ──────────────────────────────
 
@@ -50,6 +52,7 @@ export type ChampData = {
   format: string
   unit: string
   status: string
+  start_date: string | null
   allow_draw: boolean
   points_win: number
   points_draw: number
@@ -317,6 +320,28 @@ export function ChampionshipDetailClient({
 
   const champBadge = CHAMP_STATUS[champ.status] ?? CHAMP_STATUS.rascunho
 
+  // ── Ativação (#3) ──────────────────────────────────────────────────────────
+  const router = useRouter()
+  const [activating, startActivate] = useTransition()
+  const [activateError, setActivateError] = useState<string | null>(null)
+
+  function handleActivate() {
+    setActivateError(null)
+    startActivate(async () => {
+      const res = await activateChampionship(champ.id)
+      if (res.error) { setActivateError(res.error); return }
+      router.refresh()
+    })
+  }
+
+  const startDateLabel = champ.start_date
+    ? new Date(champ.start_date + 'T00:00:00').toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
+    : null
+
   // ── participantGroupLabels for BracketView ─────────────────────────────────
   const participantGroupLabels = useMemo<Record<string, string>>(() => {
     if (!isGruposElim || !groups.length || !initialStandings.length) return {}
@@ -453,6 +478,42 @@ export function ChampionshipDetailClient({
         <ManageBar id={champ.id} basePath="/campeonatos" listPath="/campeonatos" />
       )}
 
+      {/* Ativar campeonato (rascunho) — #3 */}
+      {canManage && champ.status === 'rascunho' && (
+        <div className="glass glass-card px-4 py-4 space-y-3" style={{ borderColor: 'rgba(205,253,81,0.25)' }}>
+          <div className="flex items-start gap-3">
+            <div className="h-9 w-9 rounded-full bg-secondary/15 grid place-items-center shrink-0">
+              <Rocket className="h-4 w-4 text-secondary" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-white/90">Campeonato em rascunho</p>
+              <p className="text-xs text-white/50 mt-0.5 leading-relaxed">
+                Ative para gerar os jogos{isElim ? ' e o bracket' : ''} e torná-lo visível para todos.
+              </p>
+            </div>
+          </div>
+          {activateError && <p className="text-xs text-red-400/90">{activateError}</p>}
+          <button
+            type="button"
+            onClick={handleActivate}
+            disabled={activating}
+            className="w-full flex items-center justify-center gap-2 rounded-2xl bg-secondary py-3 text-sm font-bold text-primary transition active:scale-[0.98] disabled:opacity-50"
+          >
+            {activating ? (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+                Ativando…
+              </>
+            ) : (
+              <>
+                <Rocket className="h-4 w-4" />
+                Ativar campeonato
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Hero compacto */}
       <div className="glass glass-card px-4 py-3.5 flex items-center gap-3">
         <div className="h-10 w-10 rounded-2xl bg-secondary/15 grid place-items-center shrink-0">
@@ -472,6 +533,12 @@ export function ChampionshipDetailClient({
             {!isGruposElim && stage && !isElim && ` · ${stage.rounds}× round-robin`}
             {(isElim || isGruposElim) && champ.has_third_place && ' · com 3º lugar'}
           </p>
+          {startDateLabel && (
+            <p className="flex items-center gap-1 text-[11px] text-white/35 mt-1">
+              <CalendarDays className="h-3 w-3 shrink-0" />
+              Início: {startDateLabel}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {groupConversationId && champ.status === 'ativo' && (
