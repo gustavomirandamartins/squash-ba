@@ -20,6 +20,7 @@ import {
   Trophy,
   Layers,
   GitMerge,
+  Swords,
   User,
   Users,
   Medal,
@@ -120,6 +121,13 @@ const FORMAT_OPTIONS: { value: Format; label: string; desc: string; icon: React.
     label: 'Eliminatórias',
     desc: 'Chaveamento direto. Quem perde, sai.',
     icon: <GitMerge className="h-5 w-5" />,
+    enabled: true,
+  },
+  {
+    value: 'desafio',
+    label: 'Desafio',
+    desc: 'Confronto direto: 1v1, duplas ou por times.',
+    icon: <Swords className="h-5 w-5" />,
     enabled: true,
   },
 ]
@@ -529,6 +537,7 @@ function canAdvance(step: number, s: WizardState): boolean {
 
   if (step === 1) {
     if (!s.name.trim()) return false
+    if (s.format === 'desafio') return true  // redireciona para /desafios/novo
     return (
       (s.format === 'liga' || s.format === 'eliminatoria' || s.format === 'grupos_elim') &&
       (s.unit === 'player' || s.unit === 'pair')
@@ -565,8 +574,9 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
   const blocked =
     (state.format !== 'liga' &&
       state.format !== 'eliminatoria' &&
-      state.format !== 'grupos_elim') ||
-    state.unit === 'team'  // 'player' e 'pair' são suportados; 'team' ainda não
+      state.format !== 'grupos_elim' &&
+      state.format !== 'desafio') ||
+    (state.format !== 'desafio' && state.unit === 'team') // 'team' só funciona em desafios
 
   return (
     <div className="space-y-3">
@@ -603,15 +613,14 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
         <div className="grid grid-cols-2 grid-rows-2 gap-1.5">
           {FORMAT_OPTIONS.map((f) => {
             const active = state.format === f.value
-            const isSpanning = f.value === 'grupos_elim'
             return (
               <button
                 key={f.value}
                 type="button"
                 onClick={() => f.enabled && onChange({ format: f.value })}
                 className={`glass glass-card flex flex-col items-start gap-1 px-3 py-2.5 text-left transition active:scale-[0.97] relative ${
-                  isSpanning ? 'row-span-2' : ''
-                } ${active ? 'border-secondary/50 bg-secondary/10' : ''} ${!f.enabled ? 'opacity-45' : ''}`}
+                  active ? 'border-secondary/50 bg-secondary/10' : ''
+                } ${!f.enabled ? 'opacity-45' : ''}`}
               >
                 <span className={active ? 'text-secondary' : 'text-white/40'}>
                   {f.icon}
@@ -1861,6 +1870,11 @@ export function ChampionshipWizard() {
   }
 
   function next() {
+    // Desafio tem fluxo próprio em /desafios/novo
+    if (step === 1 && state.format === 'desafio') {
+      router.push('/desafios/novo')
+      return
+    }
     if (canAdvance(step, state)) setStep((s) => Math.min(5, s + 1))
   }
 

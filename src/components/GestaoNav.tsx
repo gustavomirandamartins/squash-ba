@@ -8,11 +8,14 @@ const TABS_BASE = [
   { label: 'Locais', href: '/gestao/locais' },
   { label: 'Times', href: '/gestao/times' },
 ]
-const TAB_FEEDBACKS = { label: 'Feedbacks', href: '/gestao/feedbacks' }
+const TABS_ADMIN = [
+  { label: 'Anúncios', href: '/gestao/anuncios' },
+  { label: 'Feedbacks', href: '/gestao/feedbacks' },
+]
 
 export function GestaoNav({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname()
-  const tabs = isAdmin ? [...TABS_BASE, TAB_FEEDBACKS] : TABS_BASE
+  const tabs = isAdmin ? [...TABS_BASE, ...TABS_ADMIN] : TABS_BASE
 
   return (
     <nav className="flex gap-2 overflow-x-auto no-scrollbar border-b border-white/8 px-5 pb-3 pt-4">
