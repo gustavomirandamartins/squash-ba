@@ -18,6 +18,43 @@ import { ChampionshipWizard } from '@/components/campeonatos/ChampionshipWizard'
 import { ProvisionalChampionship } from '@/components/offline/ProvisionalChampionship'
 import { OfflineChampMatches, OfflineScore } from '@/components/offline/OfflineChampionshipView'
 
+// Mini-header substituto do TopBar (não disponível fora do layout (app)).
+// Lida com safe-area-inset-top p/ o botão Voltar não ficar atrás do relógio.
+function OfflineShellHeader() {
+  return (
+    <div
+      className="sticky top-0 z-10 flex items-center gap-2.5 px-5 pb-3 bg-primary/80"
+      style={{
+        paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+      }}
+    >
+      <div className="h-7 w-7 shrink-0 overflow-hidden rounded-lg">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/logo.png" alt="SquashBa" className="h-full w-full object-cover" />
+      </div>
+      <span className="font-display text-base font-extrabold tracking-tight text-white">
+        Squash<span className="text-secondary">Ba</span>
+      </span>
+      <span className="ml-1 flex items-center gap-1 rounded-full bg-yellow-500/15 px-2 py-0.5 text-[10px] font-semibold text-yellow-400/80">
+        <WifiOff className="h-3 w-3" />
+        Offline
+      </span>
+    </div>
+  )
+}
+
+// Wrapper que combina o mini-header com o conteúdo.
+function OfflineShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-dvh flex flex-col">
+      <OfflineShellHeader />
+      <div className="flex-1">{children}</div>
+    </div>
+  )
+}
+
 function OfflineMessage() {
   return (
     <div
@@ -57,24 +94,45 @@ export default function OfflinePage() {
 
   // Criar campeonato funciona offline (wizard é client-only).
   if (path === '/campeonatos/novo') {
-    return <ChampionshipWizard />
+    return (
+      <OfflineShell>
+        <ChampionshipWizard />
+      </OfflineShell>
+    )
   }
 
   // Campeonato provisório (criado offline) — abrir/jogar/placar.
   if (path.startsWith('/pendentes/')) {
     const tempId = decodeURIComponent(path.slice('/pendentes/'.length))
-    if (tempId) return <ProvisionalChampionship tempId={tempId} />
+    if (tempId) {
+      return (
+        <OfflineShell>
+          <ProvisionalChampionship tempId={tempId} />
+        </OfflineShell>
+      )
+    }
   }
 
   // Campeonato REAL (criado online): tela de placar e lista de jogos offline,
   // a partir do cache gravado ao abrir o detalhe com internet.
   const scoreMatch = path.match(/^\/campeonatos\/([^/]+)\/jogos\/([^/]+)$/)
   if (scoreMatch) {
-    return <OfflineScore champId={decodeURIComponent(scoreMatch[1])} matchId={decodeURIComponent(scoreMatch[2])} />
+    return (
+      <OfflineShell>
+        <OfflineScore
+          champId={decodeURIComponent(scoreMatch[1])}
+          matchId={decodeURIComponent(scoreMatch[2])}
+        />
+      </OfflineShell>
+    )
   }
   const champMatch = path.match(/^\/campeonatos\/([^/]+)$/)
   if (champMatch) {
-    return <OfflineChampMatches champId={decodeURIComponent(champMatch[1])} />
+    return (
+      <OfflineShell>
+        <OfflineChampMatches champId={decodeURIComponent(champMatch[1])} />
+      </OfflineShell>
+    )
   }
 
   return <OfflineMessage />
