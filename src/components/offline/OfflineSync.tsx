@@ -34,7 +34,18 @@ export function OfflineSync() {
     setSyncing(true)
     try {
       const all = await getOutbox()
-      const queue = all.filter((i) => i.status !== 'syncing')
+
+      // Itens presos em 'syncing' (app foi morto no meio) → volta a 'pending'.
+      for (const item of all.filter((i) => i.status === 'syncing')) {
+        await updateOutbox(item.tempId, { status: 'pending' })
+      }
+
+      // Apenas itens 'pending' são drenados automaticamente.
+      // Itens 'error' SÓ são reprocessados quando o usuário toca em
+      // "Tentar novamente" (que seta status → 'pending'), evitando que uma
+      // falha de rede transiente no reconnect cause criações duplicadas no
+      // servidor (runCreation chamado de novo sem saber se já foi executado).
+      const queue = all.filter((i) => i.status === 'pending')
       let didCreate = false
       for (const item of queue) {
         await updateOutbox(item.tempId, { status: 'syncing', error: undefined })
@@ -98,7 +109,14 @@ export function OfflineSync() {
     updateOnline()
     void refreshCounts()
 
-    const onOnline = () => { setOffline(false); void drain() }
+    const onOnline = () => {
+      setOffline(false)
+      // Delay: logo após reconectar, o primeiro request costuma falhar ("Load
+      // failed") porque a rede ainda não está estável. Aguarda 1.5s antes de
+      // drenar para evitar erro transiente → item vai a 'error' sem createdRealId
+      // → usuário reabre o app → duplicata.
+      setTimeout(() => { void drain() }, 1500)
+    }
     const onOffline = () => setOffline(true)
     // Mudança na fila: drena SÓ se houver item 'pending' (ex.: "Tentar
     // novamente"). Itens em 'error' não re-disparam (evita loop de retry).
