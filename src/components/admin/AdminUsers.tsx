@@ -99,6 +99,7 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
 
   return (
     <li className="glass glass-card p-3">
+      {/* Linha principal: avatar + nome/badge + botões inline */}
       <div className="flex items-center gap-3">
         <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-white/15">
           {user.avatarUrl ? (
@@ -109,66 +110,67 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
             </div>
           )}
         </div>
+
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-white">{user.name ?? 'Usuário'}</p>
           <div className="mt-0.5"><RoleBadge role={role} /></div>
         </div>
+
+        {/* Botões compactos à direita — só para não-self e não-admin */}
+        {!isSelf && role !== 'admin' && !confirming && (
+          <div className="flex shrink-0 items-center gap-1">
+            {role === 'organizer' && (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={handleRevoke}
+                title="Remover professor"
+                className="grid h-8 w-8 place-items-center rounded-xl border border-white/12 text-white/50 transition hover:bg-white/8 hover:text-white/80 active:scale-90 disabled:opacity-40"
+              >
+                <GraduationCap className="h-4 w-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setConfirming(true)}
+              title="Excluir usuário"
+              className="grid h-8 w-8 place-items-center rounded-xl border border-red-500/25 text-red-400/70 transition hover:bg-red-500/10 hover:text-red-400 active:scale-90 disabled:opacity-40"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
 
-      {!isSelf && role !== 'admin' && (
-        <>
-          {confirming ? (
-            <div className="mt-3 space-y-2">
-              <div className="flex items-start gap-2 text-xs text-white/75">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-400" />
-                <span>Excluir <b>{user.name ?? 'este usuário'}</b> definitivamente? Apaga conta, perfil e participações.</span>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={handleDelete}
-                  className="flex-1 rounded-xl bg-red-500/90 py-2 text-xs font-bold text-white transition active:scale-95 disabled:opacity-50"
-                >
-                  {pending ? 'Excluindo…' : 'Sim, excluir'}
-                </button>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() => setConfirming(false)}
-                  className="flex-1 rounded-xl bg-white/[0.06] py-2 text-xs font-semibold text-white/70 transition active:scale-95"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-3 flex gap-2">
-              {role === 'organizer' && (
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={handleRevoke}
-                  className="flex items-center gap-1.5 rounded-xl border border-white/12 px-3 py-2 text-xs font-semibold text-white/70 transition hover:bg-white/8 active:scale-95 disabled:opacity-50"
-                >
-                  <GraduationCap className="h-3.5 w-3.5" />
-                  Remover professor
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => setConfirming(true)}
-                className="flex items-center gap-1.5 rounded-xl border border-red-500/30 px-3 py-2 text-xs font-semibold text-red-300 transition hover:bg-red-500/10 active:scale-95 disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Excluir
-              </button>
-            </div>
-          )}
-        </>
+      {/* Confirmação de exclusão (expande abaixo) */}
+      {confirming && (
+        <div className="mt-3 space-y-2">
+          <div className="flex items-start gap-2 text-xs text-white/75">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-400" />
+            <span>Excluir <b>{user.name ?? 'este usuário'}</b> definitivamente? Apaga conta, perfil e participações.</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={handleDelete}
+              className="flex-1 rounded-xl bg-red-500/90 py-2 text-xs font-bold text-white transition active:scale-95 disabled:opacity-50"
+            >
+              {pending ? 'Excluindo…' : 'Sim, excluir'}
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setConfirming(false)}
+              className="flex-1 rounded-xl bg-white/[0.06] py-2 text-xs font-semibold text-white/70 transition active:scale-95"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
       )}
     </li>
   )
