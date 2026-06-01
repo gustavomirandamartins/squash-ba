@@ -13,6 +13,17 @@ import { fileURLToPath } from 'url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 try {
+  // Na Vercel o clone é shallow (--depth=10). Precisamos do histórico completo
+  // para contar os commits corretamente. O unshallow é rápido e idempotente.
+  if (process.env.VERCEL) {
+    try {
+      execSync('git fetch --unshallow', { encoding: 'utf8', cwd: root, stdio: 'pipe' })
+      console.log('[gen-changelog] git fetch --unshallow concluído')
+    } catch {
+      // já é full clone ou rede indisponível — ignora
+    }
+  }
+
   const count = execSync('git rev-list --count HEAD', { encoding: 'utf8', cwd: root }).trim()
   const rawLog = execSync(
     'git log --no-merges --pretty=format:%H%x09%s%x09%as',
