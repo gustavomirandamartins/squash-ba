@@ -935,12 +935,15 @@ function canAdvance(step: number, s: WizardState): boolean {
 
 interface Props {
   currentUserId: string
+  initialName?: string
 }
 
-export function ChallengeWizard({ currentUserId }: Props) {
+export function ChallengeWizard({ currentUserId, initialName = '' }: Props) {
   const router = useRouter()
   const [step, setStep] = useState(1)
-  const [state, setState] = useState<WizardState>(DEFAULT)
+  const [state, setState] = useState<WizardState>(() =>
+    initialName ? { ...DEFAULT, name: initialName } : DEFAULT,
+  )
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 

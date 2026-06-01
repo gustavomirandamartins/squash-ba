@@ -1870,9 +1870,12 @@ export function ChampionshipWizard() {
   }
 
   function next() {
-    // Desafio tem fluxo próprio em /desafios/novo
+    // Desafio tem fluxo próprio em /desafios/novo — passa o nome já digitado
     if (step === 1 && state.format === 'desafio') {
-      router.push('/desafios/novo')
+      const qs = state.name.trim()
+        ? `?name=${encodeURIComponent(state.name.trim())}`
+        : ''
+      router.push(`/desafios/novo${qs}`)
       return
     }
     if (canAdvance(step, state)) setStep((s) => Math.min(5, s + 1))
