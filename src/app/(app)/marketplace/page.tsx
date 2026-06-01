@@ -4,6 +4,14 @@ import { Phone, Mail, MapPin, ShoppingBag, Store } from 'lucide-react'
 
 export const metadata = { title: 'Marketplace' }
 
+/** (71) 98106-9026  ou  (71) 3333-3333 */
+function formatPhone(raw: string): string {
+  const d = raw.replace(/\D/g, '')
+  if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`
+  if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`
+  return raw // mantém original se não reconhecer o padrão
+}
+
 type Ad = {
   id: string
   name: string
@@ -93,7 +101,7 @@ export default async function MarketplacePage() {
                       className="flex items-center gap-2 text-sm text-white/60 transition hover:text-white/85"
                     >
                       <Phone className="h-3.5 w-3.5 shrink-0 text-white/30" />
-                      {ad.phone}
+                      {formatPhone(ad.phone)}
                     </a>
                   )}
                   {ad.email && (
@@ -102,7 +110,7 @@ export default async function MarketplacePage() {
                       className="flex items-center gap-2 text-sm text-white/60 transition hover:text-white/85"
                     >
                       <Mail className="h-3.5 w-3.5 shrink-0 text-white/30" />
-                      {ad.email}
+                      {ad.email.toLowerCase()}
                     </a>
                   )}
                   {ad.address && (
