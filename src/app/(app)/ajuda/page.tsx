@@ -2,7 +2,7 @@ import Link from 'next/link'
 import {
   ChevronLeft, BookOpen, Shield, MessageSquarePlus,
   Heart, ChevronRight, Wifi, Trophy, Swords, Users,
-  BarChart2, Smartphone,
+  BarChart2, Smartphone, Store,
 } from 'lucide-react'
 import { FeedbackForm } from '@/components/ajuda/FeedbackForm'
 
@@ -13,22 +13,25 @@ export const metadata = { title: 'Ajuda' }
 const INSTRUCOES = [
   {
     icon: Trophy,
-    title: 'Campeonatos',
+    title: 'Campeonatos & Desafios',
     steps: [
       'Acesse "Campeonatos" no menu inferior.',
-      'Toque em "+" para criar: escolha formato (Liga, Eliminatória ou Grupos + Elim.), jogadores e configurações de placar.',
+      'Toque em "+" para criar e escolha o formato: Liga, Eliminatórias, Grupos + Elim. ou Desafio.',
+      'Liga: todos jogam entre si, classificação por pontos.',
+      'Eliminatórias: chaveamento direto — quem perde é eliminado.',
+      'Grupos + Elim.: fase de grupos seguida de eliminatórias.',
+      'Desafio: confronto direto entre dois lados — 1v1, duplas ou times. Ao selecionar, você será direcionado para configurar os participantes.',
       'Ative o campeonato para gerar as partidas automaticamente.',
-      'Toque em uma partida para lançar o placar em tempo real.',
     ],
   },
   {
     icon: Swords,
-    title: 'Desafios',
+    title: 'Seus desafios e campeonatos',
     steps: [
-      'Acesse "Desafios" no menu inferior.',
-      'Crie um desafio 1v1, duplas ou por times.',
-      'O adversário receberá um convite e poderá aceitar ou recusar.',
-      'Após a aceitação, o desafio começa e as partidas são geradas.',
+      'Na página Campeonatos, além dos campeonatos gerais, seus desafios aparecem na seção "Meus desafios".',
+      'Toque em qualquer item para acompanhar partidas, placares e classificação.',
+      'Desafios 1v1: o adversário recebe um convite e pode aceitar ou recusar.',
+      'Desafios por duplas ou times: todos os jogadores entram confirmados imediatamente.',
     ],
   },
   {
@@ -36,9 +39,20 @@ const INSTRUCOES = [
     title: 'Placar & Classificação',
     steps: [
       'Toque em uma partida para abrir a tela de placar.',
-      'Use os botões "+" de cada lado para incrementar pontos.',
-      'O app detecta automaticamente o fim do set e da partida.',
+      'Use os botões "+" de cada lado para pontuar.',
+      'MD3: o primeiro a vencer 2 sets ganha — se ficar 1×1, há um 3º set decisivo.',
+      'MD5: o primeiro a vencer 3 sets ganha — se ficar 2×2, há um 5º set decisivo.',
+      'O app detecta automaticamente o fim do set e encerra a partida quando um lado atinge os sets necessários.',
       'A classificação é atualizada em tempo real.',
+    ],
+  },
+  {
+    icon: Store,
+    title: 'Marketplace',
+    steps: [
+      'Acesse "Marketplace" no menu inferior.',
+      'Encontre professores de squash disponíveis para aulas — toque em "Contato" para abrir um chat direto.',
+      'Veja fornecedores de produtos e serviços relacionados ao esporte: academias, equipamentos, cordas e mais.',
     ],
   },
   {
@@ -46,27 +60,28 @@ const INSTRUCOES = [
     title: 'Uso offline',
     steps: [
       'O app funciona sem internet após o primeiro acesso.',
-      'Instale na tela de início para melhor experiência offline.',
-      'Campeonatos criados offline ficam "Provisórios" até sincronizar.',
-      'Ao reconectar, tudo é sincronizado automaticamente.',
+      'Instale na tela de início (veja seção abaixo) para melhor experiência offline.',
+      'Campeonatos criados offline ficam como "Provisórios" até reconectar.',
+      'Placares lançados offline são sincronizados automaticamente ao voltar online.',
     ],
   },
   {
     icon: Users,
     title: 'Comunidade',
     steps: [
-      'Veja todos os jogadores cadastrados em "Comunidade".',
-      'Toque em um jogador para ver o perfil e estatísticas.',
-      'Use o chat para se comunicar diretamente com outros jogadores.',
+      'Acesse "Comunidade" no menu para ver todos os jogadores cadastrados.',
+      'Toque em um jogador para ver perfil, estatísticas e histórico de partidas.',
+      'Use o ícone de mensagem para iniciar um chat direto.',
     ],
   },
   {
     icon: Smartphone,
     title: 'Instalar o app',
     steps: [
-      'iPhone/iPad: abra no Safari → botão Compartilhar → "Adicionar à Tela de Início".',
-      'Android: abra no Chrome → menu ⋮ → "Adicionar à tela inicial".',
-      'O ícone aparecerá na tela de início como um app nativo.',
+      'Na tela inicial, toque no banner "Instale para funcionalidade extra".',
+      'iPhone/iPad: abra no Safari → botão Compartilhar ↑ → "Adicionar à Tela de Início" → Adicionar.',
+      'Android: abra no Chrome → menu ⋮ → "Adicionar à tela inicial" ou "Instalar app" → Confirmar.',
+      'Após instalar, o app abre em tela cheia, sem barra do navegador, com melhor performance offline.',
     ],
   },
 ]
