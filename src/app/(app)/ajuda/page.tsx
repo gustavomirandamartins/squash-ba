@@ -186,7 +186,7 @@ export default function AjudaPage() {
             <span className="text-secondary">Gustavo Martins</span>
           </p>
           <p>
-            Ideado, projetado e construído para a comunidade de squash da Bahia.
+            Idealizado, projetado e construído para a comunidade de squash da Bahia.
           </p>
           <p className="text-white/35 text-xs pt-1">
             © {new Date().getFullYear()} Gustavo Martins. Todos os direitos reservados.
