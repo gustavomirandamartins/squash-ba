@@ -135,32 +135,35 @@ export default function AjudaPage() {
       <Section icon={Shield} title="Termos, cookies e privacidade">
         <div className="space-y-3 text-sm text-white/60 leading-relaxed">
           <p>
-            O SquashBa coleta apenas os dados necessários para o funcionamento do app:
-            nome, e-mail e foto de perfil. Nenhum dado é vendido ou compartilhado com
-            terceiros.
+            O SquashBa coleta apenas os dados estritamente necessários para o
+            funcionamento da plataforma: nome, data de nascimento, gênero, e-mail,
+            telefone e foto de perfil. Telefone e e-mail só são utilizados para fins
+            de cadastro, não sendo disponibilizados ao público. As outras informações
+            são usadas exclusivamente para identificar você na comunidade e organizar
+            as partidas, e nunca serão vendidas ou compartilhadas com terceiros para
+            fins de marketing.
           </p>
           <p>
             <strong className="text-white/80">Cookies:</strong> utilizamos apenas
-            cookies de sessão para autenticação. Nenhum cookie de rastreamento ou
-            publicidade é usado.
+            identificadores de sessão essenciais para manter você conectado com
+            segurança. Não utilizamos nenhum tipo de cookie ou pixel de rastreamento,
+            publicidade ou terceiros.
           </p>
           <p>
-            <strong className="text-white/80">Dados offline:</strong> partidas e
-            campeonatos podem ser armazenados localmente no seu dispositivo
-            (IndexedDB) para funcionamento sem internet. Esses dados são sincronizados
-            ao reconectar e podem ser apagados limpando os dados do site no navegador.
+            <strong className="text-white/80">Dados offline:</strong> para permitir
+            o uso sem internet, os dados de partidas e campeonatos são armazenados
+            localmente no seu dispositivo através do IndexedDB. Essas informações são
+            sincronizadas automaticamente assim que a conexão for restabelecida e podem
+            ser apagadas a qualquer momento limpando os dados do site no seu navegador.
           </p>
           <p>
-            <strong className="text-white/80">Exclusão de conta:</strong> para apagar
-            sua conta e todos os dados associados, entre em contato via feedback abaixo.
+            <strong className="text-white/80">Exclusão de conta:</strong> você tem
+            total controle sobre seus dados. Para apagar definitivamente sua conta e
+            remover todas as suas informações de nossa base de dados, basta acessar a
+            opção{' '}
+            <em className="text-white/75">"Excluir Conta"</em> diretamente no menu{' '}
+            <em className="text-white/75">"Editar perfil"</em>.
           </p>
-          <Link
-            href="/privacidade"
-            className="inline-flex items-center gap-1 text-secondary/80 hover:text-secondary transition"
-          >
-            Ver política completa
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Link>
         </div>
       </Section>
 
