@@ -53,16 +53,22 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage }: Props) {
           transition: 'grid-template-columns 280ms cubic-bezier(.4,0,.2,1)',
         }}
       >
-        {/* Col 1 — Logo (collapses to 0 when search opens). Leva à home.
+        {/* Col 1 — Logo + badge de versão (collapses to 0 when search opens).
             No desktop o conteúdo é ocultado (logo está no rail), mas a CÉLULA do
             grid permanece — senão o auto-flow desloca a busca para a coluna 0fr. */}
         <div className="overflow-hidden">
           <div
-            className="transition-opacity duration-200 lg:hidden"
+            className="flex items-center gap-2 transition-opacity duration-200 lg:hidden"
             style={{ opacity: searchOpen ? 0 : 1 }}
           >
             <Link href="/" aria-label="Ir para a página inicial" className="inline-flex">
               <Logo />
+            </Link>
+            <Link
+              href="/versao"
+              className="whitespace-nowrap text-[10px] font-medium text-white/25 transition hover:text-white/50"
+            >
+              Beta 0.{process.env.NEXT_PUBLIC_COMMIT_COUNT ?? '?'}
             </Link>
           </div>
         </div>

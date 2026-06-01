@@ -1,0 +1,460 @@
+{
+  "count": 91,
+  "commits": [
+    {
+      "hash": "811ffb5",
+      "subject": "Fix: modal PWA via createPortal escapa stacking context das animações reveal",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "8728303",
+      "subject": "Feat: banner de instalação PWA com detecção iOS/Android",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "31f8f96",
+      "subject": "Fix: botão Voltar em /jogador retorna à Comunidade quando acesso vem de lá",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "5950636",
+      "subject": "Fix: cálculo de sets no desafio usa points_per_set + win_by_two",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "dd7ca9f",
+      "subject": "Condensar wizard de campeonato e fixar botão Avançar acima da tab-bar",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "0e49d92",
+      "subject": "Restaurar header offline e corrigir safe-area (botão Voltar atrás do relógio)",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "d59295d",
+      "subject": "Corrigir duplicata ao sincronizar + \"Load failed\" no reconect",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "f4948d3",
+      "subject": "Abrir e pontuar campeonatos REAIS offline (organize online, jogue offline)",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "c21bb3b",
+      "subject": "Liga offline: sincronizar placares de forma confiável + reabrir partida + ordem round-robin",
+      "date": "2026-05-31"
+    },
+    {
+      "hash": "a9a53e5",
+      "subject": "Shell offline inteligente: criar/usar campeonato offline de forma garantida",
+      "date": "2026-05-31"
+    },
+    {
+      "hash": "c995395",
+      "subject": "Criar e usar campeonato Liga OFFLINE (provisório) antes de sincronizar",
+      "date": "2026-05-31"
+    },
+    {
+      "hash": "82f5439",
+      "subject": "Pré-carregar dados offline na abertura com aviso \"Dados carregados para uso offline\"",
+      "date": "2026-05-31"
+    },
+    {
+      "hash": "cd2a0e2",
+      "subject": "Migrar offline para Serwist (PWA oficial do Next App Router + Turbopack)",
+      "date": "2026-05-31"
+    },
+    {
+      "hash": "bfc2f59",
+      "subject": "Aquecer cache de páginas pelo cliente (corrige criar/abrir liga offline)",
+      "date": "2026-05-31"
+    },
+    {
+      "hash": "3a47de1",
+      "subject": "Corrigir navegação offline instável e lista de jogadores vazia offline",
+      "date": "2026-05-31"
+    },
+    {
+      "hash": "9d61cd6",
+      "subject": "Esticar card 'Grupos + Elim.' para ocupar a altura de 2 linhas no grid de formatos",
+      "date": "2026-05-31"
+    },
+    {
+      "hash": "e0580cb",
+      "subject": "Implementar duplas em campeonatos (Liga, Eliminatória, Grupos+Elim)",
+      "date": "2026-05-31"
+    },
+    {
+      "hash": "7b4622f",
+      "subject": "Corrigir altura do bracket cortando cards verticalmente",
+      "date": "2026-05-31"
+    },
+    {
+      "hash": "440e6ab",
+      "subject": "Retornar à página anterior após salvar perfil e finalizar partida",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "3973dd0",
+      "subject": "fix: remover opção Desafio da criação de campeonatos",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "7e2ef34",
+      "subject": "fix: aceite de desafio, reabrir partida, navegação, comunidade, grupos",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "e803ee0",
+      "subject": "feat: data de início, data do jogo, ativar campeonato, bracket eliminatório",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "5a5fb48",
+      "subject": "feat: botão \"Reabrir partida\" para corrigir placar errado",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "8b91540",
+      "subject": "fix: mover updateUser para Server Action (corrige erro de sessão recovery)",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "a6c9978",
+      "subject": "feat: fluxo de redefinição de senha (\"Esqueci minha senha\")",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "ce5d392",
+      "subject": "fix: remove confirmacao de vencedor + chaveamento round-robin balanceado",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "0b4c3e5",
+      "subject": "feat(admin): remover papel de professor e excluir usuarios",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "d60555a",
+      "subject": "fix(desktop): busca sumia ao abrir + menu do avatar fora da tela",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "46416c7",
+      "subject": "feat(auth): senha como alternativa ao magic link",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "e0b3adf",
+      "subject": "feat(offline): classificacao ao vivo offline nos desafios (1v1, duplas, times)",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "52dbbf2",
+      "subject": "feat(offline): grupos e estatisticas com classificacao ao vivo offline",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "dda211e",
+      "subject": "feat(offline): classificacao da liga calculada no cliente offline",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "e95c740",
+      "subject": "feat(offline): criar campeonato/desafio offline (fila + sync ao reconectar)",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "d5c7830",
+      "subject": "feat(pwa): caminho do app navegavel offline (documentos + RSC + assets)",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "f9a13e9",
+      "subject": "fix(pwa): offline servia versao antiga e quebrada",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "dc28ff9",
+      "subject": "feat(ui): responsividade desktop (mobile-first) sem mexer no mobile",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "c7e07c7",
+      "subject": "feat(desafios): desafio de times (NxN)",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "876b226",
+      "subject": "feat(desafios): desafio de duplas (2v2)",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "839656e",
+      "subject": "fix(db): alternancia de lados na funcao correta + geracao p/ duplas",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "7b45003",
+      "subject": "fix: apagar conversa persiste + ficha tecnica do jogador",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "a54ff3b",
+      "subject": "fix: contagem de sets respeita win_by_two + classificacao com nomes",
+      "date": "2026-05-30"
+    },
+    {
+      "hash": "e87f687",
+      "subject": "fix: apagar campeonato falhava com erro generico em producao",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "6e8411f",
+      "subject": "feat: professor em vez de organizador + apagar bate-papos",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "96fb638",
+      "subject": "feat: set advancement, finalize match, timestamps, onboarding, stats, alternating sides",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "d2ce2d7",
+      "subject": "feat(campeonatos/desafios): editar e excluir",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "6a52f18",
+      "subject": "fix: saudação por gênero, voltar no admin e solicitações de organizador",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "e719d9a",
+      "subject": "feat(home/admin): carrossel de banners + links editáveis no admin",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "beb8d67",
+      "subject": "feat(home): reformula página inicial com dados reais",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "c11b25c",
+      "subject": "feat(db): ranking por categoria + bucket de patrocinadores",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "d4a3bdb",
+      "subject": "fix(realtime): autentica conexão Realtime antes de subscribe + fix hydration",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "fed48aa",
+      "subject": "fix(realtime): habilita Realtime para tabelas de mensageria",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "d1f4577",
+      "subject": "fix(chat): header e input fixos acima/abaixo ao rolar mensagens",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "c5fc3ee",
+      "subject": "fix(rls): elimina recursão infinita nas policies de mensageria",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "f345de5",
+      "subject": "fix(auth): corrige magic link retornando à página de e-mail",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "8de991b",
+      "subject": "fix(rls): corrige policies de mensageria que causavam 404",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "c59ba26",
+      "subject": "fix: push subscription salva user_id + erro visível em nova conversa",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "4ac0dad",
+      "subject": "ci: redeploy — NEXT_PUBLIC_VAPID_PUBLIC_KEY configurada no Vercel",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "ad0fc5e",
+      "subject": "feat(push): ativa subscribePush ao salvar perfil",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "d20aedd",
+      "subject": "feat: Fase 6-frontend — mensageria 1:1+grupo + Web Push",
+      "date": "2026-05-29"
+    },
+    {
+      "hash": "013c6c5",
+      "subject": "feat(backend): Fase 6 — mensageria 1:1+grupo + Web Push Edge Function",
+      "date": "2026-05-28"
+    },
+    {
+      "hash": "fef8d26",
+      "subject": "fix(backend): jogo por tempo não finaliza antes de encerrar cronômetro",
+      "date": "2026-05-28"
+    },
+    {
+      "hash": "c238b8e",
+      "subject": "fix: adiciona actions.ts de campeonatos omitido no commit anterior",
+      "date": "2026-05-28"
+    },
+    {
+      "hash": "3f9190c",
+      "subject": "feat: Fases 4F + 5 — Grupos+Elim UI e motor de placar offline-first",
+      "date": "2026-05-28"
+    },
+    {
+      "hash": "213c588",
+      "subject": "fix(desafios): enrollment_source 'convite'→'jogador' para oponente convidado",
+      "date": "2026-05-28"
+    },
+    {
+      "hash": "b23af47",
+      "subject": "feat(desafios): wizard de criação 1v1 + página de detalhe + aba Jogos (Fase 4D-frontend CP1)",
+      "date": "2026-05-27"
+    },
+    {
+      "hash": "ce0f066",
+      "subject": "feat(backend): motor do Desafio 1v1 e por times (Fase 4D)",
+      "date": "2026-05-27"
+    },
+    {
+      "hash": "e4e349e",
+      "subject": "feat(classificacao): aba Classificação com SSR + Realtime (Fase 4C-frontend-2 CP1)",
+      "date": "2026-05-27"
+    },
+    {
+      "hash": "0a9022e",
+      "subject": "feat(ui): fase 4C-frontend-1 — checkpoint 1: página do campeonato com abas + lista de jogos",
+      "date": "2026-05-27"
+    },
+    {
+      "hash": "c8b8083",
+      "subject": "feat(db): classificação e estatísticas — views e get_standings com tiebreakers dinâmicos",
+      "date": "2026-05-27"
+    },
+    {
+      "hash": "0823f43",
+      "subject": "feat(db): motor de pontos corridos — geração round-robin, resolução e trava de participantes",
+      "date": "2026-05-27"
+    },
+    {
+      "hash": "d21e099",
+      "subject": "fix(wizard): remover unidade Time + corrigir sobreposição do Avançar",
+      "date": "2026-05-27"
+    },
+    {
+      "hash": "c849582",
+      "subject": "feat(wizard): Step4 com lista imediata + filtro por categoria(s)",
+      "date": "2026-05-27"
+    },
+    {
+      "hash": "98ce842",
+      "subject": "feat: Fase 4B-UI — wizard de criação de campeonato",
+      "date": "2026-05-27"
+    },
+    {
+      "hash": "bc4587d",
+      "subject": "feat(db): Fase 4B-backend — RLS granular + fn create_liga_championship",
+      "date": "2026-05-27"
+    },
+    {
+      "hash": "56c5ca6",
+      "subject": "chore: substituir favicon, logo e app icons pelos assets oficiais",
+      "date": "2026-05-27"
+    },
+    {
+      "hash": "a3ea555",
+      "subject": "feat(db): motor de campeonatos — Fase 4A",
+      "date": "2026-05-26"
+    },
+    {
+      "hash": "6cdb1e9",
+      "subject": "feat: replace all icons and favicon with SquashBa logo",
+      "date": "2026-05-26"
+    },
+    {
+      "hash": "607a2ce",
+      "subject": "feat: gradient glassmorphism header + animated search expand",
+      "date": "2026-05-26"
+    },
+    {
+      "hash": "e2fb8e6",
+      "subject": "feat: vínculos de categoria e time no perfil do usuário (Phase 3B PASSO 5)",
+      "date": "2026-05-26"
+    },
+    {
+      "hash": "706ca8f",
+      "subject": "feat: CRUD de times em /gestao/times (Phase 3B PASSO 4)",
+      "date": "2026-05-26"
+    },
+    {
+      "hash": "c53d1df",
+      "subject": "feat: CRUD de locais e quadras em /gestao/locais (Phase 3B PASSO 3)",
+      "date": "2026-05-26"
+    },
+    {
+      "hash": "20b645b",
+      "subject": "feat: CRUD de categorias em /gestao/categorias (Phase 3B PASSO 2)",
+      "date": "2026-05-26"
+    },
+    {
+      "hash": "5441800",
+      "subject": "feat: hide \"Ser organizador\" menu item for organizers and admins",
+      "date": "2026-05-26"
+    },
+    {
+      "hash": "1be7b7f",
+      "subject": "fix: use single Supabase client per request in app and gestao layouts",
+      "date": "2026-05-26"
+    },
+    {
+      "hash": "34e3d4e",
+      "subject": "feat(gestao): área /gestao com sub-nav + gating canManage (Fase 3B PASSO 0+1)",
+      "date": "2026-05-26"
+    },
+    {
+      "hash": "8651cc0",
+      "subject": "feat(db): cadastros base — categories, venues, courts, teams (Fase 3A)",
+      "date": "2026-05-26"
+    },
+    {
+      "hash": "c923d76",
+      "subject": "feat(fluxo): organizador request, painel admin e cron anti-pause (Fase 2C)",
+      "date": "2026-05-26"
+    },
+    {
+      "hash": "065b23b",
+      "subject": "feat(auth): magic link, onboarding e edição de perfil (Fase 2B)",
+      "date": "2026-05-25"
+    },
+    {
+      "hash": "2e0bb74",
+      "subject": "feat(db): fundação de identidade no Supabase (Fase 2A)",
+      "date": "2026-05-25"
+    },
+    {
+      "hash": "3f3733d",
+      "subject": "feat: app shell, design system e PWA do SquashBa (Fase 1)",
+      "date": "2026-05-25"
+    },
+    {
+      "hash": "252e2cf",
+      "subject": "Initial commit from Create Next App",
+      "date": "2026-05-25"
+    }
+  ]
+}
