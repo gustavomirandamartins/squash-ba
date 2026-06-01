@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "prebuild": "node scripts/gen-changelog.mjs",
+    "predev": "node scripts/gen-changelog.mjs"
   },
   "dependencies": {
     "@serwist/turbopack": "^9.5.11",

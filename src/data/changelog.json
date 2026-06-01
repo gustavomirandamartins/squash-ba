@@ -1,6 +1,21 @@
 {
-  "count": 91,
+  "count": 94,
   "commits": [
+    {
+      "hash": "3ef39e9",
+      "subject": "Feat: ícone Ajuda no nav + página /ajuda + sistema de feedbacks",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "19041d4",
+      "subject": "Feat: badge Beta 0.X visível no desktop (DesktopSidebar)",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "33ffb30",
+      "subject": "Feat: badge \"Beta 0.X\" no header + página de histórico /versao",
+      "date": "2026-06-01"
+    },
     {
       "hash": "811ffb5",
       "subject": "Fix: modal PWA via createPortal escapa stacking context das animações reveal",

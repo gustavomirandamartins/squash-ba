@@ -154,7 +154,7 @@ export default function AjudaPage() {
         <div className="space-y-3">
           <p className="text-sm text-white/50 leading-relaxed">
             Encontrou um bug? Tem uma sugestão? Quer deixar um comentário?
-            Envie abaixo — apenas o administrador terá acesso.
+            Envie abaixo.
           </p>
           <FeedbackForm />
         </div>
@@ -171,7 +171,7 @@ export default function AjudaPage() {
             Ideado, projetado e construído para a comunidade de squash da Bahia.
           </p>
           <p className="text-white/35 text-xs pt-1">
-            © 2024–{new Date().getFullYear()} Gustavo Martins. Todos os direitos reservados.
+            © {new Date().getFullYear()} Gustavo Martins. Todos os direitos reservados.
           </p>
           <p className="text-white/25 text-xs">
             SquashBa · Beta 0.{process.env.NEXT_PUBLIC_COMMIT_COUNT ?? '?'}
