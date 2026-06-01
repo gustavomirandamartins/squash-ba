@@ -17,15 +17,13 @@ export default async function ComunidadePage() {
         .order('full_name', { ascending: true }),
       supabase.from('categories').select('id, name'),
       supabase.from('teams').select('id, name'),
-      supabase.from('user_roles').select('user_id, role').in('role', ['organizer', 'admin']),
+      supabase.from('user_roles').select('user_id, role').eq('role', 'organizer'),
     ])
 
   const catMap = new Map((categories ?? []).map((c) => [c.id, c.name]))
   const teamMap = new Map((teams ?? []).map((t) => [t.id, t.name]))
   const professorIds = new Set(
-    (roles ?? [])
-      .filter((r: { role: string }) => r.role === 'organizer' || r.role === 'admin')
-      .map((r: { user_id: string }) => r.user_id),
+    (roles ?? []).map((r: { user_id: string }) => r.user_id),
   )
 
   const users: CommunityUser[] = (profiles ?? []).map(

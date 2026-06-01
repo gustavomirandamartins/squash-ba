@@ -1,6 +1,11 @@
 {
-  "count": 107,
+  "count": 108,
   "commits": [
+    {
+      "hash": "71cb3bd",
+      "subject": "Feat: Eliminatoria e Grupos+Elim usaveis offline",
+      "date": "2026-06-01"
+    },
     {
       "hash": "2476019",
       "subject": "Chore: atualiza changelog.json (106 commits)",
