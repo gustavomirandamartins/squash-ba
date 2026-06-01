@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { CheckCircle2, Loader2, X } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { loadPlayerPool, loadCategories } from '@/lib/offline/players-cache'
@@ -40,6 +41,7 @@ function warm(path: string): Promise<unknown> {
 }
 
 export function OfflinePreloader() {
+  const router = useRouter()
   const [phase, setPhase] = useState<Phase>('idle')
 
   useEffect(() => {
@@ -87,11 +89,26 @@ export function OfflinePreloader() {
         }
 
         const routes = [...CORE_ROUTES, ...dynamicRoutes]
+
+        // Dados (IndexedDB) + reforço via fetch que o SW cacheia.
         await Promise.allSettled([
           loadPlayerPool(),
           loadCategories(),
           ...routes.map((p) => warm(p)),
         ])
+
+        // CRUCIAL: router.prefetch emite a requisição RSC no MESMO formato que a
+        // navegação client-side usa depois — o que o fetch cru não garantia.
+        // É isto que torna /campeonatos/novo (e detalhes) abríveis offline.
+        for (const p of routes) {
+          try {
+            router.prefetch(p)
+          } catch {
+            /* ignore */
+          }
+        }
+        // Dá tempo das requisições de prefetch completarem e serem cacheadas.
+        await new Promise((r) => setTimeout(r, 2000))
       } catch {
         /* best-effort */
       }
@@ -107,6 +124,8 @@ export function OfflinePreloader() {
     return () => {
       cancelled = true
     }
+    // Executa uma vez por sessão (guard via sessionStorage).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   if (phase === 'idle') return null

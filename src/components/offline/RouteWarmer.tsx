@@ -1,16 +1,18 @@
 'use client'
 
 import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
 /**
  * Aquece o cache offline de rotas dinâmicas (ex.: detalhe de cada liga) enquanto
  * o usuário está online, para que abram offline mesmo sem visita manual.
  *
- * Dispara, para cada path, uma requisição de documento e uma de payload RSC. O
- * service worker as intercepta e cacheia por pathname (network-first). Sem SW
- * (dev) ou offline, é no-op.
+ * Usa router.prefetch (mecanismo nativo do Next: emite a requisição RSC no mesmo
+ * formato que a navegação client-side usa depois, e o Serwist a cacheia) + um
+ * fetch de reforço. Sem SW (dev) ou offline, é no-op.
  */
 export function RouteWarmer({ paths, max = 20 }: { paths: string[]; max?: number }) {
+  const router = useRouter()
   const key = paths.slice(0, max).join(',')
 
   useEffect(() => {
@@ -27,7 +29,7 @@ export function RouteWarmer({ paths, max = 20 }: { paths: string[]; max?: number
         setTimeout(() => {
           if (cancelled) return
           for (const path of key.split(',')) {
-            fetch(path, { credentials: 'same-origin' }).catch(() => {})
+            try { router.prefetch(path) } catch { /* ignore */ }
             fetch(path, { credentials: 'same-origin', headers: { RSC: '1' } }).catch(() => {})
           }
         }, 2000)
@@ -36,6 +38,7 @@ export function RouteWarmer({ paths, max = 20 }: { paths: string[]; max?: number
     return () => {
       cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
 
   return null
