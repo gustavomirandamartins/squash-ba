@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Smartphone, X, Share } from 'lucide-react'
 
 type Platform = 'ios' | 'android' | 'other'
@@ -30,10 +31,12 @@ export function PwaInstallBanner() {
   const [visible, setVisible] = useState(false)
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<'ios' | 'android'>('ios')
+  const [mounted, setMounted] = useState(false)
   // Prompt nativo Android (beforeinstallprompt)
   const [deferredPrompt, setDeferredPrompt] = useState<Event & { prompt(): Promise<void> } | null>(null)
 
   useEffect(() => {
+    setMounted(true)
     if (isInstalled()) return
     if (localStorage.getItem(DISMISS_KEY)) return
 
@@ -68,32 +71,13 @@ export function PwaInstallBanner() {
 
   if (!visible) return null
 
-  return (
-    <>
-      {/* ── Banner ──────────────────────────────────────────────── */}
-      <div className="mx-5 flex items-center gap-3 rounded-2xl border border-secondary/20 bg-secondary/8 px-4 py-3">
-        <Smartphone className="h-4 w-4 shrink-0 text-secondary" />
-        <button
-          type="button"
-          onClick={() => (platform === 'android' && deferredPrompt ? handleAndroidInstall() : setOpen(true))}
-          className="flex-1 text-left text-sm font-semibold text-secondary/90"
-        >
-          Instale o app na tela de início
-        </button>
-        <button
-          type="button"
-          onClick={dismiss}
-          aria-label="Dispensar"
-          className="shrink-0 rounded-full p-1 text-white/30 transition hover:text-white/50"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {/* ── Modal / bottom-sheet ─────────────────────────────────── */}
-      {open && (
+  // Modal renderizado via portal em document.body para escapar do stacking
+  // context criado pelas animações reveal da home — garante que fica acima
+  // do BottomNav (z-40) e do TopBar (z-30) independentemente de transforms.
+  const modal = mounted && open
+    ? createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-end bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-[200] flex items-end bg-black/50 backdrop-blur-sm"
           onClick={() => setOpen(false)}
         >
           <div
@@ -132,7 +116,7 @@ export function PwaInstallBanner() {
               </div>
             )}
 
-            {/* ── iOS ─────────────────────────────────────────────── */}
+            {/* ── iOS ──────────────────────────────────────────────── */}
             {(platform === 'ios' || (platform === 'other' && tab === 'ios')) && (
               <div className="space-y-4">
                 <p className="text-[11px] font-semibold uppercase tracking-widest text-white/35">
@@ -156,7 +140,7 @@ export function PwaInstallBanner() {
               </div>
             )}
 
-            {/* ── Android ─────────────────────────────────────────── */}
+            {/* ── Android ──────────────────────────────────────────── */}
             {(platform === 'android' || (platform === 'other' && tab === 'android')) && (
               <div className="space-y-4">
                 <p className="text-[11px] font-semibold uppercase tracking-widest text-white/35">
@@ -195,8 +179,34 @@ export function PwaInstallBanner() {
               Este aviso não aparecerá novamente após dispensar.
             </p>
           </div>
-        </div>
-      )}
+        </div>,
+        document.body,
+      )
+    : null
+
+  return (
+    <>
+      {/* ── Banner ───────────────────────────────────────────────── */}
+      <div className="mx-5 flex items-center gap-3 rounded-2xl border border-secondary/20 bg-secondary/8 px-4 py-3">
+        <Smartphone className="h-4 w-4 shrink-0 text-secondary" />
+        <button
+          type="button"
+          onClick={() => (platform === 'android' && deferredPrompt ? handleAndroidInstall() : setOpen(true))}
+          className="flex-1 text-left text-sm font-semibold text-secondary/90"
+        >
+          Instale para funcionalidade extra
+        </button>
+        <button
+          type="button"
+          onClick={dismiss}
+          aria-label="Dispensar"
+          className="shrink-0 rounded-full p-1 text-white/30 transition hover:text-white/50"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {modal}
     </>
   )
 }
