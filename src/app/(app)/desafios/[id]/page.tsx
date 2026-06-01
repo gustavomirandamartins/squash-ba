@@ -107,10 +107,26 @@ export default async function DesafioPage({
     .order('round', { ascending: true })
     .order('created_at', { ascending: true })
 
-  function setScore(m: { match_games?: Array<{ score_a: number; score_b: number }> | null }) {
-    const games = m.match_games ?? []
-    const a = games.filter((g) => g.score_a > g.score_b).length
-    const b = games.filter((g) => g.score_b > g.score_a).length
+  /**
+   * Conta sets vencidos por cada lado usando a mesma lógica do servidor
+   * (resolve_match): respeita points_per_set e win_by_two.
+   * Comparação pura de pontos (score_a > score_b) contaria sets em andamento
+   * como finalizados — ex.: 8-5 mid-set aparecia como 1-0 no placar de sets.
+   */
+  function setScore(m: { match_games?: Array<{ game_number: number; score_a: number; score_b: number }> | null }) {
+    const games = (m.match_games ?? []).sort((x, y) => x.game_number - y.game_number)
+    const P = stageCfg.points_per_set
+    const w2 = stageCfg.win_by_two
+    let a = 0, b = 0
+    for (const g of games) {
+      if (w2) {
+        if (g.score_a >= P && g.score_a - g.score_b >= 2) a++
+        else if (g.score_b >= P && g.score_b - g.score_a >= 2) b++
+      } else {
+        if (g.score_a >= P && g.score_a > g.score_b) a++
+        else if (g.score_b >= P && g.score_b > g.score_a) b++
+      }
+    }
     return { a, b }
   }
 
