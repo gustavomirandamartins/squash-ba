@@ -9,10 +9,13 @@ export const metadata = { title: 'Jogador' }
 
 export default async function JogadorPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ from?: string }>
 }) {
   const { id } = await params
+  const { from } = await searchParams
   const supabase = await createClient()
 
   const {
@@ -65,11 +68,11 @@ export default async function JogadorPage({
     <div className="px-5 py-4 space-y-4">
       {/* Voltar */}
       <Link
-        href="/"
+        href={from === 'comunidade' ? '/comunidade' : '/'}
         className="inline-flex items-center gap-1.5 text-sm text-white/50 transition hover:text-white/80"
       >
         <ChevronLeft className="h-4 w-4" />
-        Início
+        {from === 'comunidade' ? 'Comunidade' : 'Início'}
       </Link>
 
       {/* Cabeçalho da ficha */}

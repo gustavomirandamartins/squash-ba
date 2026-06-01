@@ -93,7 +93,7 @@ export function ComunidadeClient({
           {filtered.map((u) => (
             <Link
               key={u.id}
-              href={`/jogador/${u.id}`}
+              href={`/jogador/${u.id}?from=comunidade`}
               className="glass glass-card flex items-center gap-3 px-4 py-3 transition active:scale-[0.98]"
             >
               {/* Avatar */}
