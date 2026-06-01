@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react'
 import { WifiOff } from 'lucide-react'
 import { ChampionshipWizard } from '@/components/campeonatos/ChampionshipWizard'
 import { ProvisionalChampionship } from '@/components/offline/ProvisionalChampionship'
+import { OfflineChampMatches, OfflineScore } from '@/components/offline/OfflineChampionshipView'
 
 function OfflineMessage() {
   return (
@@ -63,6 +64,17 @@ export default function OfflinePage() {
   if (path.startsWith('/pendentes/')) {
     const tempId = decodeURIComponent(path.slice('/pendentes/'.length))
     if (tempId) return <ProvisionalChampionship tempId={tempId} />
+  }
+
+  // Campeonato REAL (criado online): tela de placar e lista de jogos offline,
+  // a partir do cache gravado ao abrir o detalhe com internet.
+  const scoreMatch = path.match(/^\/campeonatos\/([^/]+)\/jogos\/([^/]+)$/)
+  if (scoreMatch) {
+    return <OfflineScore champId={decodeURIComponent(scoreMatch[1])} matchId={decodeURIComponent(scoreMatch[2])} />
+  }
+  const champMatch = path.match(/^\/campeonatos\/([^/]+)$/)
+  if (champMatch) {
+    return <OfflineChampMatches champId={decodeURIComponent(champMatch[1])} />
   }
 
   return <OfflineMessage />

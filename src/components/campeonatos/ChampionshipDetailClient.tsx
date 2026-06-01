@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useMemo, useTransition } from 'react'
+import { useState, useMemo, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { saveCachedChamp } from '@/lib/offline/champ-cache'
 import Link from 'next/link'
 import Image from 'next/image'
 import { ChevronLeft, ChevronRight, Trophy, User, Medal, GitMerge, Layers, MessageSquare, CalendarDays, Rocket } from 'lucide-react'
@@ -361,6 +362,45 @@ export function ChampionshipDetailClient({
   const participantAvatars: Record<string, string | null> = Object.fromEntries(
     Object.entries(participantInfo).map(([id, info]) => [id, info.avatar_url]),
   )
+
+  // ── Cache da estrutura p/ uso OFFLINE (abrir jogos + lançar placar) ─────────
+  // Gravado ao abrir o detalhe online. O shell offline (/~offline) lê este cache
+  // para renderizar a lista de jogos e a tela de placar real sem rede.
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+    const side = (pid: string | null) => ({
+      name: pid ? (participantInfo[pid]?.full_name ?? null) : null,
+      avatarUrl: pid ? (participantInfo[pid]?.avatar_url ?? null) : null,
+    })
+    const cachedMatches = matches.map((m) => {
+      const st = elimStage && m.stage_id === elimStage.id ? elimStage : stage
+      return {
+        id: m.id,
+        round: m.round,
+        bracketSlot: m.bracket_slot,
+        groupId: null,
+        status: m.status,
+        result: m.result,
+        sideA: side(m.side_a_participant_id),
+        sideB: side(m.side_b_participant_id),
+        games: m.match_games,
+        counting: st?.counting ?? 'set',
+        setsToPlay: st?.sets_to_play ?? 3,
+        pointsPerSet: st?.points_per_set ?? 11,
+        winByTwo: st?.win_by_two ?? true,
+        setDrawEnabled: st?.set_draw_enabled ?? false,
+        timeMinutes: st?.time_minutes ?? null,
+      }
+    })
+    void saveCachedChamp({
+      id: champ.id,
+      name: champ.name,
+      format: champ.format,
+      canManage,
+      matches: cachedMatches,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [champ.id, champ.status, matches])
 
   // ── Dados p/ classificação offline ao vivo (liga) ──────────────────────────
   const offlineStandingsData = useMemo(() => {
