@@ -1,6 +1,11 @@
 {
-  "count": 105,
+  "count": 106,
   "commits": [
+    {
+      "hash": "038bf4d",
+      "subject": "Fix: versao Beta lida do changelog.json commitado (evita shallow clone da Vercel)",
+      "date": "2026-06-01"
+    },
     {
       "hash": "83fc0d5",
       "subject": "Fix: git fetch --unshallow na Vercel para contar commits corretamente",
