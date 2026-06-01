@@ -41,10 +41,18 @@ export function DesktopSidebar({ name, avatarUrl, isAdmin, canManage, userId }: 
 
   return (
     <aside className="hidden lg:flex sticky top-0 h-dvh w-[256px] shrink-0 flex-col gap-2 border-r border-white/8 px-4 py-6">
-      {/* Logo */}
-      <Link href="/" aria-label="Ir para a página inicial" className="inline-flex px-2 pb-4">
-        <Logo />
-      </Link>
+      {/* Logo + versão */}
+      <div className="px-2 pb-4 space-y-1.5">
+        <Link href="/" aria-label="Ir para a página inicial" className="inline-flex">
+          <Logo />
+        </Link>
+        <Link
+          href="/versao"
+          className="block text-[11px] font-medium text-white/25 transition hover:text-white/50"
+        >
+          Beta 0.{process.env.NEXT_PUBLIC_COMMIT_COUNT ?? '?'}
+        </Link>
+      </div>
 
       {/* Navegação */}
       <nav className="flex flex-col gap-1.5">
