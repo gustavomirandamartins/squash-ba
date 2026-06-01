@@ -1,6 +1,61 @@
 {
-  "count": 94,
+  "count": 105,
   "commits": [
+    {
+      "hash": "83fc0d5",
+      "subject": "Fix: git fetch --unshallow na Vercel para contar commits corretamente",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "51a7017",
+      "subject": "Docs: corrige Ideado para Idealizado nos creditos",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "02f0d44",
+      "subject": "Docs: atualiza texto de Termos, cookies e privacidade na página Ajuda",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "bd7e0bf",
+      "subject": "Docs: atualiza Instruções de uso na página Ajuda",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "ff1a7d5",
+      "subject": "Fix: telefone formatado (XX) XXXXX-XXXX e e-mail em minúsculas no Marketplace",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "bdfbdd5",
+      "subject": "Fix: botão \"Avançar set\" respeita sets necessários para vencer (MD3/MD5)",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "e7c240a",
+      "subject": "Fix: nome do campeonato passado ao wizard de desafio via ?name=",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "c6c3d69",
+      "subject": "Fix: botão Avançar habilitado ao selecionar Desafio no wizard",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "ef1a314",
+      "subject": "Feat: Marketplace + Desafio no wizard de campeonatos",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "94791f9",
+      "subject": "Fix: botões Remover Professor e Excluir inline com o nome no painel admin",
+      "date": "2026-06-01"
+    },
+    {
+      "hash": "0a49e67",
+      "subject": "Fix: textos ajuda + script gen-changelog automático no dev/build",
+      "date": "2026-06-01"
+    },
     {
       "hash": "3ef39e9",
       "subject": "Feat: ícone Ajuda no nav + página /ajuda + sistema de feedbacks",
