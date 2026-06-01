@@ -1,5 +1,6 @@
 import { createClient } from '@/utils/supabase/server'
 import { WelcomeHeader } from '@/components/home/WelcomeHeader'
+import { PwaInstallBanner } from '@/components/home/PwaInstallBanner'
 import { Lembretes, type LembretesData } from '@/components/home/Lembretes'
 import { SponsorBanner } from '@/components/home/SponsorBanner'
 import { OngoingSection, type LiveMatch, type OngoingItem } from '@/components/home/OngoingSection'
@@ -229,6 +230,7 @@ export default async function HomePage() {
   // ── Render ────────────────────────────────────────────────────────────────
   const sections = [
     <WelcomeHeader key="welcome" firstName={firstName} gender={gender} />,
+    <PwaInstallBanner key="pwa-install" />,
     <Lembretes key="lembretes" data={lembretes} />,
     <SponsorBanner key="sponsor" banners={banners} />,
     <OngoingSection key="ongoing" liveMatches={liveMatches} active={activeItems} />,
