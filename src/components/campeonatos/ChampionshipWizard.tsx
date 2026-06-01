@@ -6,6 +6,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { submitCreation } from '@/lib/offline/submit'
 import { loadCategories, loadPlayerPool, type CachedPlayer } from '@/lib/offline/players-cache'
+import { buildLocalLiga, saveLocalChampionship } from '@/lib/offline/local-championship'
 import type { CreationOp } from '@/lib/offline/types'
 import {
   ChevronLeft,
@@ -1872,6 +1873,7 @@ export function ChampionshipWizard() {
           grupos_elim: 'Grupos + Eliminatórias',
         }
         const isPairMode = state.unit === 'pair'
+        const offlineNow = typeof navigator !== 'undefined' && !navigator.onLine
         const participantCount = isPairMode ? state.pairs.length : state.players.length
         const snapshot = {
           name: state.name,
@@ -2009,13 +2011,57 @@ export function ChampionshipWizard() {
               pairs: isPairMode
                 ? state.pairs.map((p) => ({ p1: p.p1.id, p2: p.p2.id }))
                 : undefined,
-              status: state.status,
+              // Offline → força 'ativo' para o servidor gerar as partidas ao
+              // sincronizar (a Liga provisória já está em uso com placares).
+              status: offlineNow ? 'ativo' : state.status,
             },
           }
         }
 
         const result = await submitCreation({ kind: 'campeonato', op, snapshot })
         if ('error' in result) throw new Error(result.error)
+
+        // Offline + Liga → cria snapshot local "provisório" utilizável na hora,
+        // e abre direto a tela provisória. Demais formatos: card pendente.
+        if (result.queued && state.format === 'liga') {
+          const allowDrawL = state.counting === 'tempo' || state.setDrawEnabled
+          const participantsInfo = isPairMode
+            ? state.pairs.map((p) => ({
+                userIds: [p.p1.id, p.p2.id],
+                name: `${p.p1.full_name?.split(' ')[0] ?? '?'} / ${p.p2.full_name?.split(' ')[0] ?? '?'}`,
+                avatarUrl: null as string | null,
+              }))
+            : state.players.map((p) => ({
+                userIds: [p.id],
+                name: p.full_name,
+                avatarUrl: p.avatar_url,
+              }))
+          await saveLocalChampionship(
+            buildLocalLiga(result.id, {
+              name: state.name,
+              startDate: state.startDate || null,
+              unit: isPairMode ? 'pair' : 'player',
+              stage: {
+                counting: state.counting,
+                points_per_set: state.pointsPerSet,
+                win_by_two: state.winByTwo,
+                set_draw_enabled: state.setDrawEnabled,
+                sets_to_play: state.setsToPlay,
+              },
+              rounds: state.rounds,
+              champ: {
+                pointsWin: state.pointsWin,
+                pointsDraw: allowDrawL ? state.pointsDraw : 0,
+                pointsLoss: state.pointsLoss,
+                tiebreakers: state.tiebreakers,
+              },
+              participants: participantsInfo,
+            }),
+          )
+          router.push(`/pendentes/${result.id}`)
+          return
+        }
+
         // Offline → vai para a lista (card pendente); online → detalhe do campeonato.
         router.push(result.queued ? '/campeonatos' : `/campeonatos/${result.id}`)
       } catch (err) {

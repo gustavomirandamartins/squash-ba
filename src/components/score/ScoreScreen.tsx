@@ -58,7 +58,7 @@ export type ScoreScreenProps = {
 
 // ─── Avatar helper ────────────────────────────────────────────────────────────
 
-function PlayerAvatar({ info, size = 44 }: { info: SideInfo; size?: number }) {
+export function PlayerAvatar({ info, size = 44 }: { info: SideInfo; size?: number }) {
   if (info.avatarUrl) {
     return (
       <Image
@@ -183,7 +183,7 @@ function ConflictBanner({
 
 // ─── Game set row ─────────────────────────────────────────────────────────────
 
-function GameRow({
+export function GameRow({
   game,
   isActive,
   onReopen,
@@ -228,7 +228,7 @@ function GameRow({
 
 // ─── Tap zone (toque = ponto) ─────────────────────────────────────────────────
 
-function TapZone({
+export function TapZone({
   side,
   score,
   name,

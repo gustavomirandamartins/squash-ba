@@ -12,6 +12,8 @@ import { useRouter } from 'next/navigation'
 import { CloudOff, Loader2 } from 'lucide-react'
 import { getOutbox, updateOutbox, removeFromOutbox, OUTBOX_EVENT } from '@/lib/offline/outbox'
 import { runCreation } from '@/app/(app)/offline/run-creation'
+import { getLocalChampionship, removeLocalChampionship } from '@/lib/offline/local-championship'
+import { reconcileLocalLiga, markLocalSynced } from '@/lib/offline/reconcile-liga'
 
 export function OfflineSync() {
   const router = useRouter()
@@ -41,6 +43,21 @@ export function OfflineSync() {
           if ('error' in r) {
             await updateOutbox(item.tempId, { status: 'error', error: r.error })
           } else {
+            // Campeonato criado no servidor. Se havia snapshot local (Liga
+            // provisória), migra os placares lançados offline para as partidas
+            // reais e registra o mapeamento p/ a tela provisória redirecionar.
+            const local = await getLocalChampionship(item.tempId)
+            if (local) {
+              try {
+                await reconcileLocalLiga(r.id, local)
+                await markLocalSynced(item.tempId, r.id)
+                await removeLocalChampionship(item.tempId)
+              } catch {
+                // Best-effort: o campeonato existe; mantém o snapshot para não
+                // recriar (runCreation não é idempotente) e segue.
+                await markLocalSynced(item.tempId, r.id)
+              }
+            }
             await removeFromOutbox(item.tempId)
             didCreate = true
           }
