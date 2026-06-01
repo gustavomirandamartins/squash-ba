@@ -2097,8 +2097,11 @@ export function ChampionshipWizard() {
   const isBlocked =
     (state.format !== 'liga' &&
       state.format !== 'eliminatoria' &&
-      state.format !== 'grupos_elim') ||
-    (state.unit !== 'player' && state.unit !== 'pair')
+      state.format !== 'grupos_elim' &&
+      state.format !== 'desafio') ||
+    (state.format !== 'desafio' &&
+      state.unit !== 'player' &&
+      state.unit !== 'pair')
 
   const canGoForward = canAdvance(step, state)
 
