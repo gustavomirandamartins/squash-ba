@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Trophy, Swords, Users, MessageSquare, type LucideIcon } from 'lucide-react'
+import { Home, Trophy, Swords, Users, MessageSquare, CircleHelp, type LucideIcon } from 'lucide-react'
 import { useUnreadCount } from '@/lib/use-unread-count'
 
 interface Item {
@@ -18,6 +18,7 @@ const items: Item[] = [
   { href: '/jogos', label: 'Desafios', icon: Swords, matchPrefix: true },
   { href: '/comunidade', label: 'Comunidade', icon: Users, matchPrefix: true },
   { href: '/mensagens', label: 'Mensagens', icon: MessageSquare, matchPrefix: true },
+  { href: '/ajuda',     label: 'Ajuda',     icon: CircleHelp,    matchPrefix: true },
 ]
 
 interface Props {
@@ -30,7 +31,7 @@ export function BottomNav({ userId }: Props) {
 
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(1rem,env(safe-area-inset-bottom))] lg:hidden">
-      <div className="pointer-events-auto glass glass-pill flex items-center gap-1 px-2.5 py-2.5">
+      <div className="pointer-events-auto glass glass-pill flex items-center gap-0.5 px-2 py-2.5">
         {items.map(({ href, label, icon: Icon, matchPrefix }) => {
           const active = matchPrefix ? pathname.startsWith(href) : pathname === href
           const isMensagens = href === '/mensagens'

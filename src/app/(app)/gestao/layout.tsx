@@ -22,13 +22,14 @@ export default async function GestaoLayout({
     .eq('user_id', user.id)
 
   const roleSet = new Set((rolesData ?? []).map((r) => r.role as string))
-  const canManage = roleSet.has('organizer') || roleSet.has('admin')
+  const isAdmin   = roleSet.has('admin')
+  const canManage = roleSet.has('organizer') || isAdmin
 
   if (!canManage) notFound()
 
   return (
     <>
-      <GestaoNav />
+      <GestaoNav isAdmin={isAdmin} />
       {children}
     </>
   )

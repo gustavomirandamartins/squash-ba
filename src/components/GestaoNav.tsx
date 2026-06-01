@@ -3,18 +3,20 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-const TABS = [
+const TABS_BASE = [
   { label: 'Categorias', href: '/gestao/categorias' },
   { label: 'Locais', href: '/gestao/locais' },
   { label: 'Times', href: '/gestao/times' },
 ]
+const TAB_FEEDBACKS = { label: 'Feedbacks', href: '/gestao/feedbacks' }
 
-export function GestaoNav() {
+export function GestaoNav({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname()
+  const tabs = isAdmin ? [...TABS_BASE, TAB_FEEDBACKS] : TABS_BASE
 
   return (
     <nav className="flex gap-2 overflow-x-auto no-scrollbar border-b border-white/8 px-5 pb-3 pt-4">
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const isActive = pathname.startsWith(tab.href)
         return (
           <Link
