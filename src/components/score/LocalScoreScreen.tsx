@@ -5,7 +5,7 @@
 // e é guiada pelo useLocalScoreEngine (sem Supabase). Mais simples que o online:
 // sem conflito, sem realtime, sem agenda.
 
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, RotateCcw } from 'lucide-react'
 import { TapZone, GameRow, type SideInfo } from './ScoreScreen'
 import { useLocalScoreEngine } from '@/lib/score-engine/useLocalScoreEngine'
 import type { StageCfg } from '@/lib/standings/compute'
@@ -37,6 +37,7 @@ export function LocalScoreScreen({
     decrement,
     advanceGame,
     reopenGame,
+    reopenMatch,
     finalizeTempo,
   } = engine
 
@@ -168,6 +169,18 @@ export function LocalScoreScreen({
                   : `${(result === 'lado_a' ? sideA.name : sideB.name) ?? 'Lado'} venceu`}
               </p>
             </div>
+          )}
+
+          {/* Reabrir partida (corrigir placar) */}
+          {isFinished && (
+            <button
+              type="button"
+              onClick={reopenMatch}
+              className="w-full flex items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/[0.04] py-3 text-xs font-semibold text-white/50 transition hover:bg-white/[0.08] hover:text-white/75 active:scale-95"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reabrir partida
+            </button>
           )}
 
           {/* Aviso provisório */}

@@ -39,28 +39,41 @@ export function OfflineSync() {
       for (const item of queue) {
         await updateOutbox(item.tempId, { status: 'syncing', error: undefined })
         try {
-          const r = await runCreation(item.op)
-          if ('error' in r) {
-            await updateOutbox(item.tempId, { status: 'error', error: r.error })
-          } else {
-            // Campeonato criado no servidor. Se havia snapshot local (Liga
-            // provisória), migra os placares lançados offline para as partidas
-            // reais e registra o mapeamento p/ a tela provisória redirecionar.
-            const local = await getLocalChampionship(item.tempId)
-            if (local) {
-              try {
-                await reconcileLocalLiga(r.id, local)
-                await markLocalSynced(item.tempId, r.id)
-                await removeLocalChampionship(item.tempId)
-              } catch {
-                // Best-effort: o campeonato existe; mantém o snapshot para não
-                // recriar (runCreation não é idempotente) e segue.
-                await markLocalSynced(item.tempId, r.id)
-              }
+          // 1. Cria no servidor (uma única vez — guarda o id real p/ retry seguro).
+          let realId = item.createdRealId
+          if (!realId) {
+            const r = await runCreation(item.op)
+            if ('error' in r) {
+              await updateOutbox(item.tempId, { status: 'error', error: r.error })
+              continue
             }
-            await removeFromOutbox(item.tempId)
-            didCreate = true
+            realId = r.id
+            await updateOutbox(item.tempId, { createdRealId: realId })
           }
+
+          // 2. Migra placares lançados offline (Liga provisória), se houver.
+          const local = await getLocalChampionship(item.tempId)
+          if (local) {
+            try {
+              await reconcileLocalLiga(realId, local)
+            } catch (e) {
+              // NÃO recria nem apaga o snapshot: marca erro p/ retry só da migração.
+              await updateOutbox(item.tempId, {
+                status: 'error',
+                error:
+                  'Campeonato criado, mas falhou ao enviar os placares: ' +
+                  (e instanceof Error ? e.message : 'erro') +
+                  '. Toque em "Tentar novamente".',
+              })
+              continue
+            }
+            await markLocalSynced(item.tempId, realId)
+            await removeLocalChampionship(item.tempId)
+          }
+
+          // 3. Tudo certo → sai da fila.
+          await removeFromOutbox(item.tempId)
+          didCreate = true
         } catch (e) {
           await updateOutbox(item.tempId, {
             status: 'error',
@@ -87,7 +100,14 @@ export function OfflineSync() {
 
     const onOnline = () => { setOffline(false); void drain() }
     const onOffline = () => setOffline(true)
-    const onChange = () => void refreshCounts()
+    // Mudança na fila: drena SÓ se houver item 'pending' (ex.: "Tentar
+    // novamente"). Itens em 'error' não re-disparam (evita loop de retry).
+    const onChange = async () => {
+      await refreshCounts()
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return
+      const all = await getOutbox()
+      if (all.some((i) => i.status === 'pending')) void drain()
+    }
 
     window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)

@@ -24,6 +24,7 @@ export type LocalEngine = {
   decrement: (side: 'a' | 'b') => void
   advanceGame: () => void
   reopenGame: (gameNumber: number) => void
+  reopenMatch: () => void
   finalizeTempo: () => void
 }
 
@@ -141,6 +142,13 @@ export function useLocalScoreEngine(
     setCurrentGame(gameNumber)
   }, [])
 
+  // Reabre a partida finalizada para corrigir o placar (igual ao online).
+  const reopenMatch = useCallback(() => {
+    setStatus('em_andamento')
+    setResult(null)
+    persist(games, 'em_andamento', null)
+  }, [games, persist])
+
   // Finalização manual para contagem por TEMPO (placar único do game 1).
   const finalizeTempo = useCallback(() => {
     if (stage.counting !== 'tempo') return
@@ -168,6 +176,7 @@ export function useLocalScoreEngine(
     decrement,
     advanceGame,
     reopenGame,
+    reopenMatch,
     finalizeTempo,
   }
 }

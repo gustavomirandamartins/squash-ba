@@ -71,7 +71,10 @@ export async function reconcileLocalLiga(
     realByKey.set(`${rm.round}#${pairKey}`, { id: rm.id, aKey, bKey })
   }
 
-  // 3. Para cada partida local com placar, casa e aplica
+  // 3. Para cada partida local com placar, casa e faz upsert dos games.
+  // O trigger match_games_resolve finaliza a partida (status/result) sozinho —
+  // exatamente como no fluxo online — então NÃO atualizamos matches manualmente.
+  let matched = 0
   for (const lm of snapshot.matches) {
     if (lm.games.length === 0) continue
     const laKey = lm.sideA ? (localKeyByPartId.get(lm.sideA) ?? '') : ''
@@ -80,9 +83,8 @@ export async function reconcileLocalLiga(
     const real = realByKey.get(`${lm.round}#${pairKey}`)
     if (!real) continue
 
-    // Orientação: se o lado A real == lado A local, mantém; senão inverte.
+    // Orientação: se o lado A real == lado A local, mantém; senão inverte placar.
     const swapped = real.aKey !== laKey
-
     const gameRows = lm.games.map((g) => ({
       match_id: real.id,
       game_number: g.game_number,
@@ -92,22 +94,13 @@ export async function reconcileLocalLiga(
     const { error: gErr } = await supabase
       .from('match_games')
       .upsert(gameRows, { onConflict: 'match_id,game_number' })
-    if (gErr) throw new Error(gErr.message)
+    if (gErr) throw new Error(`match_games: ${gErr.message}`)
+    matched++
+  }
 
-    if (lm.status === 'finalizado' && lm.result) {
-      const result =
-        lm.result === 'empate'
-          ? 'empate'
-          : swapped
-            ? lm.result === 'lado_a' ? 'lado_b' : 'lado_a'
-            : lm.result
-      const { error: uErr } = await supabase
-        .from('matches')
-        .update({ status: 'finalizado', result })
-        .eq('id', real.id)
-      if (uErr) throw new Error(uErr.message)
-    } else {
-      await supabase.from('matches').update({ status: 'em_andamento' }).eq('id', real.id)
-    }
+  // Se havia placares mas nada casou, o mapeamento falhou → erro (não silencioso).
+  const hadScores = snapshot.matches.some((m) => m.games.length > 0)
+  if (hadScores && matched === 0) {
+    throw new Error('nenhuma partida correspondente encontrada no servidor')
   }
 }

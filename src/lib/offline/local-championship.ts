@@ -53,8 +53,36 @@ function uid(prefix: string): string {
   return `${prefix}-${r}`
 }
 
-// ── Geração round-robin (porta fiel de generate_liga_matches) ────────────────
-// Participantes na ordem de entrada; para cada rodada, pares (i<j).
+// Agenda um round-robin completo pelo MÉTODO DO CÍRCULO: cada jogador joga uma
+// vez por "matchday", então os jogos ficam intercalados (não concentrados num só
+// jogador). Retorna os pares na ordem de exibição.
+function circleSchedule(ids: string[]): [string, string][] {
+  const arr = [...ids]
+  if (arr.length % 2 === 1) arr.push('__BYE__') // bye para nº ímpar
+  const n = arr.length
+  const half = n / 2
+  const days = n - 1
+  const fixed = arr[0]
+  let rot = arr.slice(1)
+  const pairs: [string, string][] = []
+  for (let d = 0; d < days; d++) {
+    const day = [fixed, ...rot]
+    for (let i = 0; i < half; i++) {
+      const a = day[i]
+      const b = day[n - 1 - i]
+      if (a !== '__BYE__' && b !== '__BYE__') pairs.push([a, b])
+    }
+    // rotaciona mantendo o primeiro fixo
+    rot = [rot[rot.length - 1], ...rot.slice(0, rot.length - 1)]
+  }
+  return pairs
+}
+
+// ── Geração round-robin ──────────────────────────────────────────────────────
+// O conjunto de pares por ciclo é o mesmo do servidor (todos contra todos); só a
+// ORDEM é intercalada (método do círculo) p/ não concentrar os jogos. round =
+// número do ciclo (1..rounds), igual ao servidor — a reconciliação casa por
+// (round + membros dos lados), independente da ordem.
 export function generateLigaMatches(
   participants: LocalParticipant[],
   rounds: number,
@@ -62,19 +90,18 @@ export function generateLigaMatches(
   const n = participants.length
   const out: LocalMatch[] = []
   if (n < 2) return out
-  for (let r = 1; r <= rounds; r++) {
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        out.push({
-          id: uid('lm'),
-          round: r,
-          sideA: participants[i].id,
-          sideB: participants[j].id,
-          status: 'agendado',
-          result: null,
-          games: [],
-        })
-      }
+  const ids = participants.map((p) => p.id)
+  for (let cycle = 1; cycle <= rounds; cycle++) {
+    for (const [a, b] of circleSchedule(ids)) {
+      out.push({
+        id: uid('lm'),
+        round: cycle,
+        sideA: a,
+        sideB: b,
+        status: 'agendado',
+        result: null,
+        games: [],
+      })
     }
   }
   return out

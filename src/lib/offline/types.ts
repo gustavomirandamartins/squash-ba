@@ -30,6 +30,9 @@ export type OutboxItem = {
   status: OutboxStatus
   error?: string
   createdAt: number
+  /** id REAL do campeonato após criação no servidor. Permite retry sem recriar
+   *  (a migração de placares — reconciliação — pode ser repetida com segurança). */
+  createdRealId?: string
 }
 
 export function destForCreation(kind: CreationKind, id: string): string {
