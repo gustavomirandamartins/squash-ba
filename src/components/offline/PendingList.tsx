@@ -49,6 +49,7 @@ export function PendingList({ kind }: { kind: CreationKind }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-white/85">{it.snapshot.name}</p>
             <p className="mt-0.5 truncate text-xs text-white/40">{it.snapshot.subtitle}</p>
+            <p className="mt-0.5 truncate text-[10px] text-secondary/60">Provisório — toque para abrir</p>
           </div>
           <StatusBadge status={it.status} />
         </Link>

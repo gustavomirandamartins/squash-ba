@@ -135,16 +135,32 @@ export function LocalScoreScreen({
             </div>
           )}
 
-          {/* Avançar set */}
-          {editable && isSets && games.length > 0 && games.length < setsToPlay && (
-            <button
-              type="button"
-              onClick={advanceGame}
-              className="w-full glass glass-card py-3 text-xs font-semibold text-white/40 hover:text-white/70 transition text-center rounded-2xl"
-            >
-              ↓ Encerrar set e avançar
-            </button>
-          )}
+          {/* Avançar set — escondido quando a partida já está decidida (MD3/MD5). */}
+          {(() => {
+            if (!editable || !isSets || games.length === 0 || games.length >= setsToPlay) return null
+            const P = stage.points_per_set
+            const need = Math.floor(setsToPlay / 2) + 1
+            let sA = 0, sB = 0
+            for (const g of games) {
+              if (stage.win_by_two) {
+                if (g.score_a >= P && g.score_a - g.score_b >= 2) sA++
+                else if (g.score_b >= P && g.score_b - g.score_a >= 2) sB++
+              } else {
+                if (g.score_a >= P && g.score_a > g.score_b) sA++
+                else if (g.score_b >= P && g.score_b > g.score_a) sB++
+              }
+            }
+            if (sA >= need || sB >= need) return null
+            return (
+              <button
+                type="button"
+                onClick={advanceGame}
+                className="w-full glass glass-card py-3 text-xs font-semibold text-white/40 hover:text-white/70 transition text-center rounded-2xl"
+              >
+                ↓ Encerrar set e avançar
+              </button>
+            )
+          })()}
 
           {/* Encerrar partida (tempo) */}
           {editable && isTempo && (

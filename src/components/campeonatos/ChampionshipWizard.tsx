@@ -6,7 +6,13 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { submitCreation } from '@/lib/offline/submit'
 import { loadCategories, loadPlayerPool, type CachedPlayer } from '@/lib/offline/players-cache'
-import { buildLocalLiga, saveLocalChampionship } from '@/lib/offline/local-championship'
+import {
+  buildLocalLiga,
+  buildLocalEliminatoria,
+  buildLocalGrupos,
+  qualifiersPerGroup,
+  saveLocalChampionship,
+} from '@/lib/offline/local-championship'
 import type { CreationOp } from '@/lib/offline/types'
 import {
   ChevronLeft,
@@ -1931,7 +1937,8 @@ export function ChampionshipWizard() {
               pairs: isPairMode
                 ? state.pairs.map((p) => ({ p1: p.p1.id, p2: p.p2.id, seed: state.pairSeeds[p.id] ?? null }))
                 : undefined,
-              status: state.status,
+              // Offline → força 'ativo' p/ o servidor gerar o bracket ao sincronizar.
+              status: offlineNow ? 'ativo' : state.status,
             },
           }
         } else if (state.format === 'grupos_elim') {
@@ -2048,45 +2055,159 @@ export function ChampionshipWizard() {
         const result = await submitCreation({ kind: 'campeonato', op, snapshot })
         if ('error' in result) throw new Error(result.error)
 
-        // Offline + Liga → cria snapshot local "provisório" utilizável na hora,
-        // e abre direto a tela provisória. Demais formatos: card pendente.
-        if (result.queued && state.format === 'liga') {
-          const allowDrawL = state.counting === 'tempo' || state.setDrawEnabled
-          const participantsInfo = isPairMode
-            ? state.pairs.map((p) => ({
+        // Offline → tenta criar um snapshot local "provisório" utilizável na hora
+        // (abre direto a tela provisória). Se conseguir, retorna; senão cai no card.
+        if (result.queued) {
+          // Helpers de info de participante (jogador ou dupla)
+          const pairName = (p: PairEntry) =>
+            `${p.p1.full_name?.split(' ')[0] ?? '?'} / ${p.p2.full_name?.split(' ')[0] ?? '?'}`
+
+          if (state.format === 'liga') {
+            const allowDrawL = state.counting === 'tempo' || state.setDrawEnabled
+            const participantsInfo = isPairMode
+              ? state.pairs.map((p) => ({ userIds: [p.p1.id, p.p2.id], name: pairName(p), avatarUrl: null as string | null }))
+              : state.players.map((p) => ({ userIds: [p.id], name: p.full_name, avatarUrl: p.avatar_url }))
+            await saveLocalChampionship(
+              buildLocalLiga(result.id, {
+                name: state.name,
+                startDate: state.startDate || null,
+                unit: isPairMode ? 'pair' : 'player',
+                stage: {
+                  counting: state.counting,
+                  points_per_set: state.pointsPerSet,
+                  win_by_two: state.winByTwo,
+                  set_draw_enabled: state.setDrawEnabled,
+                  sets_to_play: state.setsToPlay,
+                },
+                rounds: state.rounds,
+                champ: {
+                  pointsWin: state.pointsWin,
+                  pointsDraw: allowDrawL ? state.pointsDraw : 0,
+                  pointsLoss: state.pointsLoss,
+                  tiebreakers: state.tiebreakers,
+                },
+                participants: participantsInfo,
+              }),
+            )
+            router.push(`/pendentes/${result.id}`)
+            return
+          }
+
+          if (state.format === 'eliminatoria') {
+            // Eliminatória nunca tem empate (espelha o servidor).
+            const elimStageCfg = {
+              counting: state.counting,
+              points_per_set: state.pointsPerSet,
+              win_by_two: state.winByTwo,
+              set_draw_enabled: false,
+              sets_to_play: state.setsToPlay,
+            }
+            const participantsInfo = isPairMode
+              ? state.pairs.map((p) => ({
+                  userIds: [p.p1.id, p.p2.id],
+                  name: pairName(p),
+                  avatarUrl: null as string | null,
+                  seed: state.pairSeeds[p.id] ?? null,
+                }))
+              : state.players.map((p) => ({
+                  userIds: [p.id],
+                  name: p.full_name,
+                  avatarUrl: p.avatar_url,
+                  seed: state.playerSeeds[p.id] ?? null,
+                }))
+            await saveLocalChampionship(
+              buildLocalEliminatoria(result.id, {
+                name: state.name,
+                startDate: state.startDate || null,
+                unit: isPairMode ? 'pair' : 'player',
+                stage: elimStageCfg,
+                champ: {
+                  pointsWin: state.pointsWin,
+                  pointsDraw: 0,
+                  pointsLoss: state.pointsLoss,
+                  tiebreakers: state.tiebreakers,
+                },
+                hasThirdPlace: state.hasThirdPlace,
+                participants: participantsInfo,
+              }),
+            )
+            router.push(`/pendentes/${result.id}`)
+            return
+          }
+
+          if (state.format === 'grupos_elim') {
+            // Resolve o groupIndex de cada participante igual ao servidor:
+            // - jogadores: snake draft sobre a ordem enviada (groups.flat())
+            // - duplas: groupIndex explícito (manual ou snake)
+            type PInfo = { userIds: string[]; name: string | null; avatarUrl: string | null; seed: number | null; groupIndex: number }
+            let participantsInfo: PInfo[]
+            if (isPairMode) {
+              const pairAssign = state.manualPairGroupAssign ?? computeSnakeDraftPairs(state.pairs, state.numGroups)
+              participantsInfo = state.pairs.map((p) => ({
                 userIds: [p.p1.id, p.p2.id],
-                name: `${p.p1.full_name?.split(' ')[0] ?? '?'} / ${p.p2.full_name?.split(' ')[0] ?? '?'}`,
-                avatarUrl: null as string | null,
+                name: pairName(p),
+                avatarUrl: null,
+                seed: state.pairSeeds[p.id] ?? null,
+                groupIndex: pairAssign[p.id] ?? 0,
               }))
-            : state.players.map((p) => ({
+            } else {
+              const assignments = state.manualGroupAssign ?? computeSnakeDraft(state.players, state.numGroups)
+              const grouped = groupPlayersByAssignment(state.players, assignments, state.numGroups)
+              const orderedPlayers = grouped.flat()
+              const serverAssign = computeSnakeDraft(orderedPlayers, state.numGroups)
+              participantsInfo = orderedPlayers.map((p) => ({
                 userIds: [p.id],
                 name: p.full_name,
                 avatarUrl: p.avatar_url,
+                seed: state.playerSeeds[p.id] ?? null,
+                groupIndex: serverAssign[p.id] ?? 0,
               }))
-          await saveLocalChampionship(
-            buildLocalLiga(result.id, {
-              name: state.name,
-              startDate: state.startDate || null,
-              unit: isPairMode ? 'pair' : 'player',
-              stage: {
-                counting: state.counting,
-                points_per_set: state.pointsPerSet,
-                win_by_two: state.winByTwo,
-                set_draw_enabled: state.setDrawEnabled,
-                sets_to_play: state.setsToPlay,
-              },
-              rounds: state.rounds,
-              champ: {
-                pointsWin: state.pointsWin,
-                pointsDraw: allowDrawL ? state.pointsDraw : 0,
-                pointsLoss: state.pointsLoss,
-                tiebreakers: state.tiebreakers,
-              },
-              participants: participantsInfo,
-            }),
-          )
-          router.push(`/pendentes/${result.id}`)
-          return
+            }
+
+            // Total de classificados PAR? (ceil(size/2) por grupo). Ímpar → repescagem
+            // (fora do escopo offline): mantém só o card pendente.
+            const sizes = Array.from({ length: state.numGroups }, () => 0)
+            for (const p of participantsInfo) sizes[p.groupIndex] = (sizes[p.groupIndex] ?? 0) + 1
+            const totalQ = sizes.reduce((s, sz) => s + qualifiersPerGroup(sz), 0)
+
+            if (totalQ % 2 === 0 && totalQ >= 2) {
+              const allowDrawG = state.groupsCounting === 'tempo' || state.groupsSetDrawEnabled
+              await saveLocalChampionship(
+                buildLocalGrupos(result.id, {
+                  name: state.name,
+                  startDate: state.startDate || null,
+                  unit: isPairMode ? 'pair' : 'player',
+                  groupsStage: {
+                    counting: state.groupsCounting,
+                    points_per_set: state.groupsPointsPerSet,
+                    win_by_two: state.groupsWinByTwo,
+                    set_draw_enabled: state.groupsSetDrawEnabled,
+                    sets_to_play: state.groupsSetsToPlay,
+                  },
+                  elimStage: {
+                    counting: state.counting,
+                    points_per_set: state.pointsPerSet,
+                    win_by_two: state.winByTwo,
+                    set_draw_enabled: false,
+                    sets_to_play: state.setsToPlay,
+                  },
+                  champ: {
+                    pointsWin: state.pointsWin,
+                    pointsDraw: allowDrawG ? state.pointsDraw : 0,
+                    pointsLoss: state.pointsLoss,
+                    tiebreakers: state.tiebreakers,
+                  },
+                  hasThirdPlace: state.hasThirdPlace,
+                  numGroups: state.numGroups,
+                  rounds: state.groupsRounds,
+                  participants: participantsInfo,
+                }),
+              )
+              router.push(`/pendentes/${result.id}`)
+              return
+            }
+            // totalQ ímpar → cai no card pendente abaixo.
+          }
         }
 
         // Offline → vai para a lista (card pendente); online → detalhe do campeonato.

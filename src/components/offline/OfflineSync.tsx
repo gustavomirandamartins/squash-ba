@@ -13,7 +13,12 @@ import { CloudOff, Loader2 } from 'lucide-react'
 import { getOutbox, updateOutbox, removeFromOutbox, OUTBOX_EVENT } from '@/lib/offline/outbox'
 import { runCreation } from '@/app/(app)/offline/run-creation'
 import { getLocalChampionship, removeLocalChampionship } from '@/lib/offline/local-championship'
-import { reconcileLocalLiga, markLocalSynced } from '@/lib/offline/reconcile-liga'
+import {
+  reconcileLocalLiga,
+  reconcileLocalBracket,
+  reconcileLocalGrupos,
+  markLocalSynced,
+} from '@/lib/offline/reconcile-liga'
 
 export function OfflineSync() {
   const router = useRouter()
@@ -62,11 +67,17 @@ export function OfflineSync() {
             await updateOutbox(item.tempId, { createdRealId: realId })
           }
 
-          // 2. Migra placares lançados offline (Liga provisória), se houver.
+          // 2. Migra placares lançados offline (snapshot provisório), se houver.
           const local = await getLocalChampionship(item.tempId)
           if (local) {
             try {
-              await reconcileLocalLiga(realId, local)
+              if (local.format === 'eliminatoria') {
+                await reconcileLocalBracket(realId, local)
+              } else if (local.format === 'grupos_elim') {
+                await reconcileLocalGrupos(realId, local)
+              } else {
+                await reconcileLocalLiga(realId, local)
+              }
             } catch (e) {
               // NÃO recria nem apaga o snapshot: marca erro p/ retry só da migração.
               await updateOutbox(item.tempId, {

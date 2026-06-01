@@ -1,6 +1,11 @@
 {
-  "count": 106,
+  "count": 107,
   "commits": [
+    {
+      "hash": "2476019",
+      "subject": "Chore: atualiza changelog.json (106 commits)",
+      "date": "2026-06-01"
+    },
     {
       "hash": "038bf4d",
       "subject": "Fix: versao Beta lida do changelog.json commitado (evita shallow clone da Vercel)",
