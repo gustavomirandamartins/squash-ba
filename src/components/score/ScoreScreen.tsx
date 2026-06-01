@@ -646,16 +646,37 @@ export function ScoreScreen({
             </div>
           )}
 
-          {/* Avançar set — corrigido: 'set' (sem 's') é o valor do banco */}
-          {editable && isSets && games.length > 0 && games.length < setsToPlay && (
-            <button
-              type="button"
-              onClick={() => void advanceGame()}
-              className="w-full glass glass-card py-3 text-xs font-semibold text-white/40 hover:text-white/70 transition text-center rounded-2xl"
-            >
-              ↓ Encerrar set e avançar
-            </button>
-          )}
+          {/* Avançar set
+              Condições:
+              1. Partida editável e modalidade de sets
+              2. Ainda há sets a jogar (games.length < setsToPlay)
+              3. Nenhum lado já atingiu os sets necessários para vencer
+                 (ex.: MD3→2 sets; MD5→3 sets) — evita abrir set desnecessário
+                 tanto online (race condition realtime) quanto offline. */}
+          {(() => {
+            if (!editable || !isSets || games.length === 0 || games.length >= setsToPlay) return null
+            const need = Math.floor(setsToPlay / 2) + 1
+            let sA = 0, sB = 0
+            for (const g of games) {
+              if (winByTwo) {
+                if (g.score_a >= pointsPerSet && g.score_a - g.score_b >= 2) sA++
+                else if (g.score_b >= pointsPerSet && g.score_b - g.score_a >= 2) sB++
+              } else {
+                if (g.score_a >= pointsPerSet && g.score_a > g.score_b) sA++
+                else if (g.score_b >= pointsPerSet && g.score_b > g.score_a) sB++
+              }
+            }
+            if (sA >= need || sB >= need) return null  // partida já decidida
+            return (
+              <button
+                type="button"
+                onClick={() => void advanceGame()}
+                className="w-full glass glass-card py-3 text-xs font-semibold text-white/40 hover:text-white/70 transition text-center rounded-2xl"
+              >
+                ↓ Encerrar set e avançar
+              </button>
+            )
+          })()}
         </div>
       )}
 
