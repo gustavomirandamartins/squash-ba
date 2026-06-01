@@ -569,9 +569,9 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
     state.unit === 'team'  // 'player' e 'pair' são suportados; 'team' ainda não
 
   return (
-    <div className="space-y-5">
-      <div className="glass glass-card px-4 py-3.5 space-y-1.5">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">
+    <div className="space-y-3">
+      <div className="glass glass-card px-4 py-2.5 space-y-1">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
           Nome do campeonato
         </p>
         <input
@@ -583,10 +583,10 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
         />
       </div>
 
-      <div className="glass glass-card px-4 py-3.5 space-y-1.5">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">
+      <div className="glass glass-card px-4 py-2.5 space-y-1">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
           Data de início{' '}
-          <span className="normal-case font-normal text-white/30">(opcional)</span>
+          <span className="normal-case font-normal text-white/25">(opcional)</span>
         </p>
         <input
           type="date"
@@ -596,11 +596,11 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
         />
       </div>
 
-      <div className="space-y-2">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40 px-1">
+      <div className="space-y-1.5">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40 px-1">
           Formato
         </p>
-        <div className="grid grid-cols-2 grid-rows-2 gap-2">
+        <div className="grid grid-cols-2 grid-rows-2 gap-1.5">
           {FORMAT_OPTIONS.map((f) => {
             const active = state.format === f.value
             const isSpanning = f.value === 'grupos_elim'
@@ -609,7 +609,7 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
                 key={f.value}
                 type="button"
                 onClick={() => f.enabled && onChange({ format: f.value })}
-                className={`glass glass-card flex flex-col items-start gap-1.5 px-3 py-3 text-left transition active:scale-[0.97] relative ${
+                className={`glass glass-card flex flex-col items-start gap-1 px-3 py-2.5 text-left transition active:scale-[0.97] relative ${
                   isSpanning ? 'row-span-2' : ''
                 } ${active ? 'border-secondary/50 bg-secondary/10' : ''} ${!f.enabled ? 'opacity-45' : ''}`}
               >
@@ -619,7 +619,7 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
                 <span className="text-sm font-semibold text-white/90 leading-snug">
                   {f.label}
                 </span>
-                <span className="text-[11px] text-white/40 leading-snug">{f.desc}</span>
+                <span className="text-[10px] text-white/40 leading-snug">{f.desc}</span>
                 {!f.enabled && (
                   <span className="absolute top-2 right-2 text-[9px] font-semibold text-white/25 uppercase tracking-widest">
                     breve
@@ -631,8 +631,8 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
         </div>
       </div>
 
-      <div className="space-y-2">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40 px-1">
+      <div className="space-y-1.5">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40 px-1">
           Unidade de confronto
         </p>
         <div className="flex gap-2">
@@ -643,7 +643,7 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
                 key={u.value}
                 type="button"
                 onClick={() => onChange({ unit: u.value })}
-                className={`glass glass-card flex flex-1 flex-col items-center gap-1 py-3 transition active:scale-[0.97] ${
+                className={`glass glass-card flex flex-1 flex-col items-center gap-0.5 py-2.5 transition active:scale-[0.97] ${
                   active ? 'border-secondary/50 bg-secondary/10' : ''
                 }`}
               >
@@ -1844,6 +1844,16 @@ export function ChampionshipWizard() {
   const [state, setState] = useState<WizardState>(DEFAULT_STATE)
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  // Controla posição do sticky CTA: online tem tab-bar fixa (~8rem), offline não.
+  const [isOffline, setIsOffline] = useState(false)
+  useEffect(() => {
+    setIsOffline(!navigator.onLine)
+    const up = () => setIsOffline(false)
+    const down = () => setIsOffline(true)
+    window.addEventListener('online', up)
+    window.addEventListener('offline', down)
+    return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down) }
+  }, [])
 
   function onChange(patch: Patch) {
     setState((prev) => ({ ...prev, ...patch }))
@@ -2093,10 +2103,15 @@ export function ChampionshipWizard() {
     return defaults[step - 1]
   })()
 
+  // Offset do sticky CTA: online tem tab-bar fixa, offline não tem.
+  const ctaBottom = isOffline
+    ? 'max(1rem, env(safe-area-inset-bottom))'
+    : 'max(8rem, calc(7rem + env(safe-area-inset-bottom)))'
+
   return (
     <div>
-      {/* Step header */}
-      <div className="px-5 pt-4 pb-3 space-y-3">
+      {/* Step header — compacto */}
+      <div className="px-5 pt-3 pb-2 space-y-2">
         <div className="grid grid-cols-[2rem_1fr_2rem] items-center gap-2">
           <button
             type="button"
@@ -2107,7 +2122,7 @@ export function ChampionshipWizard() {
           </button>
           <div className="text-center">
             <p className="text-[11px] text-white/40">Passo {step} de 5</p>
-            <p className="text-base font-semibold text-white">{stepTitle}</p>
+            <p className="text-sm font-semibold text-white">{stepTitle}</p>
           </div>
           {step === 1 ? (
             <Link
@@ -2120,7 +2135,7 @@ export function ChampionshipWizard() {
             <div />
           )}
         </div>
-        <div className="h-1 rounded-full bg-white/10 overflow-hidden">
+        <div className="h-0.5 rounded-full bg-white/10 overflow-hidden">
           <div
             className="h-full rounded-full bg-secondary transition-all duration-300 ease-out"
             style={{ width: `${(step / 5) * 100}%` }}
@@ -2129,7 +2144,7 @@ export function ChampionshipWizard() {
       </div>
 
       {/* Step content */}
-      <div className="px-5 pb-6 space-y-0">
+      <div className="px-5 pb-4 space-y-0">
         {step === 1 && <Step1 state={state} onChange={onChange} />}
         {step === 2 && state.format === 'eliminatoria' && (
           <Step2Eliminatoria state={state} onChange={onChange} />
@@ -2152,21 +2167,31 @@ export function ChampionshipWizard() {
             error={error}
           />
         )}
-
-        {step < 5 && (
-          <div className="pt-5">
-            <button
-              type="button"
-              onClick={next}
-              disabled={!canGoForward || isBlocked}
-              className="w-full flex items-center justify-center gap-2 rounded-full bg-secondary py-3.5 text-base font-bold text-primary transition active:scale-[0.98] disabled:opacity-35"
-            >
-              Avançar
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </div>
-        )}
       </div>
+
+      {/* CTA sticky — sempre visível acima da tab-bar */}
+      {step < 5 && (
+        <div
+          className="sticky z-20 -mx-0 px-5 pt-8 pointer-events-none"
+          style={{
+            bottom: ctaBottom,
+            background: 'linear-gradient(to top, #16233a 55%, #16233a99 78%, transparent)',
+            paddingBottom: isOffline
+              ? 'max(0.75rem, env(safe-area-inset-bottom))'
+              : '0.75rem',
+          }}
+        >
+          <button
+            type="button"
+            onClick={next}
+            disabled={!canGoForward || isBlocked}
+            className="pointer-events-auto w-full flex items-center justify-center gap-2 rounded-full bg-secondary py-3.5 text-base font-bold text-primary transition active:scale-[0.98] disabled:opacity-35"
+          >
+            Avançar
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
