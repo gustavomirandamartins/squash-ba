@@ -1,6 +1,11 @@
 {
-  "count": 108,
+  "count": 109,
   "commits": [
+    {
+      "hash": "633685f",
+      "subject": "Fix: professores visiveis a todos + admin sem tag Professor",
+      "date": "2026-06-01"
+    },
     {
       "hash": "71cb3bd",
       "subject": "Feat: Eliminatoria e Grupos+Elim usaveis offline",

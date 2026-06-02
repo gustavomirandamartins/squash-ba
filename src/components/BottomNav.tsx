@@ -30,8 +30,8 @@ export function BottomNav({ userId }: Props) {
   const unread = useUnreadCount(userId ?? null)
 
   return (
-    <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(1rem,env(safe-area-inset-bottom))] lg:hidden">
-      <div className="pointer-events-auto glass glass-pill flex items-center gap-0.5 px-2 py-2.5">
+    <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(1rem,env(safe-area-inset-bottom))] landscape-sm:inset-x-auto landscape-sm:inset-y-0 landscape-sm:left-0 landscape-sm:items-center landscape-sm:pb-0 landscape-sm:pl-[max(0.5rem,env(safe-area-inset-left))] lg:hidden">
+      <div className="pointer-events-auto glass glass-pill flex items-center gap-0.5 px-2 py-2.5 landscape-sm:flex-col landscape-sm:gap-0.5 landscape-sm:px-2 landscape-sm:py-2">
         {items.map(({ href, label, icon: Icon, matchPrefix }) => {
           const active = matchPrefix ? pathname.startsWith(href) : pathname === href
           const isMensagens = href === '/mensagens'
@@ -43,7 +43,7 @@ export function BottomNav({ userId }: Props) {
               href={href}
               aria-label={label}
               aria-current={active ? 'page' : undefined}
-              className={`relative grid h-12 w-12 place-items-center rounded-full transition-all duration-200 active:scale-90 ${
+              className={`relative grid h-12 w-12 place-items-center rounded-full transition-all duration-200 active:scale-90 landscape-sm:h-10 landscape-sm:w-10 ${
                 active
                   ? 'bg-secondary text-primary shadow-[var(--shadow-neon)]'
                   : 'text-white/65 hover:text-white'

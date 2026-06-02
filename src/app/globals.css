@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+/* ── Variante "celular em paisagem" ────────────────────────
+   Dispara quando o aparelho está deitado E com pouca altura (telefones em
+   landscape: ~320–430px de altura). Não pega desktops/laptops (altura alta)
+   nem tablets em landscape (altura > 600px, e que já caem no breakpoint lg).
+   Usada no shell p/ trocar a barra inferior por um rail lateral e liberar a
+   tela toda. */
+@custom-variant landscape-sm {
+  @media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
+    @slot;
+  }
+}
+
 @theme {
   /* ── Cores da marca SquashBa ───────────────────────────── */
   --color-primary: #1d2b45;        /* fundo base azul-marinho */
