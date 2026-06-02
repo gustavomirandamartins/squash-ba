@@ -390,6 +390,41 @@ export function ScoreScreen({
   const winnerA = result === 'lado_a'
   const winnerB = result === 'lado_b'
 
+  // Nº de sets necessários para vencer (MD3→2, MD5→3).
+  const need = Math.floor(setsToPlay / 2) + 1
+  const nameA = sideA.name ?? 'Lado A'
+  const nameB = sideB.name ?? 'Lado B'
+
+  // Um set está "decidido" quando alguém o venceu pelas regras da fase.
+  function isSetDecided(g: { score_a: number; score_b: number }): boolean {
+    const a = g.score_a, b = g.score_b
+    if (winByTwo) {
+      if (a >= pointsPerSet && a - b >= 2) return true
+      if (b >= pointsPerSet && b - a >= 2) return true
+    } else {
+      if (a >= pointsPerSet && a > b) return true
+      if (b >= pointsPerSet && b > a) return true
+    }
+    if (setDrawEnabled && a === b && a >= pointsPerSet) return true
+    return false
+  }
+
+  // Conta sets vencidos por cada lado + soma total de pontos (para desempate).
+  function tallySets(gs: GameScore[]): { sA: number; sB: number; pA: number; pB: number } {
+    let sA = 0, sB = 0, pA = 0, pB = 0
+    for (const g of gs) {
+      pA += g.score_a; pB += g.score_b
+      if (winByTwo) {
+        if (g.score_a >= pointsPerSet && g.score_a - g.score_b >= 2) sA++
+        else if (g.score_b >= pointsPerSet && g.score_b - g.score_a >= 2) sB++
+      } else {
+        if (g.score_a >= pointsPerSet && g.score_a > g.score_b) sA++
+        else if (g.score_b >= pointsPerSet && g.score_b > g.score_a) sB++
+      }
+    }
+    return { sA, sB, pA, pB }
+  }
+
   // A partida finaliza AUTOMATICAMENTE quando o placar decide (mais sets vence;
   // empate só quando a fase permite e o resultado dá igual). Sem confirmação manual.
 
@@ -517,20 +552,83 @@ export function ScoreScreen({
     [supabase, matchId],
   )
 
-  // Encerra a partida com o resultado atual (quem tem mais pontos vence).
-  // Usado no modo 'pontos' onde não há auto-finalização por threshold de sets.
+  // ── Encerrar partida ───────────────────────────────────────────────────────
+  // Botão universal (sets e pontos). Se o placar já decide a partida pelas regras,
+  // finaliza direto. Caso contrário, abre um modal para informar o que ocorreu
+  // (desclassificação ou interrupção com placar parcial).
   const [finishing, setFinishing] = useState(false)
-  const handleForceFinish = useCallback(async () => {
-    if (finishing || !editable) return
-    setFinishing(true)
-    try {
+  const [finishError, setFinishError] = useState<string | null>(null)
+  const [showFinishModal, setShowFinishModal] = useState(false)
+  const [tieBreak, setTieBreak] = useState(false) // organizador escolhe (empate total)
+
+  // Aplica o resultado escolhido. Garante que o placar parcial esteja salvo antes.
+  const applyFinish = useCallback(
+    async (res: 'lado_a' | 'lado_b' | 'empate') => {
+      if (finishing) return
+      setFinishing(true)
+      setFinishError(null)
+      try {
+        await flushQueue(matchId) // garante placar parcial no servidor
+        const { error } = await supabase.rpc('finalize_match_manual', {
+          _match_id: matchId,
+          _result: res,
+        })
+        if (error) { setFinishError(error.message); return }
+        setShowFinishModal(false)
+        setTieBreak(false)
+      } catch (e) {
+        setFinishError(e instanceof Error ? e.message : 'Não foi possível encerrar a partida.')
+      } finally {
+        setFinishing(false)
+      }
+    },
+    [supabase, matchId, finishing],
+  )
+
+  // Clique em "Encerrar partida": decide se finaliza direto ou abre o modal.
+  function handleFinishClick() {
+    if (!editable) return
+    setFinishError(null)
+    setTieBreak(false)
+    if (isSets) {
+      const { sA, sB } = tallySets(gamesRef.current)
+      if (sA >= need || sB >= need) {
+        void applyFinish(sA >= need ? 'lado_a' : 'lado_b') // resultado válido
+        return
+      }
+      setShowFinishModal(true) // incompleto
+    } else {
       const g = gamesRef.current[0] ?? { score_a: 0, score_b: 0 }
-      const res = g.score_a > g.score_b ? 'lado_a' : g.score_b > g.score_a ? 'lado_b' : 'empate'
-      await supabase.rpc('finalize_match_manual', { _match_id: matchId, _result: res })
-    } finally {
-      setFinishing(false)
+      if (g.score_a !== g.score_b) {
+        void applyFinish(g.score_a > g.score_b ? 'lado_a' : 'lado_b')
+        return
+      }
+      setShowFinishModal(true) // empate em pontos → incompleto
     }
-  }, [supabase, matchId, finishing, editable])
+  }
+
+  // Desclassificação: vence automaticamente o outro lado, independente do placar.
+  function handleDisqualify(side: 'a' | 'b') {
+    void applyFinish(side === 'a' ? 'lado_b' : 'lado_a')
+  }
+
+  // Interrompida com placar parcial: vence quem tem mais sets; empate em sets →
+  // maior soma de pontos; persistindo empate → organizador escolhe.
+  function handleInterrupted() {
+    if (isSets) {
+      const { sA, sB, pA, pB } = tallySets(gamesRef.current)
+      if (sA > sB) return void applyFinish('lado_a')
+      if (sB > sA) return void applyFinish('lado_b')
+      if (pA > pB) return void applyFinish('lado_a')
+      if (pB > pA) return void applyFinish('lado_b')
+      setTieBreak(true)
+    } else {
+      const g = gamesRef.current[0] ?? { score_a: 0, score_b: 0 }
+      if (g.score_a > g.score_b) return void applyFinish('lado_a')
+      if (g.score_b > g.score_a) return void applyFinish('lado_b')
+      setTieBreak(true)
+    }
+  }
 
   // Decreta WO: vencedor leva a vitória; a partida não conta pontos/sets nas estatísticas.
   const [woSide, setWoSide] = useState<'a' | 'b' | null>(null)
@@ -719,17 +817,11 @@ export function ScoreScreen({
                  tanto online (race condition realtime) quanto offline. */}
           {(() => {
             if (!editable || !isSets || games.length === 0 || games.length >= setsToPlay) return null
-            const need = Math.floor(setsToPlay / 2) + 1
-            let sA = 0, sB = 0
-            for (const g of games) {
-              if (winByTwo) {
-                if (g.score_a >= pointsPerSet && g.score_a - g.score_b >= 2) sA++
-                else if (g.score_b >= pointsPerSet && g.score_b - g.score_a >= 2) sB++
-              } else {
-                if (g.score_a >= pointsPerSet && g.score_a > g.score_b) sA++
-                else if (g.score_b >= pointsPerSet && g.score_b > g.score_a) sB++
-              }
-            }
+            // Só permite avançar quando o set atual está DECIDIDO (alguém venceu).
+            // Isso impede acumular sets incompletos e garante o término antecipado:
+            // ao fechar o set decisivo (MD3→2º, MD5→3º) a partida finaliza sozinha.
+            if (!isSetDecided(currentGameData)) return null
+            const { sA, sB } = tallySets(games)
             if (sA >= need || sB >= need) return null  // partida já decidida
             return (
               <button
@@ -744,21 +836,26 @@ export function ScoreScreen({
         </div>
       )}
 
-      {/* ── Encerrar partida (modo pontos) ── */}
-      {editable && !isSets && !isTempo && (
-        <button
-          type="button"
-          disabled={finishing}
-          onClick={() => void handleForceFinish()}
-          className="w-full flex items-center justify-center gap-2 glass glass-card py-3 text-xs font-semibold text-red-400/80 hover:text-red-400 transition active:scale-95 disabled:opacity-40"
-        >
-          {finishing ? (
-            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400/20 border-t-red-400/60" />
-          ) : (
-            <Square className="h-3.5 w-3.5 fill-current" />
+      {/* ── Encerrar partida (sets e pontos; tempo encerra pelo cronômetro) ── */}
+      {editable && !isTempo && (
+        <div className="space-y-1.5">
+          <button
+            type="button"
+            disabled={finishing}
+            onClick={handleFinishClick}
+            className="w-full flex items-center justify-center gap-2 glass glass-card py-3 text-xs font-semibold text-red-400/80 hover:text-red-400 transition active:scale-95 disabled:opacity-40"
+          >
+            {finishing ? (
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400/20 border-t-red-400/60" />
+            ) : (
+              <Square className="h-3.5 w-3.5 fill-current" />
+            )}
+            Encerrar partida
+          </button>
+          {finishError && !showFinishModal && (
+            <p className="text-[11px] text-red-400/80 text-center">{finishError}</p>
           )}
-          Encerrar partida
-        </button>
+        </div>
       )}
 
       {/* ── W.O. (disponível em qualquer modo, enquanto editável) ── */}
@@ -836,6 +933,105 @@ export function ScoreScreen({
       {/* ── Error ── */}
       {engine.error && (
         <p className="text-xs text-red-400/80 text-center">{engine.error}</p>
+      )}
+
+      {/* ── Modal: partida incompleta ── */}
+      {showFinishModal && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-5"
+          onClick={() => { if (!finishing) { setShowFinishModal(false); setTieBreak(false) } }}
+        >
+          <div
+            className="glass glass-card glass-overlay w-full max-w-sm p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {!tieBreak ? (
+              <>
+                <div className="text-center space-y-1.5">
+                  <div className="mx-auto grid h-11 w-11 place-items-center rounded-full bg-amber-500/15">
+                    <AlertTriangle className="h-5 w-5 text-amber-400" />
+                  </div>
+                  <p className="text-sm font-bold text-white">Partida incompleta</p>
+                  <p className="text-xs leading-relaxed text-white/50">
+                    O placar atual não decide a partida pelas regras. Informe o que aconteceu.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled={finishing}
+                    onClick={() => handleDisqualify('a')}
+                    className="w-full rounded-2xl bg-white/[0.05] px-4 py-3 text-left transition hover:bg-white/[0.09] active:scale-[0.98] disabled:opacity-40"
+                  >
+                    <span className="block text-sm font-semibold text-white">{nameA} foi desclassificado</span>
+                    <span className="block text-[11px] text-white/45">{nameB} vence a partida</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={finishing}
+                    onClick={() => handleDisqualify('b')}
+                    className="w-full rounded-2xl bg-white/[0.05] px-4 py-3 text-left transition hover:bg-white/[0.09] active:scale-[0.98] disabled:opacity-40"
+                  >
+                    <span className="block text-sm font-semibold text-white">{nameB} foi desclassificado</span>
+                    <span className="block text-[11px] text-white/45">{nameA} vence a partida</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={finishing}
+                    onClick={handleInterrupted}
+                    className="w-full rounded-2xl bg-secondary/12 px-4 py-3 text-left transition hover:bg-secondary/20 active:scale-[0.98] disabled:opacity-40"
+                  >
+                    <span className="block text-sm font-semibold text-secondary">Partida interrompida</span>
+                    <span className="block text-[11px] text-secondary/60">
+                      Vence quem tem mais {isSets ? 'sets (empate → mais pontos)' : 'pontos'}
+                    </span>
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-center space-y-1.5">
+                  <p className="text-sm font-bold text-white">Empate técnico</p>
+                  <p className="text-xs leading-relaxed text-white/50">
+                    {isSets ? 'Sets e pontos empatados.' : 'Pontos empatados.'} Como organizador, escolha o vencedor.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={finishing}
+                    onClick={() => void applyFinish('lado_a')}
+                    className="flex-1 rounded-2xl bg-secondary/15 px-3 py-2.5 text-xs font-semibold text-secondary transition active:scale-95 disabled:opacity-40"
+                  >
+                    {nameA} vence
+                  </button>
+                  <button
+                    type="button"
+                    disabled={finishing}
+                    onClick={() => void applyFinish('lado_b')}
+                    className="flex-1 rounded-2xl bg-secondary/15 px-3 py-2.5 text-xs font-semibold text-secondary transition active:scale-95 disabled:opacity-40"
+                  >
+                    {nameB} vence
+                  </button>
+                </div>
+              </>
+            )}
+
+            {finishError && (
+              <p className="text-[11px] text-red-400/80 text-center">{finishError}</p>
+            )}
+
+            <button
+              type="button"
+              disabled={finishing}
+              onClick={() => { setShowFinishModal(false); setTieBreak(false) }}
+              className="w-full rounded-2xl bg-white/[0.04] py-2.5 text-xs font-semibold text-white/55 transition hover:bg-white/[0.08] active:scale-95 disabled:opacity-40"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

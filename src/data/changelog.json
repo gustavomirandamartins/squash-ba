@@ -1,7 +1,12 @@
 {
-  "count": 124,
-  "lastCommitAt": "202606021511",
+  "count": 125,
+  "lastCommitAt": "202606021534",
   "commits": [
+    {
+      "hash": "4d2e044",
+      "subject": "Mostrar e-mail do usuário na lista do painel admin",
+      "date": "2026-06-02"
+    },
     {
       "hash": "d46f484",
       "subject": "Feat/Fix: avatares cortados, admin (anúncios/feedbacks), excluir feedback, professores",

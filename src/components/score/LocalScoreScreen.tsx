@@ -135,11 +135,20 @@ export function LocalScoreScreen({
             </div>
           )}
 
-          {/* Avançar set — escondido quando a partida já está decidida (MD3/MD5). */}
+          {/* Avançar set — escondido quando a partida já está decidida (MD3/MD5)
+              ou quando o set atual ainda não foi decidido (impede acumular sets
+              incompletos; ao fechar o set decisivo a partida finaliza sozinha). */}
           {(() => {
             if (!editable || !isSets || games.length === 0 || games.length >= setsToPlay) return null
             const P = stage.points_per_set
             const need = Math.floor(setsToPlay / 2) + 1
+            const cur = currentGameData
+            const setDecided = stage.win_by_two
+              ? (cur.score_a >= P && cur.score_a - cur.score_b >= 2) ||
+                (cur.score_b >= P && cur.score_b - cur.score_a >= 2)
+              : (cur.score_a >= P && cur.score_a > cur.score_b) ||
+                (cur.score_b >= P && cur.score_b > cur.score_a)
+            if (!setDecided) return null
             let sA = 0, sB = 0
             for (const g of games) {
               if (stage.win_by_two) {
