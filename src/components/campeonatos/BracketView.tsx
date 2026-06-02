@@ -219,7 +219,12 @@ function MatchCard({
   const isLive = match.status === 'em_andamento'
   const isSets = stage?.counting === 'set' || stage?.counting === 'sets'
   const sortedGames = [...match.match_games].sort((a, b) => a.game_number - b.game_number)
-  const showGameDetail = isDone && isSets && sortedGames.length >= 1
+  // 1 set (ou modo pontos): mostra o placar de PONTOS ao lado de cada jogador (não "1×0").
+  // MD3/MD5 (≥2 sets): mostra a contagem de sets ao lado + placar de cada set no separador.
+  const isSingleGame = isDone && sortedGames.length === 1
+  const showGameDetail = isDone && isSets && sortedGames.length >= 2
+  const slotA = isSingleGame ? sortedGames[0].score_a : score ? score.a : null
+  const slotB = isSingleGame ? sortedGames[0].score_b : score ? score.b : null
 
   const canClick =
     onClick &&
@@ -248,7 +253,7 @@ function MatchCard({
         isBye={isByeA && isAutoAdvance}
         isPlaceholder={isPlaceholderA}
         isWinner={winnerA}
-        score={score ? score.a : null}
+        score={slotA}
         groupLabel={
           match.side_a_participant_id
             ? participantGroupLabels?.[match.side_a_participant_id]
@@ -289,7 +294,7 @@ function MatchCard({
         isBye={isByeB && isAutoAdvance}
         isPlaceholder={isPlaceholderB}
         isWinner={winnerB}
-        score={score ? score.b : null}
+        score={slotB}
         groupLabel={
           match.side_b_participant_id
             ? participantGroupLabels?.[match.side_b_participant_id]

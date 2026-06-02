@@ -203,10 +203,13 @@ function MatchCard({
   const winnerB = match.result === 'lado_b'
   const isSets  = stage?.counting === 'set' || stage?.counting === 'sets'
   const isTempo = stage?.counting === 'tempo'
-  // Jogos ordenados por set — para exibição do placar detalhado
   const sortedGames = [...match.match_games].sort((a, b) => a.game_number - b.game_number)
-  // Exibe placares individuais apenas em MD3/MD5 com ≥2 sets (1 set sozinho = "sem informar 1x0")
-  const showSetDetail = match.status === 'finalizado' && isSets && sortedGames.length >= 1
+  // 1 set: placar em destaque é o de PONTOS (não "1×0"). MD3/MD5: destaque = sets,
+  // e o placar de cada set vai logo abaixo.
+  const isSingleGame  = match.status === 'finalizado' && sortedGames.length === 1
+  const showSetDetail = match.status === 'finalizado' && isSets && sortedGames.length >= 2
+  const headA = isSingleGame ? sortedGames[0].score_a : score?.a
+  const headB = isSingleGame ? sortedGames[0].score_b : score?.b
 
   return (
     <Link
@@ -222,9 +225,9 @@ function MatchCard({
           </span>
         </div>
         <div className="flex flex-col items-center shrink-0 w-14 text-center">
-          {score ? (
+          {headA != null ? (
             <span className={`text-base font-bold tabular-nums tracking-tight ${match.status === 'finalizado' ? 'text-white' : 'text-white/70'}`}>
-              {score.a}–{score.b}
+              {headA}–{headB}
             </span>
           ) : (
             <span className="text-[10px] font-semibold text-white/20 tracking-[0.15em] uppercase">vs</span>

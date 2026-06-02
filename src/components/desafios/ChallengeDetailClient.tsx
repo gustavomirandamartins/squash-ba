@@ -269,7 +269,10 @@ function MatchCard({
   const winnerB = match.result === 'lado_b'
   const hasScore = match.status !== 'agendado'
   const sortedGames = [...(match.match_games ?? [])].sort((a, b) => a.game_number - b.game_number)
-  const showGameDetail = match.status === 'finalizado' && sortedGames.length >= 1
+  const isSingleGame  = match.status === 'finalizado' && sortedGames.length === 1
+  const showGameDetail = match.status === 'finalizado' && sortedGames.length >= 2
+  const headA = isSingleGame ? sortedGames[0].score_a : match.score_a
+  const headB = isSingleGame ? sortedGames[0].score_b : match.score_b
 
   return (
     <Link
@@ -286,7 +289,7 @@ function MatchCard({
         <div className="flex flex-col items-center shrink-0 w-14 text-center">
           {hasScore ? (
             <span className={`text-base font-bold tabular-nums tracking-tight ${match.status === 'finalizado' ? 'text-white' : 'text-white/70'}`}>
-              {match.score_a}–{match.score_b}
+              {headA}–{headB}
             </span>
           ) : (
             <span className="text-[10px] font-semibold text-white/20 tracking-[0.15em] uppercase">vs</span>

@@ -430,7 +430,10 @@ function MatchRow({
   const winnerB = m.result === 'lado_b'
   const hasScore = m.status !== 'agendado'
   const sortedGames = [...(m.match_games ?? [])].sort((a, b) => a.game_number - b.game_number)
-  const showGameDetail = m.status === 'finalizado' && sortedGames.length >= 1
+  const isSingleGame  = m.status === 'finalizado' && sortedGames.length === 1
+  const showGameDetail = m.status === 'finalizado' && sortedGames.length >= 2
+  const headA = isSingleGame ? sortedGames[0].score_a : m.score_a
+  const headB = isSingleGame ? sortedGames[0].score_b : m.score_b
 
   return (
     <Link href={`/desafios/${challengeId}/jogos/${m.id}`}
@@ -442,7 +445,7 @@ function MatchRow({
         </div>
         <div className="shrink-0 w-12 text-center flex flex-col items-center">
           {hasScore ? (
-            <span className={`text-base font-bold tabular-nums ${m.status === 'finalizado' ? 'text-white' : 'text-white/70'}`}>{m.score_a}–{m.score_b}</span>
+            <span className={`text-base font-bold tabular-nums ${m.status === 'finalizado' ? 'text-white' : 'text-white/70'}`}>{headA}–{headB}</span>
           ) : (
             <span className="text-[10px] font-semibold text-white/20 tracking-[0.15em] uppercase">vs</span>
           )}
