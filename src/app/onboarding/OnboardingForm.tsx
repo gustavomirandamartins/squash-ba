@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -55,6 +55,7 @@ export function OnboardingForm({ userId, email }: Props) {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [compressing, setCompressing] = useState(false)
   const [consent, setConsent] = useState(false)
+  const [guardianConsent, setGuardianConsent] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -70,7 +71,22 @@ export function OnboardingForm({ userId, email }: Props) {
     }).catch(() => { /* campos opcionais — falha silenciosa */ })
   }, [])
 
-  const canSubmit = fullName.trim().length > 0 && consent && !saving && !compressing
+  // Verifica se a data de nascimento indica menor de 18 anos.
+  const isMinor = useMemo(() => {
+    if (!birthDate) return false
+    const birth = new Date(birthDate)
+    const today = new Date()
+    const age = today.getFullYear() - birth.getFullYear()
+      - (today < new Date(today.getFullYear(), birth.getMonth(), birth.getDate()) ? 1 : 0)
+    return age < 18
+  }, [birthDate])
+
+  const canSubmit =
+    fullName.trim().length > 0 &&
+    consent &&
+    (!isMinor || guardianConsent) &&
+    !saving &&
+    !compressing
 
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -279,6 +295,27 @@ export function OnboardingForm({ userId, email }: Props) {
               />
             </div>
           </div>
+
+          {/* Consentimento do responsável — aparece quando o usuário é menor de 18 anos */}
+          {isMinor && (
+            <label
+              htmlFor="ob-guardian"
+              className="flex cursor-pointer items-start gap-3 rounded-2xl border border-amber-400/30 bg-amber-400/8 px-4 py-3.5 transition"
+            >
+              <input
+                id="ob-guardian"
+                type="checkbox"
+                required
+                checked={guardianConsent}
+                onChange={(e) => setGuardianConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-secondary"
+              />
+              <span className="text-xs leading-relaxed text-white/75">
+                Estou realizando este cadastro com o consentimento e supervisão
+                do meu responsável legal.
+              </span>
+            </label>
+          )}
 
           {/* Gênero */}
           <div>

@@ -1,7 +1,12 @@
 {
-  "count": 112,
-  "lastCommitAt": "202606012325",
+  "count": 113,
+  "lastCommitAt": "202606012335",
   "commits": [
+    {
+      "hash": "3746580",
+      "subject": "Feat: versao Beta usa timestamp do ultimo commit (AAAAMMDDhhmm)",
+      "date": "2026-06-01"
+    },
     {
       "hash": "a37db92",
       "subject": "Feat: link para política de privacidade na Ajuda + política completa revisada juridicamente",
