@@ -62,7 +62,12 @@ function groupByMonth(commits: CommitEntry[]) {
 }
 
 export default function VersaoPage() {
-  const { count, commits } = changelogData as { count: number; commits: CommitEntry[] }
+  const { count, lastCommitAt, commits } = changelogData as {
+    count: number
+    lastCommitAt?: string
+    commits: CommitEntry[]
+  }
+  const version = lastCommitAt ?? String(count)
   const groups = groupByMonth(commits)
 
   return (
@@ -80,7 +85,7 @@ export default function VersaoPage() {
       <div className="space-y-1">
         <div className="flex items-end gap-3">
           <h1 className="font-display text-2xl font-extrabold text-white">
-            Beta <span className="text-secondary">0.{count}</span>
+            Beta <span className="text-secondary">{version}</span>
           </h1>
           <span className="mb-0.5 inline-flex items-center gap-1 rounded-full bg-secondary/12 px-2.5 py-1 text-[11px] font-semibold text-secondary">
             <GitCommitHorizontal className="h-3 w-3" />
@@ -135,7 +140,7 @@ export default function VersaoPage() {
       ))}
 
       <p className="text-center text-xs text-white/20 pt-2">
-        SquashBa · Versão Beta 0.{count}
+        SquashBa · Versão Beta {version}
       </p>
     </div>
   )

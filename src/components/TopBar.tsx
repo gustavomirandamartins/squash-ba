@@ -68,7 +68,7 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage }: Props) {
               href="/versao"
               className="whitespace-nowrap text-[10px] font-medium text-white/25 transition hover:text-white/50"
             >
-              Beta 0.{process.env.NEXT_PUBLIC_COMMIT_COUNT ?? '?'}
+              Beta {process.env.NEXT_PUBLIC_VERSION ?? '?'}
             </Link>
           </div>
         </div>

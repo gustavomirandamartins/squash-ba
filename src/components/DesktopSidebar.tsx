@@ -51,7 +51,7 @@ export function DesktopSidebar({ name, avatarUrl, isAdmin, canManage, userId }: 
           href="/versao"
           className="block text-[11px] font-medium text-white/25 transition hover:text-white/50"
         >
-          Beta 0.{process.env.NEXT_PUBLIC_COMMIT_COUNT ?? '?'}
+          Beta {process.env.NEXT_PUBLIC_VERSION ?? '?'}
         </Link>
       </div>
 

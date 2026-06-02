@@ -177,7 +177,7 @@ export default function AjudaPage() {
             © {new Date().getFullYear()} Gustavo Martins. Todos os direitos reservados.
           </p>
           <p className="text-white/25 text-xs">
-            SquashBa · Beta 0.{process.env.NEXT_PUBLIC_COMMIT_COUNT ?? '?'}
+            SquashBa · Beta {process.env.NEXT_PUBLIC_VERSION ?? '?'}
           </p>
         </div>
       </Section>

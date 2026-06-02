@@ -14,6 +14,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 try {
   const count = execSync('git rev-list --count HEAD', { encoding: 'utf8', cwd: root }).trim()
+  // Timestamp do último commit no formato AAAAMMDDhhmm (hora local do commit)
+  const lastCommitAt = execSync(
+    'git log -1 --format=%cd --date=format:%Y%m%d%H%M',
+    { encoding: 'utf8', cwd: root },
+  ).trim()
   const rawLog = execSync(
     'git log --no-merges --pretty=format:%H%x09%s%x09%as',
     { encoding: 'utf8', cwd: root },
@@ -32,9 +37,9 @@ try {
   mkdirSync(dataDir, { recursive: true })
   writeFileSync(
     join(dataDir, 'changelog.json'),
-    JSON.stringify({ count: parseInt(count, 10), commits }, null, 2),
+    JSON.stringify({ count: parseInt(count, 10), lastCommitAt, commits }, null, 2),
   )
-  console.log(`[gen-changelog] ${count} commits → src/data/changelog.json`)
+  console.log(`[gen-changelog] ${count} commits (${lastCommitAt}) → src/data/changelog.json`)
 } catch (err) {
   console.warn('[gen-changelog] git indisponível, changelog.json não atualizado:', err.message)
 }

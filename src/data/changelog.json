@@ -1,6 +1,12 @@
 {
-  "count": 111,
+  "count": 112,
+  "lastCommitAt": "202606012325",
   "commits": [
+    {
+      "hash": "a37db92",
+      "subject": "Feat: link para política de privacidade na Ajuda + política completa revisada juridicamente",
+      "date": "2026-06-01"
+    },
     {
       "hash": "4d9ba62",
       "subject": "Remove emojis from feedback form",
