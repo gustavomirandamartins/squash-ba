@@ -99,6 +99,7 @@ function Bubble({
               alt={msg.senderName ?? ''}
               width={26}
               height={26}
+              style={{ width: 26, height: 26 }}
               className="rounded-full object-cover ring-1 ring-white/10"
             />
           ) : (
@@ -377,6 +378,7 @@ export function ChatView({ conv, initialMessages, currentUserId }: Props) {
             alt={convName}
             width={36}
             height={36}
+            style={{ width: 36, height: 36 }}
             className="rounded-full object-cover ring-1 ring-white/10 shrink-0"
           />
         ) : (

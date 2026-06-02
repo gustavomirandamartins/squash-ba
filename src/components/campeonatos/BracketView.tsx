@@ -148,6 +148,7 @@ function PlayerSlot({
           alt={name}
           width={24}
           height={24}
+          style={{ width: 24, height: 24 }}
           className="rounded-full object-cover shrink-0 ring-1 ring-white/10"
         />
       ) : (

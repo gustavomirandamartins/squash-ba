@@ -70,6 +70,7 @@ function PlayerRow({
           alt={name ?? ''}
           width={26}
           height={26}
+          style={{ width: 26, height: 26 }}
           className="rounded-full object-cover shrink-0 ring-1 ring-white/10"
         />
       ) : (

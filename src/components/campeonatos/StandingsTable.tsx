@@ -270,6 +270,7 @@ export function StandingsTable({
                       alt={row.display_name ?? ''}
                       width={22}
                       height={22}
+                      style={{ width: 22, height: 22 }}
                       className="rounded-full object-cover shrink-0 ring-1 ring-white/10"
                     />
                   ) : (

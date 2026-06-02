@@ -3,7 +3,7 @@ import Image from 'next/image'
 import { createClient } from '@/utils/supabase/server'
 import Link from 'next/link'
 import { approveRequest, rejectRequest, saveBannerLink } from './actions'
-import { ShieldCheck, User, CheckCircle, XCircle, ClipboardList, Megaphone, Link2, ArrowLeft, Users } from 'lucide-react'
+import { ShieldCheck, User, CheckCircle, XCircle, ClipboardList, Megaphone, Link2, ArrowLeft, Users, MessageSquarePlus, ChevronRight } from 'lucide-react'
 import { AdminUsers, type AdminUser } from '@/components/admin/AdminUsers'
 
 export const metadata = { title: 'Painel admin' }
@@ -111,6 +111,12 @@ export default async function AdminPage() {
     return { id: p.id, name: p.full_name, avatarUrl: p.avatar_url, role }
   })
 
+  // ── Feedbacks novos (badge) ─────────────────────────────────────────────────
+  const { count: novoFeedbackCount } = await supabase
+    .from('feedback')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'novo')
+
   // ── Banners do patrocinador: imagens do bucket + link de cada uma ───────────
   const [{ data: bannerFiles }, { data: bannerLinks }] = await Promise.all([
     supabase.storage.from('sponsors').list('', { limit: 100, sortBy: { column: 'name', order: 'asc' } }),
@@ -159,6 +165,35 @@ export default async function AdminPage() {
             </h1>
             <p className="text-xs text-white/45">SquashBa — acesso restrito</p>
           </div>
+        </div>
+
+        {/* Atalhos de gerenciamento */}
+        <div className="mb-8 space-y-2">
+          <Link
+            href="/gestao/anuncios"
+            className="glass glass-card flex items-center gap-3 px-4 py-3.5 transition active:scale-[0.985]"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-secondary/12">
+              <Megaphone className="h-4 w-4 text-secondary" />
+            </span>
+            <span className="flex-1 text-sm font-semibold text-white/85">Anúncios</span>
+            <ChevronRight className="h-4 w-4 text-white/25" />
+          </Link>
+          <Link
+            href="/gestao/feedbacks"
+            className="glass glass-card flex items-center gap-3 px-4 py-3.5 transition active:scale-[0.985]"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-secondary/12">
+              <MessageSquarePlus className="h-4 w-4 text-secondary" />
+            </span>
+            <span className="flex-1 text-sm font-semibold text-white/85">Feedbacks</span>
+            {novoFeedbackCount ? (
+              <span className="grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-bold text-primary" style={{ background: '#cdfd51' }}>
+                {novoFeedbackCount}
+              </span>
+            ) : null}
+            <ChevronRight className="h-4 w-4 text-white/25" />
+          </Link>
         </div>
 
         {/* Seção: pedidos pendentes */}

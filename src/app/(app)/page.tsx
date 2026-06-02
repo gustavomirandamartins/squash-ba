@@ -118,8 +118,11 @@ export default async function HomePage() {
     ...new Set(liveRaw.flatMap((m) => [m.side_a_participant_id, m.side_b_participant_id].filter(Boolean) as string[])),
   ]
 
+  // Todos os organizadores (professores), inclusive o próprio usuário se for
+  // professor — antes o filtro `id !== user.id` escondia o professor logado da
+  // própria lista. O botão "Contato" é ocultado para si mesmo no componente.
   const organizerIds = [
-    ...new Set((organizersRes.data ?? []).map((r: { user_id: string }) => r.user_id).filter((id) => id !== user.id)),
+    ...new Set((organizersRes.data ?? []).map((r: { user_id: string }) => r.user_id)),
   ]
 
   // ── Fase 2: lookups dependentes, todos independentes entre si → em paralelo ─
@@ -298,7 +301,7 @@ export default async function HomePage() {
     <Lembretes key="lembretes" data={lembretes} />,
     <SponsorBanner key="sponsor" banners={banners} />,
     <OngoingSection key="ongoing" liveMatches={liveMatches} active={activeItems} />,
-    <TeachersSection key="teachers" teachers={teachers} />,
+    <TeachersSection key="teachers" teachers={teachers} currentUserId={user.id} />,
     <CategoryRanking key="ranking" categories={rankCategories} />,
   ]
 

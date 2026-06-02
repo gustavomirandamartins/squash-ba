@@ -169,6 +169,7 @@ function PlayerAvatar({ info }: { info?: ParticipantInfo }) {
         alt={info.full_name ?? ''}
         width={32}
         height={32}
+        style={{ width: 32, height: 32 }}
         className="rounded-full object-cover shrink-0 ring-1 ring-white/10"
       />
     )

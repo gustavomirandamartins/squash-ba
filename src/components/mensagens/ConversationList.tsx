@@ -181,7 +181,7 @@ function NewConversationSheet({
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.06] transition text-left disabled:opacity-50"
             >
               {u.avatar_url ? (
-                <Image src={u.avatar_url} alt={u.full_name ?? ''} width={36} height={36} className="rounded-full object-cover shrink-0" />
+                <Image src={u.avatar_url} alt={u.full_name ?? ''} width={36} height={36} style={{ width: 36, height: 36 }} className="rounded-full object-cover shrink-0" />
               ) : (
                 <div className="h-9 w-9 rounded-full bg-secondary/15 grid place-items-center shrink-0">
                   <User className="h-4 w-4 text-secondary" />

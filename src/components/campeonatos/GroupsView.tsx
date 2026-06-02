@@ -143,6 +143,7 @@ function GroupCard({
                     alt={name}
                     width={18}
                     height={18}
+                    style={{ width: 18, height: 18 }}
                     className="rounded-full object-cover shrink-0 ring-1 ring-white/10"
                   />
                 ) : (

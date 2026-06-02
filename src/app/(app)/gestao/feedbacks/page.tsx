@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
-import { MessageSquare, Bug, Lightbulb, AlertTriangle, CheckCircle2, Clock, Eye } from 'lucide-react'
-import { markFeedbackRead } from './actions'
+import { MessageSquare, Bug, Lightbulb, AlertTriangle, CheckCircle2, Clock, Eye, Trash2 } from 'lucide-react'
+import { markFeedbackRead, deleteFeedback } from './actions'
 
 export const metadata = { title: 'Feedbacks' }
 
@@ -98,18 +98,30 @@ export default async function FeedbacksPage() {
                   <p className="text-xs text-white/30">
                     Por {fb.user_name ?? 'Usuário anônimo'}
                   </p>
-                  {fb.status === 'novo' && (
-                    <form action={markFeedbackRead}>
+                  <div className="flex items-center gap-2">
+                    {fb.status === 'novo' && (
+                      <form action={markFeedbackRead}>
+                        <input type="hidden" name="id" value={fb.id} />
+                        <button
+                          type="submit"
+                          className="flex items-center gap-1 rounded-full bg-white/8 px-3 py-1.5 text-xs font-semibold text-white/60 transition hover:bg-white/12 active:scale-95"
+                        >
+                          <Eye className="h-3 w-3" />
+                          Marcar como lido
+                        </button>
+                      </form>
+                    )}
+                    <form action={deleteFeedback}>
                       <input type="hidden" name="id" value={fb.id} />
                       <button
                         type="submit"
-                        className="flex items-center gap-1 rounded-full bg-white/8 px-3 py-1.5 text-xs font-semibold text-white/60 transition hover:bg-white/12 active:scale-95"
+                        className="flex items-center gap-1 rounded-full bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-400/80 transition hover:bg-red-500/20 hover:text-red-400 active:scale-95"
                       >
-                        <Eye className="h-3 w-3" />
-                        Marcar como lido
+                        <Trash2 className="h-3 w-3" />
+                        Apagar
                       </button>
                     </form>
-                  )}
+                  </div>
                 </div>
               </div>
             )

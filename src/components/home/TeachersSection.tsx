@@ -12,7 +12,7 @@ export interface Teacher {
   avatar_url: string | null
 }
 
-export function TeachersSection({ teachers }: { teachers: Teacher[] }) {
+export function TeachersSection({ teachers, currentUserId }: { teachers: Teacher[]; currentUserId?: string }) {
   const router = useRouter()
   const [supabase] = useState(() => createClient())
   const [busy, setBusy] = useState<string | null>(null)
@@ -54,15 +54,21 @@ export function TeachersSection({ teachers }: { teachers: Teacher[] }) {
             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white/85">
               {t.full_name ?? 'Professor'}
             </span>
-            <button
-              type="button"
-              disabled={busy === t.id}
-              onClick={() => void contact(t.id)}
-              className="flex shrink-0 items-center gap-1.5 rounded-full bg-secondary/15 px-3 py-1.5 text-xs font-semibold text-secondary transition active:scale-95 disabled:opacity-50"
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              {busy === t.id ? 'Abrindo…' : 'Contato'}
-            </button>
+            {t.id === currentUserId ? (
+              <span className="shrink-0 rounded-full bg-white/8 px-3 py-1.5 text-xs font-semibold text-white/40">
+                Você
+              </span>
+            ) : (
+              <button
+                type="button"
+                disabled={busy === t.id}
+                onClick={() => void contact(t.id)}
+                className="flex shrink-0 items-center gap-1.5 rounded-full bg-secondary/15 px-3 py-1.5 text-xs font-semibold text-secondary transition active:scale-95 disabled:opacity-50"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                {busy === t.id ? 'Abrindo…' : 'Contato'}
+              </button>
+            )}
           </div>
         ))}
       </div>
