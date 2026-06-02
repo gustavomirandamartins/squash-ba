@@ -30,6 +30,7 @@ export type Match = {
   bracket_slot: number | null
   result: string | null
   status: string
+  is_wo?: boolean
   side_a_participant_id: string | null
   side_b_participant_id: string | null
   match_games: GameScore[]
@@ -225,7 +226,9 @@ function MatchCard({
           </span>
         </div>
         <div className="flex flex-col items-center shrink-0 w-14 text-center">
-          {headA != null ? (
+          {match.status === 'finalizado' && match.is_wo ? (
+            <span className="text-[11px] font-bold text-amber-400/80 uppercase tracking-wider">W.O.</span>
+          ) : headA != null ? (
             <span className={`text-base font-bold tabular-nums tracking-tight ${match.status === 'finalizado' ? 'text-white' : 'text-white/70'}`}>
               {headA}–{headB}
             </span>

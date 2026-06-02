@@ -15,6 +15,7 @@ export type BracketMatch = {
   bracket_slot: number | null
   status: string
   result: string | null
+  is_wo?: boolean
   side_a_participant_id: string | null
   side_b_participant_id: string | null
   match_games: { game_number: number; score_a: number; score_b: number }[]
@@ -221,8 +222,9 @@ function MatchCard({
   const sortedGames = [...match.match_games].sort((a, b) => a.game_number - b.game_number)
   // 1 set (ou modo pontos): mostra o placar de PONTOS ao lado de cada jogador (não "1×0").
   // MD3/MD5 (≥2 sets): mostra a contagem de sets ao lado + placar de cada set no separador.
-  const isSingleGame = isDone && sortedGames.length === 1
-  const showGameDetail = isDone && isSets && sortedGames.length >= 2
+  const isWO = isDone && !!match.is_wo
+  const isSingleGame = isDone && !isWO && sortedGames.length === 1
+  const showGameDetail = isDone && !isWO && isSets && sortedGames.length >= 2
   const slotA = isSingleGame ? sortedGames[0].score_a : score ? score.a : null
   const slotB = isSingleGame ? sortedGames[0].score_b : score ? score.b : null
 
@@ -267,6 +269,10 @@ function MatchCard({
           {isAutoAdvance ? (
             <span className="text-[8px] font-semibold text-secondary/50 uppercase tracking-widest">
               auto
+            </span>
+          ) : isWO ? (
+            <span className="text-[8px] font-bold text-amber-400/80 uppercase tracking-widest">
+              W.O.
             </span>
           ) : isLive ? (
             <span className="flex items-center gap-0.5">
@@ -375,7 +381,7 @@ export function BracketView({
     const { data } = await supabase
       .from('matches')
       .select(
-        `id, round, bracket_slot, result, status,
+        `id, round, bracket_slot, result, status, is_wo,
          side_a_participant_id, side_b_participant_id,
          match_games(game_number, score_a, score_b)`,
       )
@@ -391,6 +397,7 @@ export function BracketView({
           bracket_slot: m.bracket_slot ?? null,
           status: m.status,
           result: m.result ?? null,
+          is_wo: (m as { is_wo?: boolean }).is_wo ?? false,
           side_a_participant_id: m.side_a_participant_id ?? null,
           side_b_participant_id: m.side_b_participant_id ?? null,
           match_games: (
