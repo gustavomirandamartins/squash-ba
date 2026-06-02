@@ -269,7 +269,7 @@ function MatchCard({
   const winnerB = match.result === 'lado_b'
   const hasScore = match.status !== 'agendado'
   const sortedGames = [...(match.match_games ?? [])].sort((a, b) => a.game_number - b.game_number)
-  const showGameDetail = match.status === 'finalizado' && sortedGames.length >= 2
+  const showGameDetail = match.status === 'finalizado' && sortedGames.length >= 1
 
   return (
     <Link

@@ -430,7 +430,7 @@ function MatchRow({
   const winnerB = m.result === 'lado_b'
   const hasScore = m.status !== 'agendado'
   const sortedGames = [...(m.match_games ?? [])].sort((a, b) => a.game_number - b.game_number)
-  const showGameDetail = m.status === 'finalizado' && sortedGames.length >= 2
+  const showGameDetail = m.status === 'finalizado' && sortedGames.length >= 1
 
   return (
     <Link href={`/desafios/${challengeId}/jogos/${m.id}`}

@@ -206,7 +206,7 @@ function MatchCard({
   // Jogos ordenados por set — para exibição do placar detalhado
   const sortedGames = [...match.match_games].sort((a, b) => a.game_number - b.game_number)
   // Exibe placares individuais apenas em MD3/MD5 com ≥2 sets (1 set sozinho = "sem informar 1x0")
-  const showSetDetail = match.status === 'finalizado' && isSets && sortedGames.length >= 2
+  const showSetDetail = match.status === 'finalizado' && isSets && sortedGames.length >= 1
 
   return (
     <Link

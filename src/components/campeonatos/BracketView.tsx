@@ -219,7 +219,7 @@ function MatchCard({
   const isLive = match.status === 'em_andamento'
   const isSets = stage?.counting === 'set' || stage?.counting === 'sets'
   const sortedGames = [...match.match_games].sort((a, b) => a.game_number - b.game_number)
-  const showGameDetail = isDone && isSets && sortedGames.length >= 2
+  const showGameDetail = isDone && isSets && sortedGames.length >= 1
 
   const canClick =
     onClick &&
