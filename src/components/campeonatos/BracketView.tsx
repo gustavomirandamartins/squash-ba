@@ -217,6 +217,9 @@ function MatchCard({
   const winnerB = match.result === 'lado_b'
   const isDone = match.status === 'finalizado'
   const isLive = match.status === 'em_andamento'
+  const isSets = stage?.counting === 'set' || stage?.counting === 'sets'
+  const sortedGames = [...match.match_games].sort((a, b) => a.game_number - b.game_number)
+  const showGameDetail = isDone && isSets && sortedGames.length >= 2
 
   const canClick =
     onClick &&
@@ -266,6 +269,10 @@ function MatchCard({
               <span className="text-[8px] font-semibold text-secondary uppercase tracking-widest">
                 ao vivo
               </span>
+            </span>
+          ) : showGameDetail ? (
+            <span className="text-[8px] text-white/25 tabular-nums font-mono tracking-tight max-w-[130px] truncate">
+              {sortedGames.map((g) => `${g.score_a}·${g.score_b}`).join('  ')}
             </span>
           ) : score ? null : (
             <span className="text-[8px] font-semibold text-white/15 uppercase tracking-widest">

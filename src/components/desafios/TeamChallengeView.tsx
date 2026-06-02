@@ -429,6 +429,8 @@ function MatchRow({
   const winnerA = m.result === 'lado_a'
   const winnerB = m.result === 'lado_b'
   const hasScore = m.status !== 'agendado'
+  const sortedGames = [...(m.match_games ?? [])].sort((a, b) => a.game_number - b.game_number)
+  const showGameDetail = m.status === 'finalizado' && sortedGames.length >= 2
 
   return (
     <Link href={`/desafios/${challengeId}/jogos/${m.id}`}
@@ -438,11 +440,16 @@ function MatchRow({
           <Avatar p={pA} size={26} />
           <span className={`text-[13px] truncate font-medium ${winnerA ? 'text-secondary' : 'text-white/80'}`}>{pA?.full_name ?? '—'}</span>
         </div>
-        <div className="shrink-0 w-12 text-center">
+        <div className="shrink-0 w-12 text-center flex flex-col items-center">
           {hasScore ? (
-            <span className="text-base font-bold text-white tabular-nums">{m.score_a}–{m.score_b}</span>
+            <span className={`text-base font-bold tabular-nums ${m.status === 'finalizado' ? 'text-white' : 'text-white/70'}`}>{m.score_a}–{m.score_b}</span>
           ) : (
             <span className="text-[10px] font-semibold text-white/20 tracking-[0.15em] uppercase">vs</span>
+          )}
+          {showGameDetail && (
+            <span className="text-[10px] text-white/30 tabular-nums mt-0.5 leading-tight">
+              {sortedGames.map((g) => `${g.score_a}·${g.score_b}`).join('  ')}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
