@@ -8,6 +8,7 @@ import { revokeOrganizer, deleteUser } from '@/app/admin/actions'
 export type AdminUser = {
   id: string
   name: string | null
+  email: string | null
   avatarUrl: string | null
   role: 'admin' | 'organizer' | 'jogador'
 }
@@ -17,7 +18,10 @@ export function AdminUsers({ users, currentUserId }: { users: AdminUser[]; curre
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return users
-    return users.filter((u) => (u.name ?? '').toLowerCase().includes(q))
+    return users.filter((u) =>
+      (u.name ?? '').toLowerCase().includes(q) ||
+      (u.email ?? '').toLowerCase().includes(q)
+    )
   }, [users, query])
 
   return (
@@ -27,7 +31,7 @@ export function AdminUsers({ users, currentUserId }: { users: AdminUser[]; curre
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar usuário por nome…"
+          placeholder="Buscar por nome ou e-mail…"
           className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder-white/30 outline-none"
         />
         {query && (
@@ -113,7 +117,8 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
 
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-white">{user.name ?? 'Usuário'}</p>
-          <div className="mt-0.5"><RoleBadge role={role} /></div>
+          <p className="mt-0.5 truncate text-xs text-white/50">{user.email ?? 'sem email'}</p>
+          <div className="mt-1"><RoleBadge role={role} /></div>
         </div>
 
         {/* Botões compactos à direita — só para não-self e não-admin */}

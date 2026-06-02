@@ -90,16 +90,21 @@ export default async function AdminPage() {
     profile: profById.get(r.user_id) ?? null,
   }))
 
-  // ── Usuários cadastrados + papéis ───────────────────────────────────────────
-  const [{ data: allProfiles }, { data: allRoles }] = await Promise.all([
+  // ── Usuários cadastrados + papéis + emails ─────────────────────────────────────
+  const [{ data: allProfiles }, { data: allRoles }, { data: allEmails }] = await Promise.all([
     supabase.from('profiles').select('id, full_name, avatar_url').order('full_name'),
     supabase.from('user_roles').select('user_id, role'),
+    supabase.from('profiles_private').select('user_id, email'),
   ])
   const rolesByUser = new Map<string, Set<string>>()
   for (const r of (allRoles ?? []) as Array<{ user_id: string; role: string }>) {
     const set = rolesByUser.get(r.user_id) ?? new Set<string>()
     set.add(r.role)
     rolesByUser.set(r.user_id, set)
+  }
+  const emailByUser = new Map<string, string | null>()
+  for (const e of (allEmails ?? []) as Array<{ user_id: string; email: string | null }>) {
+    emailByUser.set(e.user_id, e.email)
   }
   const users: AdminUser[] = (allProfiles ?? []).map((p: { id: string; full_name: string | null; avatar_url: string | null }) => {
     const roles = rolesByUser.get(p.id)
@@ -108,7 +113,7 @@ export default async function AdminPage() {
       : roles?.has('organizer')
         ? 'organizer'
         : 'jogador'
-    return { id: p.id, name: p.full_name, avatarUrl: p.avatar_url, role }
+    return { id: p.id, name: p.full_name, email: emailByUser.get(p.id) ?? null, avatarUrl: p.avatar_url, role }
   })
 
   // ── Feedbacks novos (badge) ─────────────────────────────────────────────────

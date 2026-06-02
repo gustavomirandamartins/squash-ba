@@ -1,7 +1,27 @@
 {
-  "count": 120,
-  "lastCommitAt": "202606020956",
+  "count": 124,
+  "lastCommitAt": "202606021511",
   "commits": [
+    {
+      "hash": "d46f484",
+      "subject": "Feat/Fix: avatares cortados, admin (anúncios/feedbacks), excluir feedback, professores",
+      "date": "2026-06-02"
+    },
+    {
+      "hash": "1ba66d5",
+      "subject": "Feat: indica W.O. no bracket e na lista de jogos",
+      "date": "2026-06-02"
+    },
+    {
+      "hash": "2e3e38d",
+      "subject": "Chore: atualiza changelog gerado",
+      "date": "2026-06-02"
+    },
+    {
+      "hash": "f09e12f",
+      "subject": "Fix: jogo de 1 set mostra placar de pontos, não contagem de sets",
+      "date": "2026-06-02"
+    },
     {
       "hash": "4375915",
       "subject": "Fix: mostrar placar de pontos mesmo em partidas de 1 set",
