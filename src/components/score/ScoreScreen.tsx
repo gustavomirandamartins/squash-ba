@@ -21,7 +21,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, CalendarDays } from 'lucide-react'
 import { useScoreEngine, type GameScore, type ConflictSnapshot, type ScoreEngineConfig } from '@/lib/score-engine/useScoreEngine'
 import { CourtTimer } from '@/lib/score-engine/CourtTimer'
-import { clearQueue } from '@/lib/score-engine/SyncEngine'
+import { clearQueue, flush as flushQueue } from '@/lib/score-engine/SyncEngine'
 import { createClient } from '@/utils/supabase/client'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -49,6 +49,8 @@ export type ScoreScreenProps = {
   scheduledAt?: string | null
   /** Server Action — atualiza a data do jogo (scheduled_at) */
   onUpdateSchedule?: (iso: string | null) => Promise<{ error: string | null }>
+  /** Segundos já acumulados no cronômetro (modo tempo) — evita reset ao voltar à página */
+  initialDuration?: number
   // SSR initial state
   initialGames: GameScore[]
   initialStatus: string
@@ -335,6 +337,7 @@ export function ScoreScreen({
   initialStatus,
   initialResult,
   initialConflictSnapshot,
+  initialDuration,
 }: ScoreScreenProps) {
   const engineConfig: ScoreEngineConfig = {
     sets_to_play: setsToPlay,
@@ -365,6 +368,10 @@ export function ScoreScreen({
     reopenGame,
     resolveConflict,
   } = engine
+
+  // Ref para acessar games atuais dentro de callbacks sem closure stale
+  const gamesRef = useRef(games)
+  useEffect(() => { gamesRef.current = games }, [games])
 
   const router = useRouter()
 
@@ -475,10 +482,35 @@ export function ScoreScreen({
   // Supabase client
   const [supabase] = useState(() => createClient())
 
-  // Salva duration_seconds no Supabase ao encerrar cronômetro
-  const handleTimerStop = useCallback(
+  // Salva duration_seconds ao pausar (persiste progresso sem finalizar)
+  const handleTimerPause = useCallback(
     async (seconds: number) => {
       await supabase.from('matches').update({ duration_seconds: seconds }).eq('id', matchId)
+    },
+    [supabase, matchId],
+  )
+
+  // Encerra o cronômetro e finaliza a partida.
+  // Sequência necessária para o trigger resolve_match funcionar em modo 'tempo':
+  //   1. Flush da fila offline (garante que o placar atual está no banco)
+  //   2. Salva duration_seconds em matches (resolve_match verifica IS NOT NULL)
+  //   3. Upsert no match_games → dispara trg_match_games_resolve → resolve_match
+  //      que agora vê duration_seconds IS NOT NULL e aplica o resultado.
+  const handleTimerStop = useCallback(
+    async (seconds: number) => {
+      // 1. Sincroniza placar pendente
+      await flushQueue(matchId)
+
+      // 2. Marca o tempo encerrado
+      await supabase.from('matches').update({ duration_seconds: seconds }).eq('id', matchId)
+
+      // 3. Re-upsert do jogo atual (mesmo placar) → dispara trg_match_games_resolve
+      //    que agora vê duration_seconds preenchido e finaliza a partida.
+      const g = gamesRef.current.find((x) => x.game_number === 1) ?? { score_a: 0, score_b: 0 }
+      await supabase.from('match_games').upsert(
+        { match_id: matchId, game_number: 1, score_a: g.score_a, score_b: g.score_b },
+        { onConflict: 'match_id,game_number' },
+      )
     },
     [supabase, matchId],
   )
@@ -556,7 +588,9 @@ export function ScoreScreen({
         <div className="space-y-4">
           <div className="glass glass-card px-4 py-6 flex flex-col items-center gap-4">
             <CourtTimer
-              initialSeconds={0}
+              initialSeconds={initialDuration ?? 0}
+              initialStopped={isFinished}
+              onPause={handleTimerPause}
               onStop={handleTimerStop}
             />
           </div>

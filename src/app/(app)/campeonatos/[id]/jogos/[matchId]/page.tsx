@@ -22,7 +22,7 @@ export default async function CampeonatoScorePage({
   const { data: matchRaw } = await supabase
     .from('matches')
     .select(
-      `id, status, result, conflict_server_snapshot, stage_id, scheduled_at,
+      `id, status, result, conflict_server_snapshot, stage_id, scheduled_at, duration_seconds,
        side_a_participant_id, side_b_participant_id, championship_id,
        match_games(game_number, score_a, score_b)`,
     )
@@ -175,6 +175,7 @@ export default async function CampeonatoScorePage({
       initialStatus={matchRaw.status}
       initialResult={(matchRaw.result as string | null) ?? null}
       initialConflictSnapshot={initialConflictSnapshot}
+      initialDuration={(matchRaw as { duration_seconds?: number | null }).duration_seconds ?? 0}
     />
   )
 }

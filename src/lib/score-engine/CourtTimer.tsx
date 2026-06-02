@@ -14,7 +14,11 @@ import { Play, Pause, Square } from 'lucide-react'
 
 export type CourtTimerProps = {
   initialSeconds?: number
+  /** Inicia já no estado "encerrado" (partida já finalizada ao carregar) */
+  initialStopped?: boolean
   onTick?: (seconds: number) => void
+  /** Chamado ao pausar com total acumulado (permite salvar progresso) */
+  onPause?: (seconds: number) => void
   onStop: (seconds: number) => void
 }
 
@@ -24,10 +28,10 @@ function formatTime(s: number): string {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 }
 
-export function CourtTimer({ initialSeconds = 0, onTick, onStop }: CourtTimerProps) {
+export function CourtTimer({ initialSeconds = 0, initialStopped = false, onTick, onPause, onStop }: CourtTimerProps) {
   const [seconds, setSeconds] = useState(initialSeconds)
   const [running, setRunning] = useState(false)
-  const [stopped, setStopped] = useState(false)
+  const [stopped, setStopped] = useState(initialStopped)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const secondsRef = useRef(initialSeconds)
 
@@ -67,6 +71,7 @@ export function CourtTimer({ initialSeconds = 0, onTick, onStop }: CourtTimerPro
   const handlePause = () => {
     setRunning(false)
     stopInterval()
+    onPause?.(secondsRef.current)
   }
 
   const handleStop = () => {
