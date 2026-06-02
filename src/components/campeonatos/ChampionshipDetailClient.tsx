@@ -201,6 +201,12 @@ function MatchCard({
   const st      = MATCH_STATUS[match.status] ?? MATCH_STATUS.agendado
   const winnerA = match.result === 'lado_a'
   const winnerB = match.result === 'lado_b'
+  const isSets  = stage?.counting === 'set' || stage?.counting === 'sets'
+  const isTempo = stage?.counting === 'tempo'
+  // Jogos ordenados por set — para exibição do placar detalhado
+  const sortedGames = [...match.match_games].sort((a, b) => a.game_number - b.game_number)
+  // Exibe placares individuais apenas em MD3/MD5 com ≥2 sets (1 set sozinho = "sem informar 1x0")
+  const showSetDetail = match.status === 'finalizado' && isSets && sortedGames.length >= 2
 
   return (
     <Link
@@ -217,11 +223,17 @@ function MatchCard({
         </div>
         <div className="flex flex-col items-center shrink-0 w-14 text-center">
           {score ? (
-            <span className="text-base font-bold text-white tabular-nums tracking-tight">
+            <span className={`text-base font-bold tabular-nums tracking-tight ${match.status === 'finalizado' ? 'text-white' : 'text-white/70'}`}>
               {score.a}–{score.b}
             </span>
           ) : (
             <span className="text-[10px] font-semibold text-white/20 tracking-[0.15em] uppercase">vs</span>
+          )}
+          {/* Placar de pontos de cada set (MD3/MD5) */}
+          {showSetDetail && (
+            <span className="text-[10px] text-white/30 tabular-nums mt-0.5 leading-tight">
+              {sortedGames.map((g) => `${g.score_a}·${g.score_b}`).join('  ')}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
@@ -237,9 +249,11 @@ function MatchCard({
         <div className="flex items-center gap-1.5">
           {st.dot && <span className="live-dot h-1.5 w-1.5 rounded-full bg-secondary inline-block" />}
           <span className={`text-[11px] font-medium ${st.cls}`}>{st.label}</span>
-          {match.status === 'finalizado' && match.match_games.length > 0 && stage?.counting !== 'tempo' && (
+          {match.status === 'finalizado' && sortedGames.length > 0 && !isTempo && (
             <span className="text-[11px] text-white/20 ml-1">
-              ({match.match_games.length} set{match.match_games.length > 1 ? 's' : ''})
+              {isSets
+                ? `${sortedGames.length} set${sortedGames.length > 1 ? 's' : ''}`
+                : null}
             </span>
           )}
         </div>
@@ -362,6 +376,32 @@ export function ChampionshipDetailClient({
   const participantAvatars: Record<string, string | null> = Object.fromEntries(
     Object.entries(participantInfo).map(([id, info]) => [id, info.avatar_url]),
   )
+
+  // ── Campeão (só quando campeonato encerrado) ───────────────────────────────
+  const champion = useMemo<{ name: string | null; avatarUrl: string | null } | null>(() => {
+    if (champ.status !== 'encerrado') return null
+    if (!isElim && !isGruposElim) {
+      // Liga: 1º lugar nas classificações
+      const top = initialStandings[0]
+      if (!top) return null
+      const info = participantInfo[top.participant_id]
+      return { name: top.display_name ?? info?.full_name ?? null, avatarUrl: info?.avatar_url ?? null }
+    }
+    // Eliminatória / Grupos+Elim: vencedor da final (maior rodada, bracket_slot>0, não é bronze)
+    const stId = isGruposElim ? (elimStage?.id ?? null) : stage?.id
+    const finalMatches = matches
+      .filter((m) => m.status === 'finalizado' && m.bracket_slot !== -2 && (stId ? m.stage_id === stId : true))
+    if (!finalMatches.length) return null
+    const maxRound = Math.max(...finalMatches.map((m) => m.round))
+    const finalMatch = finalMatches.find((m) => m.round === maxRound)
+    if (!finalMatch || !finalMatch.result) return null
+    const winnerId = finalMatch.result === 'lado_a'
+      ? finalMatch.side_a_participant_id
+      : finalMatch.side_b_participant_id
+    if (!winnerId) return null
+    const info = participantInfo[winnerId]
+    return { name: info?.full_name ?? null, avatarUrl: info?.avatar_url ?? null }
+  }, [champ.status, isElim, isGruposElim, initialStandings, matches, participantInfo, stage, elimStage])
 
   // ── Cache da estrutura p/ uso OFFLINE (abrir jogos + lançar placar) ─────────
   // Gravado ao abrir o detalhe online. O shell offline (/~offline) lê este cache
@@ -595,6 +635,26 @@ export function ChampionshipDetailClient({
           </span>
         </div>
       </div>
+
+      {/* ── Banner de campeão ── */}
+      {champion && (
+        <div className="glass glass-card px-4 py-4 flex items-center gap-3 border border-secondary/30 bg-secondary/5">
+          <div className="h-11 w-11 rounded-full shrink-0 grid place-items-center bg-secondary/20 ring-2 ring-secondary/40 overflow-hidden">
+            {champion.avatarUrl ? (
+              <img src={champion.avatarUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <Trophy className="h-5 w-5 text-secondary" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-secondary/70">Campeão</p>
+            <p className="text-base font-black text-secondary truncate leading-snug mt-0.5">
+              {champion.name ?? 'Vencedor'}
+            </p>
+          </div>
+          <Trophy className="h-6 w-6 text-secondary/50 shrink-0" />
+        </div>
+      )}
 
       {/* TabBar */}
       <div className="glass glass-pill p-1 flex gap-0.5">

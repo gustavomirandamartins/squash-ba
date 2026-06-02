@@ -120,7 +120,7 @@ export function Lembretes({ data }: { data: LembretesData }) {
 
         {/* ── Campeonatos ativos ── */}
         {activeCount > 0 && (
-          <Item href="/jogos" icon={Trophy}>
+          <Item href="/campeonatos" icon={Trophy}>
             Você está em <strong className="font-bold text-white">{activeCount}</strong>{' '}
             {activeCount === 1 ? 'campeonato ativo' : 'campeonatos ativos'}
           </Item>

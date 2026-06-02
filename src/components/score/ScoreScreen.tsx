@@ -18,7 +18,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, CalendarDays } from 'lucide-react'
+import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, CalendarDays, Flag, Square } from 'lucide-react'
 import { useScoreEngine, type GameScore, type ConflictSnapshot, type ScoreEngineConfig } from '@/lib/score-engine/useScoreEngine'
 import { CourtTimer } from '@/lib/score-engine/CourtTimer'
 import { clearQueue, flush as flushQueue } from '@/lib/score-engine/SyncEngine'
@@ -394,11 +394,13 @@ export function ScoreScreen({
   // empate só quando a fase permite e o resultado dá igual). Sem confirmação manual.
 
   // Volta para a página anterior quando a partida finaliza NESTA sessão.
+  // Delay de 2 s para o usuário ver o resultado antes do redirect.
   // (Se já estava finalizada ao carregar, não redireciona.)
   const wasFinishedOnMountRef = useRef(initialStatus === 'finalizado')
   useEffect(() => {
     if (isFinished && !wasFinishedOnMountRef.current) {
-      router.push(backHref)
+      const t = setTimeout(() => router.push(backHref), 2000)
+      return () => clearTimeout(t)
     }
   }, [isFinished, backHref, router])
 
@@ -514,6 +516,34 @@ export function ScoreScreen({
     },
     [supabase, matchId],
   )
+
+  // Encerra a partida com o resultado atual (quem tem mais pontos vence).
+  // Usado no modo 'pontos' onde não há auto-finalização por threshold de sets.
+  const [finishing, setFinishing] = useState(false)
+  const handleForceFinish = useCallback(async () => {
+    if (finishing || !editable) return
+    setFinishing(true)
+    try {
+      const g = gamesRef.current[0] ?? { score_a: 0, score_b: 0 }
+      const res = g.score_a > g.score_b ? 'lado_a' : g.score_b > g.score_a ? 'lado_b' : 'empate'
+      await supabase.rpc('finalize_match_manual', { _match_id: matchId, _result: res })
+    } finally {
+      setFinishing(false)
+    }
+  }, [supabase, matchId, finishing, editable])
+
+  // Decreta WO: vencedor leva a vitória; a partida não conta pontos/sets nas estatísticas.
+  const [woSide, setWoSide] = useState<'a' | 'b' | null>(null)
+  const handleWO = useCallback(async (side: 'a' | 'b') => {
+    if (woSide || !editable) return
+    setWoSide(side)
+    try {
+      const res = side === 'a' ? 'lado_a' : 'lado_b'
+      await supabase.rpc('finalize_match_wo', { _match_id: matchId, _winner: res })
+    } catch {
+      setWoSide(null)
+    }
+  }, [supabase, matchId, woSide, editable])
 
   return (
     <div className="px-5 py-4 space-y-4 max-w-md mx-auto">
@@ -711,6 +741,52 @@ export function ScoreScreen({
               </button>
             )
           })()}
+        </div>
+      )}
+
+      {/* ── Encerrar partida (modo pontos) ── */}
+      {editable && !isSets && !isTempo && (
+        <button
+          type="button"
+          disabled={finishing}
+          onClick={() => void handleForceFinish()}
+          className="w-full flex items-center justify-center gap-2 glass glass-card py-3 text-xs font-semibold text-red-400/80 hover:text-red-400 transition active:scale-95 disabled:opacity-40"
+        >
+          {finishing ? (
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400/20 border-t-red-400/60" />
+          ) : (
+            <Square className="h-3.5 w-3.5 fill-current" />
+          )}
+          Encerrar partida
+        </button>
+      )}
+
+      {/* ── W.O. (disponível em qualquer modo, enquanto editável) ── */}
+      {editable && (
+        <div className="glass glass-card px-4 py-3 space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-white/30 text-center">
+            W.O. — o adversário não compareceu
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={!!woSide}
+              onClick={() => void handleWO('a')}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-2xl bg-white/[0.05] py-2.5 text-xs font-semibold text-white/60 hover:bg-secondary/15 hover:text-secondary transition active:scale-95 disabled:opacity-40"
+            >
+              <Flag className="h-3.5 w-3.5" />
+              {sideA.name ?? 'Lado A'} vence
+            </button>
+            <button
+              type="button"
+              disabled={!!woSide}
+              onClick={() => void handleWO('b')}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-2xl bg-white/[0.05] py-2.5 text-xs font-semibold text-white/60 hover:bg-secondary/15 hover:text-secondary transition active:scale-95 disabled:opacity-40"
+            >
+              <Flag className="h-3.5 w-3.5" />
+              {sideB.name ?? 'Lado B'} vence
+            </button>
+          </div>
         </div>
       )}
 
