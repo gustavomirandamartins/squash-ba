@@ -1,6 +1,11 @@
 {
-  "count": 110,
+  "count": 111,
   "commits": [
+    {
+      "hash": "4d9ba62",
+      "subject": "Remove emojis from feedback form",
+      "date": "2026-06-01"
+    },
     {
       "hash": "337ad3d",
       "subject": "Feat: layout adapta a celular em paisagem (rail lateral + tela cheia)",

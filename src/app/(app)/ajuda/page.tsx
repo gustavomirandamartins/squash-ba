@@ -133,37 +133,22 @@ export default function AjudaPage() {
 
       {/* ── 2. Termos e privacidade ──────────────────────────────────────────── */}
       <Section icon={Shield} title="Termos, cookies e privacidade">
-        <div className="space-y-3 text-sm text-white/60 leading-relaxed">
-          <p>
-            O SquashBa coleta apenas os dados estritamente necessários para o
-            funcionamento da plataforma: nome, data de nascimento, gênero, e-mail,
-            telefone e foto de perfil. Telefone e e-mail só são utilizados para fins
-            de cadastro, não sendo disponibilizados ao público. As outras informações
-            são usadas exclusivamente para identificar você na comunidade e organizar
-            as partidas, e nunca serão vendidas ou compartilhadas com terceiros para
-            fins de marketing.
+        <div className="space-y-3">
+          <p className="text-sm text-white/60 leading-relaxed">
+            Confira nossa Política de Privacidade completa, em conformidade com a LGPD.
           </p>
-          <p>
-            <strong className="text-white/80">Cookies:</strong> utilizamos apenas
-            identificadores de sessão essenciais para manter você conectado com
-            segurança. Não utilizamos nenhum tipo de cookie ou pixel de rastreamento,
-            publicidade ou terceiros.
-          </p>
-          <p>
-            <strong className="text-white/80">Dados offline:</strong> para permitir
-            o uso sem internet, os dados de partidas e campeonatos são armazenados
-            localmente no seu dispositivo através do IndexedDB. Essas informações são
-            sincronizadas automaticamente assim que a conexão for restabelecida e podem
-            ser apagadas a qualquer momento limpando os dados do site no seu navegador.
-          </p>
-          <p>
-            <strong className="text-white/80">Exclusão de conta:</strong> você tem
-            total controle sobre seus dados. Para apagar definitivamente sua conta e
-            remover todas as suas informações de nossa base de dados, basta acessar a
-            opção{' '}
-            <em className="text-white/75">"Excluir Conta"</em> diretamente no menu{' '}
-            <em className="text-white/75">"Editar perfil"</em>.
-          </p>
+          <a
+            href="https://squashba.gustavomartins.com/privacidade"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="glass glass-card flex items-center justify-between px-4 py-3.5 transition hover:border-white/20 active:scale-[0.985]"
+          >
+            <div className="flex items-center gap-3">
+              <Shield className="h-4 w-4 shrink-0 text-secondary/70" />
+              <span className="text-sm font-semibold text-white/85">Política de Privacidade</span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-white/25" />
+          </a>
         </div>
       </Section>
 
