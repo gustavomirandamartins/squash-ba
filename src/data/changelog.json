@@ -1,7 +1,37 @@
 {
-  "count": 114,
-  "lastCommitAt": "202606012346",
+  "count": 120,
+  "lastCommitAt": "202606020956",
   "commits": [
+    {
+      "hash": "4375915",
+      "subject": "Fix: mostrar placar de pontos mesmo em partidas de 1 set",
+      "date": "2026-06-02"
+    },
+    {
+      "hash": "fa60f68",
+      "subject": "Feat: placares individuais de cada set em bracket e desafios",
+      "date": "2026-06-02"
+    },
+    {
+      "hash": "90c9108",
+      "subject": "Feat: 6 melhorias de placar e campeonato",
+      "date": "2026-06-02"
+    },
+    {
+      "hash": "9f07cb8",
+      "subject": "Fix: cronômetro modo tempo — persistência e encerramento de partida",
+      "date": "2026-06-02"
+    },
+    {
+      "hash": "f8f54f2",
+      "subject": "Perf: elimina backdrop-filter desnecessário e simplifica background",
+      "date": "2026-06-02"
+    },
+    {
+      "hash": "0002a82",
+      "subject": "Feat: lembrete de aniversario + notificacao de resposta ao desafio",
+      "date": "2026-06-02"
+    },
     {
       "hash": "254e692",
       "subject": "Feat: checkbox de consentimento do responsavel para menores de 18 anos",
