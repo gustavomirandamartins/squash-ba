@@ -56,14 +56,17 @@ export default function RootLayout({
         {/*
           backdrop-filter injetado como CSS cru: o Lightning CSS do Tailwind v4
           descarta a propriedade quando ela vem do globals.css compilado. Este
-          <style> é HTML em runtime e não passa pelo compilador, garantindo o
-          vidro fosco (glassmorphism) em todos os .glass / .glass-strong.
+          <style> é HTML em runtime e não passa pelo compilador.
+
+          O blur SÓ é aplicado em .glass-overlay — elementos que de fato se
+          sobrepõem a conteúdo que rola por baixo (ex.: menu inferior). O .glass
+          comum fica sobre o gradiente liso do body, onde borrar não muda nada
+          visualmente e só custa paint a cada frame — por isso não leva blur.
         */}
         <style
           dangerouslySetInnerHTML={{
             __html:
-              ".glass{-webkit-backdrop-filter:blur(24px) saturate(150%);backdrop-filter:blur(24px) saturate(150%)}" +
-              ".glass-strong{-webkit-backdrop-filter:blur(28px) saturate(150%);backdrop-filter:blur(28px) saturate(150%)}",
+              ".glass-overlay{-webkit-backdrop-filter:blur(20px) saturate(140%);backdrop-filter:blur(20px) saturate(140%)}",
           }}
         />
         <SerwistProvider swUrl="/serwist/sw.js">{children}</SerwistProvider>

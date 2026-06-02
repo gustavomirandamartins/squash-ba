@@ -35,22 +35,28 @@
 
 /* ── Base ──────────────────────────────────────────────── */
 html {
-  background-color: var(--color-primary-700);
+  background-color: #192339; /* tom escuro do degradê — evita flash no carregamento */
   color-scheme: dark;
 }
 
 body {
   color: var(--color-fg);
   font-family: var(--font-sans), system-ui, sans-serif;
-  /* Gradiente atmosférico AZUL (nunca verde) */
-  background-color: var(--color-primary);
-  background-image:
-    radial-gradient(120% 80% at 50% -10%, #2a3d61 0%, rgba(42, 61, 97, 0) 55%),
-    radial-gradient(90% 60% at 85% 8%, rgba(205, 253, 81, 0.06) 0%, rgba(205, 253, 81, 0) 60%),
-    linear-gradient(180deg, #1d2b45 0%, #16233a 100%);
-  background-attachment: fixed;
+  /* SEM background-color aqui: o fundo do body, por ser bloco em fluxo, pintaria
+     POR CIMA do ::before (z-index negativo), escondendo o degradê. A cor-base
+     fica no <html> (--color-primary-700) e o degradê no ::before. */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Fundo em pseudo-elemento fixo: o navegador pinta uma vez e o scroll desliza
+   por cima — sem repaint a cada frame (era o custo do antigo background-attachment:fixed). */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, #2a364d 0%, #192339 100%);
 }
 
 ::selection {
@@ -69,27 +75,16 @@ body {
     rgba(255, 255, 255, 0.14) 0%,
     rgba(255, 255, 255, 0.05) 100%
   );
-  /* backdrop-filter é injetado via <style> cru no layout.tsx — o Lightning CSS
-     do Tailwind v4 descarta a propriedade aqui na compilação. */
+  /* SEM backdrop-filter: o .glass fica sobre o gradiente liso do body, onde o
+     blur é imperceptível e só custaria paint. Quem precisa borrar conteúdo por
+     baixo (overlays como o menu inferior) adiciona a classe .glass-overlay,
+     cujo backdrop-filter é injetado via <style> cru no layout.tsx (o Lightning
+     CSS do Tailwind v4 descartaria a propriedade se viesse daqui). */
   border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow:
     var(--shadow-glass),
     inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
     inset 0 -1px 0 0 rgba(255, 255, 255, 0.04);
-}
-
-/* Glass mais opaco p/ sobreposição em imagens claras */
-.glass-strong {
-  background: linear-gradient(
-    135deg,
-    rgba(44, 59, 88, 0.72) 0%,
-    rgba(22, 35, 58, 0.58) 100%
-  );
-  /* backdrop-filter injetado via <style> cru no layout.tsx (ver .glass). */
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow:
-    var(--shadow-glass),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.16);
 }
 
 .glass-card {

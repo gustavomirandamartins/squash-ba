@@ -149,7 +149,7 @@ export function SearchDropdown({ open, onOpen, onClose }: Props) {
           type="button"
           aria-label="Buscar"
           onClick={onOpen}
-          className="absolute inset-0 grid place-items-center rounded-full glass text-white/85 transition-all duration-200 active:scale-95"
+          className="absolute inset-0 grid place-items-center rounded-full glass glass-overlay text-white/85 transition-all duration-200 active:scale-95"
           style={{
             opacity: open ? 0 : 1,
             pointerEvents: open ? 'none' : 'auto',
@@ -161,7 +161,7 @@ export function SearchDropdown({ open, onOpen, onClose }: Props) {
 
         {/* Barra expandida */}
         <div
-          className="glass absolute inset-0 flex items-center gap-2 rounded-full px-3 transition-all duration-200"
+          className="glass glass-overlay absolute inset-0 flex items-center gap-2 rounded-full px-3 transition-all duration-200"
           style={{
             opacity: open ? 1 : 0,
             pointerEvents: open ? 'auto' : 'none',
@@ -185,7 +185,7 @@ export function SearchDropdown({ open, onOpen, onClose }: Props) {
       {/* Painel de resultados — posicionado relativo ao <header> (sticky) */}
       {open && hasQuery && (
         <div className="absolute inset-x-0 top-full z-40 px-4 pt-1">
-          <div className="glass glass-card max-h-[70dvh] overflow-y-auto p-2">
+          <div className="glass glass-overlay glass-card max-h-[70dvh] overflow-y-auto p-2">
             {loading && total === 0 && (
               <div className="flex items-center justify-center gap-2 py-6 text-xs text-white/40">
                 <Loader2 className="h-4 w-4 animate-spin" /> Buscando…
