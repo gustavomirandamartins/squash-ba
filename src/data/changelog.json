@@ -1,6 +1,11 @@
 {
-  "count": 109,
+  "count": 110,
   "commits": [
+    {
+      "hash": "337ad3d",
+      "subject": "Feat: layout adapta a celular em paisagem (rail lateral + tela cheia)",
+      "date": "2026-06-01"
+    },
     {
       "hash": "633685f",
       "subject": "Fix: professores visiveis a todos + admin sem tag Professor",

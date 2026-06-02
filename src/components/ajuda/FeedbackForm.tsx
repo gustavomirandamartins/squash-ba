@@ -5,10 +5,10 @@ import { submitFeedback, type FeedbackResult } from '@/app/(app)/ajuda/actions'
 import { Send, CheckCircle2, AlertCircle } from 'lucide-react'
 
 const TYPES = [
-  { value: 'bug',      label: '🐛 Bug' },
-  { value: 'sugestao', label: '💡 Sugestão' },
-  { value: 'critica',  label: '⚠️ Crítica' },
-  { value: 'geral',    label: '💬 Geral' },
+  { value: 'bug',      label: 'Bug' },
+  { value: 'sugestao', label: 'Sugestão' },
+  { value: 'critica',  label: 'Crítica' },
+  { value: 'geral',    label: 'Geral' },
 ]
 
 export function FeedbackForm() {
