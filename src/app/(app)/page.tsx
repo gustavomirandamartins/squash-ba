@@ -33,11 +33,12 @@ export default async function HomePage() {
     activeChampsRes,
     liveMatchesRes,
     organizersRes,
+    myCreatedChallengesRes,
     rankingRes,
     sponsorsRes,
     sponsorLinksRes,
   ] = await Promise.all([
-    supabase.from('profiles').select('full_name, gender').eq('id', user.id).single(),
+    supabase.from('profiles').select('full_name, gender, birth_date').eq('id', user.id).single(),
     supabase.from('conversation_members').select('conversation_id, last_read_at').eq('user_id', user.id),
     supabase
       .from('participant_members')
@@ -55,6 +56,14 @@ export default async function HomePage() {
       .eq('status', 'em_andamento')
       .limit(6),
     supabase.from('user_roles').select('user_id').eq('role', 'organizer'),
+    // Desafios que EU criei e onde o convidado já respondeu (aceite ou recusa)
+    // pendente = ainda sem resposta → não mostra lembrete ainda
+    supabase
+      .from('championships')
+      .select('id, name, participants(enrollment_status, participant_members(user_id))')
+      .eq('format', 'desafio')
+      .eq('created_by', user.id)
+      .in('status', ['rascunho', 'ativo']),
     supabase.rpc('get_category_rankings'),
     supabase.storage.from('sponsors').list('', { limit: 100, sortBy: { column: 'name', order: 'asc' } }),
     supabase.from('sponsor_banners').select('image_name, link_url'),
@@ -62,6 +71,15 @@ export default async function HomePage() {
 
   const firstName = (profileRes.data?.full_name ?? 'Jogador').trim().split(/\s+/)[0]
   const gender = profileRes.data?.gender ?? null
+
+  // Verifica se hoje é o aniversário do usuário (compara dia e mês em UTC).
+  const isBirthday = (() => {
+    const bd = profileRes.data?.birth_date
+    if (!bd) return false
+    const today = new Date()
+    const birth = new Date(bd)
+    return today.getUTCMonth() === birth.getUTCMonth() && today.getUTCDate() === birth.getUTCDate()
+  })()
 
   // Deriva IDs/mapas da fase 1 (síncrono) para alimentar a fase 2.
   const memberships = (membershipsRes.data ?? []) as Array<{ conversation_id: string; last_read_at: string | null }>
@@ -154,7 +172,53 @@ export default async function HomePage() {
     }
   })
 
-  const lembretes: LembretesData = { unread, champInvites, challengeInvites, activeCount }
+  // Desafios criados por mim com resposta do convidado (aceite ou recusa recente).
+  type CreatedChallenge = {
+    id: string
+    name: string
+    participants: Array<{
+      enrollment_status: string
+      participant_members: Array<{ user_id: string }>
+    }>
+  }
+  const myCreatedChallenges = (myCreatedChallengesRes.data ?? []) as unknown as CreatedChallenge[]
+  const challengeResponses: { id: string; name: string; responderName: string | null; accepted: boolean }[] = []
+  const responderIds: string[] = []
+  const responseInfoMap = new Map<string, { accepted: boolean; responderId: string }>()
+  for (const champ of myCreatedChallenges) {
+    // O participante convidado (não é o criador) que já respondeu
+    const guestPart = champ.participants.find((p) => {
+      const members = p.participant_members ?? []
+      const isNotMe = members.some((m) => m.user_id !== user.id)
+      return isNotMe && p.enrollment_status !== 'pendente'
+    })
+    if (!guestPart) continue
+    const responderId = guestPart.participant_members.find((m) => m.user_id !== user.id)?.user_id
+    if (!responderId) continue
+    responderIds.push(responderId)
+    responseInfoMap.set(champ.id, {
+      accepted: guestPart.enrollment_status === 'confirmado',
+      responderId,
+    })
+  }
+  const { data: responderProfiles } = responderIds.length
+    ? await supabase.from('profiles').select('id, full_name').in('id', [...new Set(responderIds)])
+    : { data: [] }
+  const responderNameById = new Map(
+    (responderProfiles ?? []).map((p: { id: string; full_name: string | null }) => [p.id, p.full_name]),
+  )
+  for (const champ of myCreatedChallenges) {
+    const info = responseInfoMap.get(champ.id)
+    if (!info) continue
+    challengeResponses.push({
+      id: champ.id,
+      name: champ.name,
+      responderName: responderNameById.get(info.responderId) ?? null,
+      accepted: info.accepted,
+    })
+  }
+
+  const lembretes: LembretesData = { unread, champInvites, challengeInvites, challengeResponses, activeCount, isBirthday }
 
   // ── Acontecendo agora ─────────────────────────────────────────────────────
   const partName = new Map(
