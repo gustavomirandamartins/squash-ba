@@ -44,6 +44,28 @@ export async function reopenMatch(matchId: string): Promise<{ error: string | nu
 }
 
 /**
+ * Reabre uma partida finalizada como participante (sem exigir organizer).
+ * Também reabre o campeonato se estava encerrado.
+ */
+export async function reopenMatchByParticipant(matchId: string): Promise<{ error: string | null }> {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Não autenticado.' }
+
+  const { error } = await supabase.rpc('reopen_match_by_participant', {
+    _match_id: matchId,
+  })
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { error: null }
+}
+
+/**
  * Atualiza a data/hora agendada de uma partida (scheduled_at).
  * Quem pode gerir o jogo (organizer ou participante) pode editar.
  * `iso` deve ser uma string ISO (ex.: '2026-05-30T14:00:00.000Z') ou null.

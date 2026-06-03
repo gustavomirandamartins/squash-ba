@@ -1,7 +1,17 @@
 {
-  "count": 128,
-  "lastCommitAt": "202606022150",
+  "count": 130,
+  "lastCommitAt": "202606022200",
   "commits": [
+    {
+      "hash": "b5126b6",
+      "subject": "Auto-encerrar campeonato/desafio quando todas as partidas finalizam",
+      "date": "2026-06-02"
+    },
+    {
+      "hash": "c391b57",
+      "subject": "Corrigir redirecionamento pós-ação em desafios (/jogos → /desafios)",
+      "date": "2026-06-02"
+    },
     {
       "hash": "87a8987",
       "subject": "W.O. disponível para todos os participantes da partida",
