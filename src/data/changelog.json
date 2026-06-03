@@ -1,7 +1,12 @@
 {
-  "count": 126,
-  "lastCommitAt": "202606021713",
+  "count": 127,
+  "lastCommitAt": "202606022147",
   "commits": [
+    {
+      "hash": "41e4d05",
+      "subject": "Participantes podem encerrar partidas (finalize_match_by_participant)",
+      "date": "2026-06-02"
+    },
     {
       "hash": "b53cb34",
       "subject": "Término antecipado MD3/MD5 + Encerrar partida com modal de incompletas",

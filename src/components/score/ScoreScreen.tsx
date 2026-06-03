@@ -639,17 +639,20 @@ export function ScoreScreen({
   }
 
   // Decreta WO: vencedor leva a vitória; a partida não conta pontos/sets nas estatísticas.
+  // Organizer/admin → finalize_match_wo; participante → finalize_match_wo_by_participant.
   const [woSide, setWoSide] = useState<'a' | 'b' | null>(null)
   const handleWO = useCallback(async (side: 'a' | 'b') => {
     if (woSide || !editable) return
     setWoSide(side)
     try {
-      const res = side === 'a' ? 'lado_a' : 'lado_b'
-      await supabase.rpc('finalize_match_wo', { _match_id: matchId, _winner: res })
+      const winner = side === 'a' ? 'lado_a' : 'lado_b'
+      const rpc = isOrganizer ? 'finalize_match_wo' : 'finalize_match_wo_by_participant'
+      const { error } = await supabase.rpc(rpc, { _match_id: matchId, _winner: winner })
+      if (error) setWoSide(null)
     } catch {
       setWoSide(null)
     }
-  }, [supabase, matchId, woSide, editable])
+  }, [supabase, matchId, woSide, editable, isOrganizer])
 
   return (
     <div className="px-5 py-4 space-y-4 max-w-md mx-auto">
@@ -866,8 +869,8 @@ export function ScoreScreen({
         </div>
       )}
 
-      {/* ── W.O. (apenas organizer/admin; é decisão administrativa) ── */}
-      {editable && isOrganizer && (
+      {/* ── W.O. (qualquer participante editável pode decretar) ── */}
+      {editable && (
         <div className="glass glass-card px-4 py-3 space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-white/30 text-center">
             W.O. — o adversário não compareceu
