@@ -1,7 +1,12 @@
 {
-  "count": 130,
-  "lastCommitAt": "202606022200",
+  "count": 131,
+  "lastCommitAt": "202606022203",
   "commits": [
+    {
+      "hash": "a24901d",
+      "subject": "Corrigir: participantes podem gravar scores + reabrir partida",
+      "date": "2026-06-02"
+    },
     {
       "hash": "b5126b6",
       "subject": "Auto-encerrar campeonato/desafio quando todas as partidas finalizam",

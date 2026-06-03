@@ -335,9 +335,17 @@ function Active1v1({
   const pA = participants[0]
   const pB = participants[1]
 
-  // Conta vitórias para cada lado
-  const winsA = matches.filter((m) => m.result === 'lado_a').length
-  const winsB = matches.filter((m) => m.result === 'lado_b').length
+  // Conta vitórias por PARTICIPANTE (não por posição).
+  // Em desafios as sides se alternam por rodada: round 1 pA=lado_a, round 2 pA=lado_b.
+  // Contar apenas 'lado_a' daria resultado errado se os lados se cruzarem.
+  const winsA = matches.filter((m) => m.status === 'finalizado' && (
+    (m.result === 'lado_a' && m.side_a_participant_id === pA?.id) ||
+    (m.result === 'lado_b' && m.side_b_participant_id === pA?.id)
+  )).length
+  const winsB = matches.filter((m) => m.status === 'finalizado' && (
+    (m.result === 'lado_a' && m.side_a_participant_id === pB?.id) ||
+    (m.result === 'lado_b' && m.side_b_participant_id === pB?.id)
+  )).length
   const played = matches.filter((m) => m.status === 'finalizado').length
   const total = matches.length
   const threshold = Math.ceil(challenge.rounds / 2)

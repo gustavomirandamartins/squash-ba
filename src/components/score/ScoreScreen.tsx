@@ -379,12 +379,19 @@ export function ScoreScreen({
   const gamesRef = useRef(games)
   useEffect(() => { gamesRef.current = games }, [games])
 
+  // Estado otimista: ao chamar "Encerrar partida" exibimos o resultado imediatamente,
+  // sem esperar o realtime do servidor (que pode demorar 1-2 s).
+  const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null)
+  const [optimisticResult, setOptimisticResult] = useState<string | null>(null)
+  const displayStatus = optimisticStatus ?? status
+  const displayResult = optimisticResult ?? result
+
   const router = useRouter()
 
   const isTempo   = counting === 'tempo'
   // 'set' (singular) é o valor persistido no banco; aceita também 'sets' para compatibilidade
   const isSets    = counting === 'set' || counting === 'sets'
-  const isFinished = status === 'finalizado'
+  const isFinished = displayStatus === 'finalizado'
   const editable = canManage && !isFinished && !hasConflict
 
   const currentGameData = games.find((g) => g.game_number === currentGame) ?? {
@@ -393,8 +400,8 @@ export function ScoreScreen({
     score_b: 0,
   }
 
-  const winnerA = result === 'lado_a'
-  const winnerB = result === 'lado_b'
+  const winnerA = displayResult === 'lado_a'
+  const winnerB = displayResult === 'lado_b'
 
   // Nº de sets necessários para vencer (MD3→2, MD5→3).
   const need = Math.floor(setsToPlay / 2) + 1
@@ -582,6 +589,9 @@ export function ScoreScreen({
           _result: res,
         })
         if (error) { setFinishError(error.message); return }
+        // Atualiza estado otimista: exibe vencedor imediatamente sem esperar realtime
+        setOptimisticStatus('finalizado')
+        setOptimisticResult(res)
         setShowFinishModal(false)
         setTieBreak(false)
       } catch (e) {
@@ -648,7 +658,12 @@ export function ScoreScreen({
       const winner = side === 'a' ? 'lado_a' : 'lado_b'
       const rpc = isOrganizer ? 'finalize_match_wo' : 'finalize_match_wo_by_participant'
       const { error } = await supabase.rpc(rpc, { _match_id: matchId, _winner: winner })
-      if (error) setWoSide(null)
+      if (error) {
+        setWoSide(null)
+      } else {
+        setOptimisticStatus('finalizado')
+        setOptimisticResult(winner)
+      }
     } catch {
       setWoSide(null)
     }
@@ -905,9 +920,9 @@ export function ScoreScreen({
             Resultado final
           </p>
           <p className="text-base font-black text-secondary">
-            {result === 'empate'
+            {displayResult === 'empate'
               ? 'Empate'
-              : result === 'lado_a'
+              : displayResult === 'lado_a'
                 ? (sideA.name ?? 'Lado A')
                 : (sideB.name ?? 'Lado B')} venceu
           </p>
