@@ -29,7 +29,7 @@ export async function revokeOrganizer(targetUserId: string): Promise<{ error: st
   if (!ctx.ok) return { error: ctx.error }
   const { error } = await ctx.supabase.rpc('revoke_organizer_role', { target_user_id: targetUserId })
   if (error) return { error: error.message }
-  revalidatePath('/admin')
+  revalidatePath('/admin', 'layout')
   revalidatePath('/')
   return { error: null }
 }
@@ -61,7 +61,7 @@ export async function deleteUser(targetUserId: string): Promise<{ error: string 
   const { error } = await admin.auth.admin.deleteUser(targetUserId)
   if (error) return { error: error.message }
 
-  revalidatePath('/admin')
+  revalidatePath('/admin', 'layout')
   return { error: null }
 }
 
@@ -71,7 +71,7 @@ export async function approveRequest(targetUserId: string) {
     target_user_id: targetUserId,
   })
   if (error) throw new Error(error.message)
-  revalidatePath('/admin')
+  revalidatePath('/admin', 'layout')
 }
 
 export async function rejectRequest(targetUserId: string) {
@@ -80,7 +80,7 @@ export async function rejectRequest(targetUserId: string) {
     target_user_id: targetUserId,
   })
   if (error) throw new Error(error.message)
-  revalidatePath('/admin')
+  revalidatePath('/admin', 'layout')
 }
 
 // Define/atualiza o link de destino de um banner do patrocinador.
@@ -97,6 +97,6 @@ export async function saveBannerLink(formData: FormData) {
     updated_at: new Date().toISOString(),
   })
   if (error) throw new Error(error.message)
-  revalidatePath('/admin')
+  revalidatePath('/admin', 'layout')
   revalidatePath('/')
 }

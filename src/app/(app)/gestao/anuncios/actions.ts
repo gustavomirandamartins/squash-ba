@@ -29,6 +29,7 @@ export async function createAd(_prev: AdResult | null, formData: FormData): Prom
   if (error) return { error: error.message }
 
   revalidatePath('/gestao/anuncios')
+  revalidatePath('/admin/anuncios')
   revalidatePath('/marketplace')
   return { ok: true }
 }
@@ -38,6 +39,7 @@ export async function toggleAd(id: string, active: boolean): Promise<void> {
   const supabase = await createClient()
   await supabase.from('ads').update({ active }).eq('id', id)
   revalidatePath('/gestao/anuncios')
+  revalidatePath('/admin/anuncios')
   revalidatePath('/marketplace')
 }
 
@@ -46,5 +48,6 @@ export async function deleteAd(id: string): Promise<void> {
   const supabase = await createClient()
   await supabase.from('ads').delete().eq('id', id)
   revalidatePath('/gestao/anuncios')
+  revalidatePath('/admin/anuncios')
   revalidatePath('/marketplace')
 }
