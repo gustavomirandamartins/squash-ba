@@ -232,7 +232,7 @@ export function TeamChallengeView({
         Jogos
       </Link>
 
-      {canManage && <ManageBar id={challenge.id} basePath="/desafios" listPath="/jogos" />}
+      {canManage && <ManageBar id={challenge.id} basePath="/desafios" listPath="/desafios" />}
 
       {/* Hero */}
       <div className="glass glass-card px-4 py-3.5 flex items-center gap-3">

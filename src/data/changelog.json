@@ -1,7 +1,12 @@
 {
-  "count": 127,
-  "lastCommitAt": "202606022147",
+  "count": 128,
+  "lastCommitAt": "202606022150",
   "commits": [
+    {
+      "hash": "87a8987",
+      "subject": "W.O. disponível para todos os participantes da partida",
+      "date": "2026-06-02"
+    },
     {
       "hash": "41e4d05",
       "subject": "Participantes podem encerrar partidas (finalize_match_by_participant)",

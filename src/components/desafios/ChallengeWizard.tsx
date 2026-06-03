@@ -963,7 +963,7 @@ export function ChallengeWizard({ currentUserId, initialName = '' }: Props) {
 
   function back() {
     if (step > 1) setStep((s) => s - 1)
-    else router.push('/jogos')
+    else router.push('/desafios')
   }
 
   function handleSubmit() {
@@ -1020,7 +1020,7 @@ export function ChallengeWizard({ currentUserId, initialName = '' }: Props) {
         })
         if ('error' in result) { setError(result.error); return }
         // Offline → vai para a lista de jogos (card pendente); online → detalhe.
-        router.push(result.queued ? '/jogos' : `/desafios/${result.id}`)
+        router.push(result.queued ? '/desafios' : `/desafios/${result.id}`)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao criar desafio.')
       }

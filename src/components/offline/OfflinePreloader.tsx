@@ -22,7 +22,7 @@ const SESSION_KEY = 'sb-offline-preloaded'
 const CORE_ROUTES = [
   '/',
   '/campeonatos',
-  '/jogos',
+  '/desafios',
   '/comunidade',
   '/mensagens',
   '/campeonatos/novo',

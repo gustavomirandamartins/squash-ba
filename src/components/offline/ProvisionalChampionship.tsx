@@ -56,7 +56,7 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
     return () => window.removeEventListener(OUTBOX_EVENT, onChange)
   }, [reload])
 
-  const backHref = item?.kind === 'desafio' ? '/jogos' : '/campeonatos'
+  const backHref = item?.kind === 'desafio' ? '/desafios' : '/campeonatos'
 
   async function cancel() {
     await removeFromOutbox(tempId)

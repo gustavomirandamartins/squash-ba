@@ -484,7 +484,7 @@ export function ChallengeDetailClient({
       </Link>
 
       {canManage && (
-        <ManageBar id={challenge.id} basePath="/desafios" listPath="/jogos" />
+        <ManageBar id={challenge.id} basePath="/desafios" listPath="/desafios" />
       )}
 
       {/* Hero compacto */}
