@@ -51,6 +51,11 @@ export type ScoreScreenProps = {
   onUpdateSchedule?: (iso: string | null) => Promise<{ error: string | null }>
   /** Segundos já acumulados no cronômetro (modo tempo) — evita reset ao voltar à página */
   initialDuration?: number
+  /**
+   * true  → usuário é organizer/admin → usa finalize_match_manual + pode ver W.O.
+   * false → usuário é só participante → usa finalize_match_by_participant; sem W.O.
+   */
+  isOrganizer?: boolean
   // SSR initial state
   initialGames: GameScore[]
   initialStatus: string
@@ -338,6 +343,7 @@ export function ScoreScreen({
   initialResult,
   initialConflictSnapshot,
   initialDuration,
+  isOrganizer = false,
 }: ScoreScreenProps) {
   const engineConfig: ScoreEngineConfig = {
     sets_to_play: setsToPlay,
@@ -562,6 +568,7 @@ export function ScoreScreen({
   const [tieBreak, setTieBreak] = useState(false) // organizador escolhe (empate total)
 
   // Aplica o resultado escolhido. Garante que o placar parcial esteja salvo antes.
+  // Organizer/admin → finalize_match_manual; participante → finalize_match_by_participant.
   const applyFinish = useCallback(
     async (res: 'lado_a' | 'lado_b' | 'empate') => {
       if (finishing) return
@@ -569,7 +576,8 @@ export function ScoreScreen({
       setFinishError(null)
       try {
         await flushQueue(matchId) // garante placar parcial no servidor
-        const { error } = await supabase.rpc('finalize_match_manual', {
+        const rpc = isOrganizer ? 'finalize_match_manual' : 'finalize_match_by_participant'
+        const { error } = await supabase.rpc(rpc, {
           _match_id: matchId,
           _result: res,
         })
@@ -582,7 +590,7 @@ export function ScoreScreen({
         setFinishing(false)
       }
     },
-    [supabase, matchId, finishing],
+    [supabase, matchId, finishing, isOrganizer],
   )
 
   // Clique em "Encerrar partida": decide se finaliza direto ou abre o modal.
@@ -858,8 +866,8 @@ export function ScoreScreen({
         </div>
       )}
 
-      {/* ── W.O. (disponível em qualquer modo, enquanto editável) ── */}
-      {editable && (
+      {/* ── W.O. (apenas organizer/admin; é decisão administrativa) ── */}
+      {editable && isOrganizer && (
         <div className="glass glass-card px-4 py-3 space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-white/30 text-center">
             W.O. — o adversário não compareceu

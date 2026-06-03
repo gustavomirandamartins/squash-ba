@@ -1,7 +1,12 @@
 {
-  "count": 125,
-  "lastCommitAt": "202606021534",
+  "count": 126,
+  "lastCommitAt": "202606021713",
   "commits": [
+    {
+      "hash": "b53cb34",
+      "subject": "Término antecipado MD3/MD5 + Encerrar partida com modal de incompletas",
+      "date": "2026-06-02"
+    },
     {
       "hash": "4d2e044",
       "subject": "Mostrar e-mail do usuário na lista do painel admin",

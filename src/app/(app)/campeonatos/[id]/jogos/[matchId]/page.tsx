@@ -168,6 +168,7 @@ export default async function CampeonatoScorePage({
       setDrawEnabled={stage?.set_draw_enabled ?? false}
       timeMinutes={stage?.time_minutes ?? null}
       canManage={canManage}
+      isOrganizer={isOrganizer}
       onReopenMatch={isOrganizer ? handleReopenMatch : undefined}
       scheduledAt={(matchRaw as { scheduled_at?: string | null }).scheduled_at ?? null}
       onUpdateSchedule={canManage ? handleUpdateSchedule : undefined}
