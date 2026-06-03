@@ -45,6 +45,8 @@ export type ScoreScreenProps = {
   canManage: boolean
   /** Server Action — reabre partida finalizada (apenas organizers/admins) */
   onReopenMatch?: () => Promise<{ error: string | null }>
+  /** Server Action — limpa todos os dados da partida (placar + cronômetro) (#5) */
+  onClearMatch?: () => Promise<{ error: string | null }>
   /** Data/hora agendada da partida (ISO) ou null */
   scheduledAt?: string | null
   /** Server Action — atualiza a data do jogo (scheduled_at) */
@@ -336,6 +338,7 @@ export function ScoreScreen({
   timeMinutes,
   canManage,
   onReopenMatch,
+  onClearMatch,
   scheduledAt,
   onUpdateSchedule,
   initialGames,
@@ -451,6 +454,31 @@ export function ScoreScreen({
       return () => clearTimeout(t)
     }
   }, [isFinished, backHref, router])
+
+  // Cronômetro iniciado? (gate do placar no modo tempo — #9)
+  const [timerStarted, setTimerStarted] = useState(false)
+
+  // Excluir dados da partida (#5)
+  const [clearing, setClearing] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
+  const [clearError, setClearError] = useState<string | null>(null)
+
+  async function handleClear() {
+    if (!onClearMatch || clearing) return
+    setClearing(true)
+    setClearError(null)
+    try {
+      const res = await onClearMatch()
+      if (res.error) { setClearError(res.error); setClearing(false); return }
+      // Limpa fila local + estado do cronômetro persistido neste dispositivo.
+      await clearQueue(matchId)
+      try { localStorage.removeItem(`court-timer-${matchId}`) } catch { /* ignore */ }
+      window.location.reload()
+    } catch {
+      setClearError('Não foi possível excluir os dados da partida.')
+      setClearing(false)
+    }
+  }
 
   const [reopening, setReopening] = useState(false)
   const [reopenError, setReopenError] = useState<string | null>(null)
@@ -625,9 +653,38 @@ export function ScoreScreen({
     }
   }
 
+  // Desclassificação: vence o outro lado e ANULA o placar parcial (o set que
+  // ficou em quadra não deve aparecer como "1x0" na tabela de jogos). Conta como
+  // vitória/derrota normal (≠ W.O.), por isso usa um RPC dedicado que apaga os
+  // match_games. Organizer/admin → finalize_match_dq; participante → _by_participant.
+  const applyDq = useCallback(
+    async (winner: 'lado_a' | 'lado_b') => {
+      if (finishing) return
+      setFinishing(true)
+      setFinishError(null)
+      try {
+        await flushQueue(matchId)
+        const rpc = isOrganizer ? 'finalize_match_dq' : 'finalize_match_dq_by_participant'
+        const { error } = await supabase.rpc(rpc, { _match_id: matchId, _winner: winner })
+        if (error) { setFinishError(error.message); return }
+        // Limpa a fila local para não re-enviar os games anulados após o DQ.
+        await clearQueue(matchId)
+        setOptimisticStatus('finalizado')
+        setOptimisticResult(winner)
+        setShowFinishModal(false)
+        setTieBreak(false)
+      } catch (e) {
+        setFinishError(e instanceof Error ? e.message : 'Não foi possível desclassificar.')
+      } finally {
+        setFinishing(false)
+      }
+    },
+    [supabase, matchId, finishing, isOrganizer],
+  )
+
   // Desclassificação: vence automaticamente o outro lado, independente do placar.
   function handleDisqualify(side: 'a' | 'b') {
-    void applyFinish(side === 'a' ? 'lado_b' : 'lado_a')
+    void applyDq(side === 'a' ? 'lado_b' : 'lado_a')
   }
 
   // Interrompida com placar parcial: vence quem tem mais sets; empate em sets →
@@ -744,12 +801,15 @@ export function ScoreScreen({
             <CourtTimer
               initialSeconds={initialDuration ?? 0}
               initialStopped={isFinished}
+              storageKey={matchId}
+              timeMinutes={timeMinutes}
               onPause={handleTimerPause}
               onStop={handleTimerStop}
+              onStartedChange={setTimerStarted}
             />
           </div>
 
-          {/* Placares para modo tempo */}
+          {/* Placares para modo tempo — só habilita após iniciar o cronômetro (#9) */}
           <div className="glass glass-card px-4 py-4">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-white/25 text-center mb-3">
               Placar{timeMinutes ? ` · ${timeMinutes} min` : ''}
@@ -762,7 +822,7 @@ export function ScoreScreen({
                 avatarUrl={sideA.avatarUrl}
                 onIncrement={() => void increment('a')}
                 onDecrement={() => void decrement('a')}
-                disabled={!editable}
+                disabled={!editable || !timerStarted}
                 isWinner={winnerA}
               />
               <div className="flex items-center shrink-0 self-center">
@@ -775,11 +835,55 @@ export function ScoreScreen({
                 avatarUrl={sideB.avatarUrl}
                 onIncrement={() => void increment('b')}
                 onDecrement={() => void decrement('b')}
-                disabled={!editable}
+                disabled={!editable || !timerStarted}
                 isWinner={winnerB}
               />
             </div>
+            {editable && !timerStarted && (
+              <p className="mt-3 text-center text-[11px] text-white/35">
+                Inicie o cronômetro para lançar o placar.
+              </p>
+            )}
           </div>
+
+          {/* Excluir dados da partida (#5) — relançar do zero */}
+          {onClearMatch && canManage && (
+            confirmClear ? (
+              <div className="glass glass-card px-4 py-3 space-y-2.5">
+                <p className="text-xs text-white/70">
+                  Excluir o placar e o tempo desta partida? Ela volta ao estado inicial para ser refeita.
+                </p>
+                {clearError && <p className="text-[11px] text-red-400">{clearError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={clearing}
+                    onClick={() => void handleClear()}
+                    className="flex-1 rounded-xl bg-red-500/90 px-3 py-2 text-xs font-bold text-white transition active:scale-95 disabled:opacity-50"
+                  >
+                    {clearing ? 'Excluindo…' : 'Sim, excluir'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={clearing}
+                    onClick={() => setConfirmClear(false)}
+                    className="rounded-xl bg-white/[0.06] px-3 py-2 text-xs font-semibold text-white/65 transition active:scale-95"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setClearError(null); setConfirmClear(true) }}
+                className="w-full flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] py-3 text-xs font-semibold text-white/55 transition hover:bg-white/[0.08] hover:text-white/75 active:scale-95"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Excluir dados da partida
+              </button>
+            )
+          )}
         </div>
       ) : (
         /* ── Modo SETS / PONTOS: tap zones por set ── */
@@ -1013,6 +1117,18 @@ export function ScoreScreen({
                       Vence quem tem mais {isSets ? 'sets (empate → mais pontos)' : 'pontos'}
                     </span>
                   </button>
+                  {/* Empate só quando a fase permite empate */}
+                  {setDrawEnabled && (
+                    <button
+                      type="button"
+                      disabled={finishing}
+                      onClick={() => void applyFinish('empate')}
+                      className="w-full rounded-2xl bg-white/[0.05] px-4 py-3 text-left transition hover:bg-white/[0.09] active:scale-[0.98] disabled:opacity-40"
+                    >
+                      <span className="block text-sm font-semibold text-white">Empate</span>
+                      <span className="block text-[11px] text-white/45">A partida termina empatada</span>
+                    </button>
+                  )}
                 </div>
               </>
             ) : (
@@ -1020,9 +1136,22 @@ export function ScoreScreen({
                 <div className="text-center space-y-1.5">
                   <p className="text-sm font-bold text-white">Empate técnico</p>
                   <p className="text-xs leading-relaxed text-white/50">
-                    {isSets ? 'Sets e pontos empatados.' : 'Pontos empatados.'} Como organizador, escolha o vencedor.
+                    {isSets ? 'Sets e pontos empatados.' : 'Pontos empatados.'}{' '}
+                    {setDrawEnabled
+                      ? 'Registre como empate ou escolha o vencedor.'
+                      : 'Como organizador, escolha o vencedor.'}
                   </p>
                 </div>
+                {setDrawEnabled && (
+                  <button
+                    type="button"
+                    disabled={finishing}
+                    onClick={() => void applyFinish('empate')}
+                    className="w-full rounded-2xl bg-white/[0.06] px-3 py-2.5 text-xs font-semibold text-white transition active:scale-95 disabled:opacity-40"
+                  >
+                    Registrar empate
+                  </button>
+                )}
                 <div className="flex gap-2">
                   <button
                     type="button"

@@ -34,6 +34,17 @@ export async function revokeOrganizer(targetUserId: string): Promise<{ error: st
   return { error: null }
 }
 
+// Concede o papel de professor (organizer) a um jogador sem solicitação prévia.
+export async function grantOrganizer(targetUserId: string): Promise<{ error: string | null }> {
+  const ctx = await requireAdmin()
+  if (!ctx.ok) return { error: ctx.error }
+  const { error } = await ctx.supabase.rpc('grant_organizer_role', { target_user_id: targetUserId })
+  if (error) return { error: error.message }
+  revalidatePath('/admin', 'layout')
+  revalidatePath('/')
+  return { error: null }
+}
+
 // Exclui um usuário cadastrado (auth.users → cascateia profiles/roles/etc).
 // Usa o Admin client (service key, server-only). Bloqueia auto-exclusão e
 // exclusão de outros admins.

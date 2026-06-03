@@ -66,6 +66,26 @@ export async function reopenMatchByParticipant(matchId: string): Promise<{ error
 }
 
 /**
+ * Limpa os dados da partida (#5): apaga o placar/games, zera o cronômetro e
+ * volta a partida para 'agendado' — permitindo relançar do zero. Permitido a
+ * organizadores e a participantes da partida (via RPC security definer).
+ */
+export async function clearMatchData(matchId: string): Promise<{ error: string | null }> {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Não autenticado.' }
+
+  const { error } = await supabase.rpc('reset_match_data', { _match_id: matchId })
+  if (error) return { error: error.message }
+
+  revalidatePath('/', 'layout')
+  return { error: null }
+}
+
+/**
  * Atualiza a data/hora agendada de uma partida (scheduled_at).
  * Quem pode gerir o jogo (organizer ou participante) pode editar.
  * `iso` deve ser uma string ISO (ex.: '2026-05-30T14:00:00.000Z') ou null.

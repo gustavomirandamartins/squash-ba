@@ -3,121 +3,218 @@
 /**
  * CourtTimer — cronômetro para jogos por tempo.
  *
+ * Persistência (#7): o estado é gravado em localStorage por partida com um
+ * relógio de parede (startedAt). Se o usuário fecha ou volta à página com o
+ * cronômetro rodando, ele CONTINUA contando — o tempo decorrido é recalculado
+ * a partir de `startedAt`, em vez de zerar.
+ *
  * Props:
- *   initialSeconds  — segundos já acumulados (p/ retomar um jogo iniciado)
- *   onTick(s)       — chamado a cada segundo com total acumulado
- *   onStop(s)       — chamado ao encerrar com total acumulado
+ *   initialSeconds   — segundos já acumulados no servidor (duration_seconds)
+ *   storageKey       — chave única por partida (ex.: matchId)
+ *   timeMinutes      — tempo estipulado; dispara o alerta de tempo esgotado (#8)
+ *   onTick(s)        — total acumulado a cada segundo (p/ salvar no servidor)
+ *   onPause(s)       — ao pausar, total acumulado
+ *   onStop(s)        — ao encerrar, total acumulado
+ *   onStartedChange  — informa quando o cronômetro foi iniciado (gate do placar #9)
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Play, Pause, Square } from 'lucide-react'
+import { Play, Pause, Square, AlarmClock } from 'lucide-react'
 
 export type CourtTimerProps = {
   initialSeconds?: number
-  /** Inicia já no estado "encerrado" (partida já finalizada ao carregar) */
   initialStopped?: boolean
+  storageKey?: string
+  timeMinutes?: number | null
   onTick?: (seconds: number) => void
-  /** Chamado ao pausar com total acumulado (permite salvar progresso) */
   onPause?: (seconds: number) => void
   onStop: (seconds: number) => void
+  onStartedChange?: (started: boolean) => void
 }
+
+type Persisted = { base: number; startedAt: number | null; stopped: boolean }
 
 function formatTime(s: number): string {
-  const m = Math.floor(s / 60)
-  const sec = s % 60
-  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+  const neg = s < 0
+  const abs = Math.abs(s)
+  const m = Math.floor(abs / 60)
+  const sec = abs % 60
+  return `${neg ? '-' : ''}${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 }
 
-export function CourtTimer({ initialSeconds = 0, initialStopped = false, onTick, onPause, onStop }: CourtTimerProps) {
-  const [seconds, setSeconds] = useState(initialSeconds)
-  const [running, setRunning] = useState(false)
+export function CourtTimer({
+  initialSeconds = 0,
+  initialStopped = false,
+  storageKey,
+  timeMinutes,
+  onTick,
+  onPause,
+  onStop,
+  onStartedChange,
+}: CourtTimerProps) {
+  const lsKey = storageKey ? `court-timer-${storageKey}` : null
+
+  // Estado base persistido. Carrega do localStorage (estado mais recente neste
+  // dispositivo) e cai para o valor do servidor quando não há nada salvo.
+  const [base, setBase] = useState(initialSeconds)
+  const [startedAt, setStartedAt] = useState<number | null>(null)
   const [stopped, setStopped] = useState(initialStopped)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const secondsRef = useRef(initialSeconds)
+  // `now` força o recálculo do display a cada segundo enquanto roda.
+  const [now, setNow] = useState(() => Date.now())
+  const hydratedRef = useRef(false)
+  const overNotifiedRef = useRef(false)
 
-  // Sincroniza ref para acessar no callback sem closure stale
+  // ── Hidratação inicial (uma vez) ───────────────────────────────────────────
   useEffect(() => {
-    secondsRef.current = seconds
-  }, [seconds])
-
-  const startInterval = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    intervalRef.current = setInterval(() => {
-      setSeconds((prev) => {
-        const next = prev + 1
-        secondsRef.current = next
-        onTick?.(next)
-        return next
-      })
-    }, 1000)
-  }, [onTick])
-
-  const stopInterval = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
+    if (hydratedRef.current) return
+    hydratedRef.current = true
+    if (!lsKey || initialStopped) {
+      setBase(initialSeconds)
+      setStopped(initialStopped)
+      return
     }
-  }, [])
+    try {
+      const raw = localStorage.getItem(lsKey)
+      if (raw) {
+        const p = JSON.parse(raw) as Persisted
+        // usa o maior entre servidor e localStorage como base mínima
+        setBase(Math.max(p.base ?? 0, initialSeconds))
+        setStartedAt(p.startedAt ?? null)
+        setStopped(p.stopped ?? false)
+        return
+      }
+    } catch {
+      /* ignore */
+    }
+    setBase(initialSeconds)
+  }, [lsKey, initialSeconds, initialStopped])
 
-  // Cleanup on unmount
-  useEffect(() => () => stopInterval(), [stopInterval])
+  const persist = useCallback(
+    (next: Persisted) => {
+      if (!lsKey) return
+      try {
+        if (next.stopped) localStorage.removeItem(lsKey)
+        else localStorage.setItem(lsKey, JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+    },
+    [lsKey],
+  )
 
+  const running = startedAt !== null && !stopped
+  const seconds = base + (startedAt !== null ? Math.floor((now - startedAt) / 1000) : 0)
+  const secondsRef = useRef(seconds)
+  useEffect(() => { secondsRef.current = seconds }, [seconds])
+
+  // Informa o "iniciado" para o gate do placar (#9): rodando ou já tem tempo.
+  useEffect(() => {
+    onStartedChange?.(running || seconds > 0 || stopped)
+  }, [running, seconds, stopped, onStartedChange])
+
+  // ── Tick: re-renderiza a cada segundo enquanto roda + onTick p/ salvar ──────
+  useEffect(() => {
+    if (!running) return
+    const id = setInterval(() => {
+      setNow(Date.now())
+      onTick?.(secondsRef.current)
+    }, 1000)
+    return () => clearInterval(id)
+  }, [running, onTick])
+
+  // ── Alerta de tempo esgotado (#8): vibra uma vez ao ultrapassar ─────────────
+  const limit = timeMinutes && timeMinutes > 0 ? timeMinutes * 60 : null
+  const overtime = limit !== null && seconds >= limit && !stopped
+  useEffect(() => {
+    if (overtime && !overNotifiedRef.current) {
+      overNotifiedRef.current = true
+      try {
+        navigator.vibrate?.([180, 80, 180])
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!overtime) overNotifiedRef.current = false
+  }, [overtime])
+
+  // ── Controles ───────────────────────────────────────────────────────────────
   const handleStart = () => {
     if (stopped) return
-    setRunning(true)
-    startInterval()
+    const at = Date.now()
+    setStartedAt(at)
+    setNow(at)
+    persist({ base, startedAt: at, stopped: false })
+    onStartedChange?.(true)
   }
 
   const handlePause = () => {
-    setRunning(false)
-    stopInterval()
-    onPause?.(secondsRef.current)
+    const acc = base + (startedAt !== null ? Math.floor((Date.now() - startedAt) / 1000) : 0)
+    setBase(acc)
+    setStartedAt(null)
+    persist({ base: acc, startedAt: null, stopped: false })
+    onPause?.(acc)
   }
 
   const handleStop = () => {
-    stopInterval()
-    setRunning(false)
+    const acc = base + (startedAt !== null ? Math.floor((Date.now() - startedAt) / 1000) : 0)
+    setBase(acc)
+    setStartedAt(null)
     setStopped(true)
-    onStop(secondsRef.current)
+    persist({ base: acc, startedAt: null, stopped: true })
+    onStop(acc)
   }
+
+  const ringClass = stopped
+    ? 'ring-white/10'
+    : overtime
+      ? 'ring-red-500/70 shadow-[0_0_32px_rgba(239,68,68,0.25)]'
+      : running
+        ? 'ring-secondary/60 shadow-[0_0_32px_rgba(205,253,81,0.25)]'
+        : 'ring-white/15'
+
+  const numColor = stopped
+    ? 'text-white/30'
+    : overtime
+      ? 'text-red-400'
+      : running
+        ? 'text-secondary'
+        : 'text-white/70'
 
   return (
     <div className="flex flex-col items-center gap-5">
       {/* Display MM:SS */}
       <div className="relative">
-        {/* Anel de progresso visual */}
         <div
-          className={[
-            'h-36 w-36 rounded-full grid place-items-center',
-            'ring-4 transition-all duration-500',
-            running
-              ? 'ring-secondary/60 shadow-[0_0_32px_rgba(205,253,81,0.25)]'
-              : stopped
-                ? 'ring-white/10'
-                : 'ring-white/15',
-          ].join(' ')}
+          className={['h-36 w-36 rounded-full grid place-items-center ring-4 transition-all duration-500', ringClass].join(' ')}
           style={{
-            background: running
-              ? 'radial-gradient(circle, rgba(205,253,81,0.06) 0%, transparent 70%)'
-              : 'transparent',
+            background: overtime
+              ? 'radial-gradient(circle, rgba(239,68,68,0.07) 0%, transparent 70%)'
+              : running
+                ? 'radial-gradient(circle, rgba(205,253,81,0.06) 0%, transparent 70%)'
+                : 'transparent',
           }}
         >
-          <span
-            className={[
-              'font-black tabular-nums tracking-tight transition-colors duration-300',
-              'text-4xl',
-              running ? 'text-secondary' : stopped ? 'text-white/30' : 'text-white/70',
-            ].join(' ')}
-          >
+          <span className={['font-black tabular-nums tracking-tight transition-colors duration-300 text-4xl', numColor].join(' ')}>
             {formatTime(seconds)}
           </span>
         </div>
-
-        {/* Live indicator */}
-        {running && (
+        {running && !overtime && (
           <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-secondary animate-pulse" />
         )}
+        {overtime && (
+          <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" />
+        )}
       </div>
+
+      {/* Alerta de tempo esgotado (#8) */}
+      {overtime && (
+        <div className="flex items-center gap-1.5 rounded-full bg-red-500/15 px-3 py-1.5 ring-1 ring-red-500/30">
+          <AlarmClock className="h-3.5 w-3.5 text-red-400" />
+          <span className="text-[11px] font-semibold text-red-400">
+            Tempo esgotado{limit ? ` · ${timeMinutes} min` : ''} — encerre a partida
+          </span>
+        </div>
+      )}
 
       {/* Controles */}
       {!stopped ? (

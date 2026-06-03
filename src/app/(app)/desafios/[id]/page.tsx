@@ -4,6 +4,7 @@ import {
   ChallengeDetailClient,
   type ChallengeParticipant,
   type ChallengeMatch,
+  type ChallengeStanding,
 } from '@/components/desafios/ChallengeDetailClient'
 import {
   TeamChallengeView,
@@ -212,6 +213,28 @@ export default async function DesafioPage({
     avatar_url: p.avatar_url,
   }))
 
+  // Classificação (Pts/V/E/D/sets…) — desafio é uma linha de championships, então
+  // get_standings funciona igual aos campeonatos. Também montamos offlineData para
+  // recálculo ao vivo sem rede (espelha a lógica do servidor).
+  const { data: standingsRaw } = await supabase.rpc('get_standings', { _championship_id: id })
+  const initialStandings = (standingsRaw ?? []) as ChallengeStanding[]
+
+  const participantAvatars: Record<string, string | null> = {}
+  for (const p of resolved) participantAvatars[p.id] = p.avatar_url
+
+  const confirmed = resolved.filter((p) => p.enrollment_status === 'confirmado')
+  const offlineData = {
+    matches: (matchesRaw ?? []).map((m) => ({
+      id: m.id,
+      side_a_participant_id: m.side_a_participant_id ?? null,
+      side_b_participant_id: m.side_b_participant_id ?? null,
+      match_games: (m.match_games as { game_number: number; score_a: number; score_b: number }[]) ?? [],
+    })),
+    participants: confirmed.map((p) => ({ id: p.id, name: p.full_name })),
+    stage: stageCfg,
+    champ: champCfg,
+  }
+
   const matches: ChallengeMatch[] = (matchesRaw ?? []).map((m) => {
     const s = setScore(m)
     return {
@@ -250,6 +273,9 @@ export default async function DesafioPage({
       isCreator={isCreator}
       canManage={canManage}
       stage={stageCfg}
+      initialStandings={initialStandings}
+      participantAvatars={participantAvatars}
+      offlineData={offlineData}
     />
   )
 }

@@ -3,7 +3,7 @@
 import { useState, useMemo, useTransition } from 'react'
 import Image from 'next/image'
 import { User, Search, ShieldCheck, GraduationCap, Trash2, X, AlertTriangle } from 'lucide-react'
-import { revokeOrganizer, deleteUser } from '@/app/admin/actions'
+import { revokeOrganizer, grantOrganizer, deleteUser } from '@/app/admin/actions'
 
 export type AdminUser = {
   id: string
@@ -92,6 +92,15 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
     })
   }
 
+  function handleGrant() {
+    setError(null)
+    startTransition(async () => {
+      const r = await grantOrganizer(user.id)
+      if (r.error) { setError(r.error); return }
+      setRole('organizer')
+    })
+  }
+
   function handleDelete() {
     setError(null)
     startTransition(async () => {
@@ -133,6 +142,18 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
                 className="grid h-8 w-8 place-items-center rounded-xl border border-white/12 text-white/50 transition hover:bg-white/8 hover:text-white/80 active:scale-90 disabled:opacity-40"
               >
                 <GraduationCap className="h-4 w-4" />
+              </button>
+            )}
+            {role === 'jogador' && (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={handleGrant}
+                title="Tornar professor"
+                className="flex h-8 items-center gap-1 rounded-xl border border-secondary/30 px-2.5 text-[11px] font-semibold text-secondary transition hover:bg-secondary/10 active:scale-90 disabled:opacity-40"
+              >
+                <GraduationCap className="h-4 w-4" />
+                Tornar professor
               </button>
             )}
             <button

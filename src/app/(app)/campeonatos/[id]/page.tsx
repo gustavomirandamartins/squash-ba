@@ -143,6 +143,15 @@ export default async function ChampionshipPage({
   })
   const initialStandings = (standingsRaw ?? []) as Standing[]
 
+  // Classificação da fase de GRUPOS (escopada — não soma a eliminatória, fix #13).
+  let initialGroupStandings: Standing[] = initialStandings
+  if (champ.format === 'grupos_elim') {
+    const { data: groupStandingsRaw } = await supabase.rpc('get_group_standings', {
+      _championship_id: id,
+    })
+    initialGroupStandings = (groupStandingsRaw ?? []) as Standing[]
+  }
+
   // ── 9. Conversa de grupo do campeonato ───────────────────────────────────
   let groupConversationId: string | null = null
   if (champ.status === 'ativo') {
@@ -227,6 +236,7 @@ export default async function ChampionshipPage({
       participantInfo={participantInfo}
       canManage={canManage}
       initialStandings={initialStandings}
+      initialGroupStandings={initialGroupStandings}
       currentUserParticipantId={currentUserParticipantId}
       groups={groups}
       participantGroups={participantGroups}

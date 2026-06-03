@@ -153,7 +153,7 @@ export function OfflineSync() {
 
   return (
     <div className="pointer-events-none fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-4 z-50 landscape-sm:left-20 lg:bottom-5">
-      <div className="glass glass-pill pointer-events-auto flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white/80">
+      <div className="glass glass-pill glass-overlay pointer-events-auto flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white/80">
         {syncing ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin text-secondary" />
         ) : (

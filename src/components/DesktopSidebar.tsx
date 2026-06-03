@@ -10,6 +10,7 @@ import { usePathname } from 'next/navigation'
 import { Home, Trophy, Store, Users, MessageSquare, CircleHelp, type LucideIcon } from 'lucide-react'
 import { Logo } from './Logo'
 import { UserAvatarMenu } from './UserAvatarMenu'
+import { NotificationsBell } from './NotificationsBell'
 import { useUnreadCount } from '@/lib/use-unread-count'
 
 interface Item {
@@ -103,6 +104,7 @@ export function DesktopSidebar({ name, avatarUrl, isAdmin, canManage, userId }: 
             {isAdmin ? 'Administrador' : canManage ? 'Professor' : 'Jogador'}
           </p>
         </div>
+        <NotificationsBell userId={userId ?? null} openUp />
       </div>
     </aside>
   )

@@ -10,6 +10,7 @@ import { StandingsTable, type Standing } from './StandingsTable'
 import { BracketView } from './BracketView'
 import { GroupsView, type Group } from './GroupsView'
 import { StatsTab } from './StatsTab'
+import { Podium, type PodiumPlace } from '@/components/Podium'
 import { ManageBar } from '@/components/ManageBar'
 import { activateChampionship } from '@/app/(app)/campeonatos/manage-actions'
 
@@ -79,6 +80,8 @@ type Props = {
   participantInfo: Record<string, ParticipantInfo>
   canManage: boolean
   initialStandings: Standing[]
+  /** classificação escopada à fase de grupos (grupos_elim); fix #13 */
+  initialGroupStandings?: Standing[]
   currentUserParticipantId: string | null
   // grupos_elim specific
   groups?: Group[]
@@ -328,11 +331,14 @@ export function ChampionshipDetailClient({
   participantInfo,
   canManage,
   initialStandings,
+  initialGroupStandings,
   currentUserParticipantId,
   groups = [],
   participantGroups = {},
   groupConversationId = null,
 }: Props) {
+  // Classificação da fase de grupos (escopada). Fallback p/ a geral se não vier.
+  const groupStandings = initialGroupStandings ?? initialStandings
   const isElim       = champ.format === 'eliminatoria'
   const isGruposElim = champ.format === 'grupos_elim'
 
@@ -366,48 +372,71 @@ export function ChampionshipDetailClient({
 
   // ── participantGroupLabels for BracketView ─────────────────────────────────
   const participantGroupLabels = useMemo<Record<string, string>>(() => {
-    if (!isGruposElim || !groups.length || !initialStandings.length) return {}
+    if (!isGruposElim || !groups.length || !groupStandings.length) return {}
     const result: Record<string, string> = {}
     for (const group of groups) {
-      const groupStandings = initialStandings
+      const ordered = groupStandings
         .filter((s) => participantGroups[s.participant_id] === group.id)
         .sort((a, b) => a.position - b.position)
-      groupStandings.forEach((s, idx) => {
+      ordered.forEach((s, idx) => {
         result[s.participant_id] = `${idx + 1}º Gr. ${group.name}`
       })
     }
     return result
-  }, [isGruposElim, groups, initialStandings, participantGroups])
+  }, [isGruposElim, groups, groupStandings, participantGroups])
 
   // ── avatarUrl por participantId ────────────────────────────────────────────
   const participantAvatars: Record<string, string | null> = Object.fromEntries(
     Object.entries(participantInfo).map(([id, info]) => [id, info.avatar_url]),
   )
 
-  // ── Campeão (só quando campeonato encerrado) ───────────────────────────────
-  const champion = useMemo<{ name: string | null; avatarUrl: string | null } | null>(() => {
-    if (champ.status !== 'encerrado') return null
-    if (!isElim && !isGruposElim) {
-      // Liga: 1º lugar nas classificações
-      const top = initialStandings[0]
-      if (!top) return null
-      const info = participantInfo[top.participant_id]
-      return { name: top.display_name ?? info?.full_name ?? null, avatarUrl: info?.avatar_url ?? null }
+  // ── Pódio (só quando campeonato encerrado) ─────────────────────────────────
+  // Liga → top 3 das classificações. Eliminatória/Grupos+Elim → campeão e vice
+  // (vencedor/perdedor da final) + 3º lugar (vencedor da disputa de bronze).
+  const podium = useMemo<PodiumPlace[]>(() => {
+    if (champ.status !== 'encerrado') return []
+    const placeOf = (id: string | null, position: 1 | 2 | 3): PodiumPlace | null => {
+      if (!id) return null
+      const info = participantInfo[id]
+      return { position, name: info?.full_name ?? null, avatarUrl: info?.avatar_url ?? null }
     }
-    // Eliminatória / Grupos+Elim: vencedor da final (maior rodada, bracket_slot>0, não é bronze)
+
+    if (!isElim && !isGruposElim) {
+      // Liga: top 3 das classificações
+      return initialStandings.slice(0, 3).map((row, idx) => {
+        const info = participantInfo[row.participant_id]
+        return {
+          position: (idx + 1) as 1 | 2 | 3,
+          name: row.display_name ?? info?.full_name ?? null,
+          avatarUrl: info?.avatar_url ?? null,
+        }
+      })
+    }
+
+    // Eliminatória / Grupos+Elim
     const stId = isGruposElim ? (elimStage?.id ?? null) : stage?.id
-    const finalMatches = matches
-      .filter((m) => m.status === 'finalizado' && m.bracket_slot !== -2 && (stId ? m.stage_id === stId : true))
-    if (!finalMatches.length) return null
-    const maxRound = Math.max(...finalMatches.map((m) => m.round))
-    const finalMatch = finalMatches.find((m) => m.round === maxRound)
-    if (!finalMatch || !finalMatch.result) return null
-    const winnerId = finalMatch.result === 'lado_a'
-      ? finalMatch.side_a_participant_id
-      : finalMatch.side_b_participant_id
-    if (!winnerId) return null
-    const info = participantInfo[winnerId]
-    return { name: info?.full_name ?? null, avatarUrl: info?.avatar_url ?? null }
+    const bracketMatchesDone = matches.filter(
+      (m) => m.status === 'finalizado' && (m.bracket_slot ?? 0) > 0 && (stId ? m.stage_id === stId : true),
+    )
+    if (!bracketMatchesDone.length) return []
+    const maxRound = Math.max(...bracketMatchesDone.map((m) => m.round))
+    const finalMatch = bracketMatchesDone.find((m) => m.round === maxRound)
+    if (!finalMatch || !finalMatch.result) return []
+
+    const winnerId = finalMatch.result === 'lado_a' ? finalMatch.side_a_participant_id : finalMatch.side_b_participant_id
+    const loserId  = finalMatch.result === 'lado_a' ? finalMatch.side_b_participant_id : finalMatch.side_a_participant_id
+
+    const places: PodiumPlace[] = []
+    const first = placeOf(winnerId, 1); if (first) places.push(first)
+    const second = placeOf(loserId, 2); if (second) places.push(second)
+
+    // 3º lugar: vencedor da disputa de bronze (bracket_slot = -2)
+    const bronze = matches.find((m) => m.bracket_slot === -2 && m.status === 'finalizado' && m.result)
+    if (bronze) {
+      const bronzeWinner = bronze.result === 'lado_a' ? bronze.side_a_participant_id : bronze.side_b_participant_id
+      const third = placeOf(bronzeWinner, 3); if (third) places.push(third)
+    }
+    return places
   }, [champ.status, isElim, isGruposElim, initialStandings, matches, participantInfo, stage, elimStage])
 
   // ── Cache da estrutura p/ uso OFFLINE (abrir jogos + lançar placar) ─────────
@@ -643,25 +672,8 @@ export function ChampionshipDetailClient({
         </div>
       </div>
 
-      {/* ── Banner de campeão ── */}
-      {champion && (
-        <div className="glass glass-card px-4 py-4 flex items-center gap-3 border border-secondary/30 bg-secondary/5">
-          <div className="h-11 w-11 rounded-full shrink-0 grid place-items-center bg-secondary/20 ring-2 ring-secondary/40 overflow-hidden">
-            {champion.avatarUrl ? (
-              <img src={champion.avatarUrl} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <Trophy className="h-5 w-5 text-secondary" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-secondary/70">Campeão</p>
-            <p className="text-base font-black text-secondary truncate leading-snug mt-0.5">
-              {champion.name ?? 'Vencedor'}
-            </p>
-          </div>
-          <Trophy className="h-6 w-6 text-secondary/50 shrink-0" />
-        </div>
-      )}
+      {/* ── Pódio (campeão / vice / 3º lugar) ── */}
+      {podium.length > 0 && <Podium places={podium} />}
 
       {/* TabBar */}
       <div className="glass glass-pill p-1 flex gap-0.5">
@@ -688,7 +700,7 @@ export function ChampionshipDetailClient({
             champStatus={champ.status}
             groups={groups}
             participantGroups={participantGroups}
-            initialStandings={initialStandings}
+            initialStandings={groupStandings}
             participantInfo={participantInfo}
             participantAvatars={participantAvatars}
             currentUserParticipantId={currentUserParticipantId}

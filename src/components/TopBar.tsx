@@ -5,15 +5,17 @@ import Link from 'next/link'
 import { Logo } from './Logo'
 import { UserAvatarMenu } from './UserAvatarMenu'
 import { SearchDropdown } from './SearchDropdown'
+import { NotificationsBell } from './NotificationsBell'
 
 interface Props {
   name?: string | null
   avatarUrl?: string | null
   isAdmin?: boolean
   canManage?: boolean
+  userId?: string | null
 }
 
-export function TopBar({ name, avatarUrl, isAdmin, canManage }: Props) {
+export function TopBar({ name, avatarUrl, isAdmin, canManage, userId }: Props) {
   const [searchOpen, setSearchOpen] = useState(false)
 
   return (
@@ -89,7 +91,8 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage }: Props) {
         {/* Col 5 — Avatar menu (no desktop fica no rail → conteúdo oculto, mas a
             célula do grid permanece p/ não deslocar a busca). */}
         <div>
-          <div className="lg:hidden">
+          <div className="flex items-center gap-2 lg:hidden">
+            <NotificationsBell userId={userId ?? null} />
             <UserAvatarMenu
               name={name}
               avatarUrl={avatarUrl}

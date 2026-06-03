@@ -6,7 +6,9 @@ import Image from 'next/image'
 import { ChevronLeft, ChevronRight, Clock, Swords, User, Check, X } from 'lucide-react'
 import { ManageBar } from '@/components/ManageBar'
 import { getQueuedGames } from '@/lib/score-engine/SyncEngine'
-import { resolveMatch, mergeGames, type StageCfg } from '@/lib/standings/compute'
+import { resolveMatch, mergeGames, type StageCfg, type ChampCfg, type ParticipantRef } from '@/lib/standings/compute'
+import { StandingsTable, type Standing } from '@/components/campeonatos/StandingsTable'
+import { Podium, type PodiumPlace } from '@/components/Podium'
 import { createClient } from '@/utils/supabase/client'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -40,6 +42,21 @@ export type ChallengeData = {
   rounds: number
 }
 
+/** Linha de classificação (mesma forma do get_standings). */
+export type ChallengeStanding = Standing
+
+type ChallengeOfflineData = {
+  matches: Array<{
+    id: string
+    side_a_participant_id: string | null
+    side_b_participant_id: string | null
+    match_games: Array<{ game_number: number; score_a: number; score_b: number }>
+  }>
+  participants: ParticipantRef[]
+  stage: StageCfg
+  champ: ChampCfg
+}
+
 type Props = {
   challenge: ChallengeData
   participants: ChallengeParticipant[]
@@ -49,6 +66,12 @@ type Props = {
   canManage?: boolean
   /** config da fase p/ recálculo offline ao vivo (opcional) */
   stage?: StageCfg
+  /** classificação inicial (SSR via get_standings) */
+  initialStandings?: ChallengeStanding[]
+  /** avatarUrl por participantId */
+  participantAvatars?: Record<string, string | null>
+  /** dados p/ recálculo offline da classificação */
+  offlineData?: ChallengeOfflineData
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -326,10 +349,18 @@ function Active1v1({
   challenge,
   participants,
   matches,
+  currentUserParticipantId,
+  initialStandings,
+  participantAvatars,
+  offlineData,
 }: {
   challenge: ChallengeData
   participants: ChallengeParticipant[]
   matches: ChallengeMatch[]
+  currentUserParticipantId: string | null
+  initialStandings: ChallengeStanding[]
+  participantAvatars: Record<string, string | null>
+  offlineData?: ChallengeOfflineData
 }) {
   const [tab, setTab] = useState<TabId>('jogos')
   const pA = participants[0]
@@ -350,8 +381,21 @@ function Active1v1({
   const total = matches.length
   const threshold = Math.ceil(challenge.rounds / 2)
 
+  // Campeão do desafio (só quando encerrado): quem venceu mais partidas.
+  const champ: PodiumPlace[] =
+    challenge.status === 'encerrado' && winsA !== winsB
+      ? [{
+          position: 1,
+          name: (winsA > winsB ? pA : pB)?.full_name ?? null,
+          avatarUrl: (winsA > winsB ? pA : pB)?.avatar_url ?? null,
+        }]
+      : []
+
   return (
     <div className="space-y-4">
+      {/* Campeão */}
+      {champ.length > 0 && <Podium places={champ} />}
+
       {/* Mini placar do desafio */}
       <div className="glass glass-card px-5 py-4">
         <div className="flex items-center gap-3">
@@ -418,10 +462,14 @@ function Active1v1({
 
       {tab === 'estatisticas' && (
         <div className="reveal">
-          <div className="glass glass-card px-4 py-10 text-center space-y-1.5">
-            <p className="text-sm font-medium text-white/35">Estatísticas</p>
-            <p className="text-xs text-white/20">Disponível após as primeiras partidas.</p>
-          </div>
+          <StandingsTable
+            championshipId={challenge.id}
+            champStatus={challenge.status}
+            initialStandings={initialStandings}
+            currentUserParticipantId={currentUserParticipantId}
+            participantAvatars={participantAvatars}
+            offlineData={offlineData}
+          />
         </div>
       )}
     </div>
@@ -437,6 +485,9 @@ export function ChallengeDetailClient({
   currentUserParticipantId,
   canManage = false,
   stage,
+  initialStandings = [],
+  participantAvatars = {},
+  offlineData,
 }: Props) {
   const badge = CHAMP_STATUS[challenge.status] ?? CHAMP_STATUS.rascunho
   const isPending = challenge.status === 'rascunho'
@@ -520,11 +571,16 @@ export function ChallengeDetailClient({
           currentUserParticipantId={currentUserParticipantId}
         />
       )}
-      {isActive && (
-        <Active1v1 challenge={challenge} participants={participants} matches={effectiveMatches} />
-      )}
-      {challenge.status === 'encerrado' && (
-        <Active1v1 challenge={challenge} participants={participants} matches={effectiveMatches} />
+      {(isActive || challenge.status === 'encerrado') && (
+        <Active1v1
+          challenge={challenge}
+          participants={participants}
+          matches={effectiveMatches}
+          currentUserParticipantId={currentUserParticipantId}
+          initialStandings={initialStandings}
+          participantAvatars={participantAvatars}
+          offlineData={offlineData}
+        />
       )}
     </div>
   )

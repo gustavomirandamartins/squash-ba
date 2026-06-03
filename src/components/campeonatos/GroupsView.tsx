@@ -11,6 +11,17 @@ import { useOfflineStandings, type OfflineStandingsInput } from '@/lib/standings
 
 export type Group = { id: string; name: string }
 
+// Grid da linha do grupo. Compacto no portrait (6 colunas); em landscape (phone)
+// ou telas largas (lg) revela as colunas completas como nas ligas — fix #12.
+const GROUP_ROW =
+  'grid items-center' +
+  ' grid-cols-[1rem_1fr_2rem_1.5rem_1.5rem_1.5rem]' +
+  ' landscape-sm:grid-cols-[1rem_1fr_2rem_1.5rem_1.5rem_1.5rem_1.9rem_1.9rem_2.1rem_2.1rem_2.4rem]' +
+  ' lg:grid-cols-[1rem_1fr_2rem_1.5rem_1.5rem_1.5rem_1.9rem_1.9rem_2.1rem_2.1rem_2.4rem]'
+
+// Célula visível só quando há espaço horizontal (landscape de celular ou desktop).
+const WIDE_CELL = 'hidden landscape-sm:block lg:block text-center'
+
 export type ParticipantInfo = {
   full_name: string | null
   avatar_url: string | null
@@ -63,7 +74,7 @@ function GroupCard({
   participantAvatars: Record<string, string | null>
 }) {
   return (
-    <div className="shrink-0 w-[268px] glass glass-card overflow-hidden">
+    <div className="shrink-0 w-[268px] landscape-sm:w-[432px] lg:w-[452px] glass glass-card overflow-hidden">
       {/* ── Header ── */}
       <div className="px-3.5 py-2.5 flex items-center justify-between border-b border-white/8">
         <div className="flex items-center gap-2">
@@ -85,16 +96,18 @@ function GroupCard({
       </div>
 
       {/* ── Column headers ── */}
-      <div
-        className="grid items-center px-3 py-1.5 border-b border-white/5 text-[9px] text-white/20"
-        style={{ gridTemplateColumns: '1rem 1fr 2rem 1.5rem 1.5rem 1.5rem' }}
-      >
+      <div className={`${GROUP_ROW} px-3 py-1.5 border-b border-white/5 text-[9px] text-white/20`}>
         <span className="text-center">#</span>
         <span>Jogador</span>
         <span className="text-center font-semibold text-white/30">Pts</span>
         <span className="text-center">V</span>
         <span className="text-center">E</span>
         <span className="text-center">D</span>
+        <span className={WIDE_CELL}>SG</span>
+        <span className={WIDE_CELL}>SP</span>
+        <span className={WIDE_CELL}>PF</span>
+        <span className={WIDE_CELL}>PC</span>
+        <span className={WIDE_CELL}>Saldo</span>
       </div>
 
       {/* ── Rows ── */}
@@ -115,12 +128,12 @@ function GroupCard({
             <div
               key={row.participant_id}
               className={[
-                'grid items-center px-3 py-[7px]',
+                GROUP_ROW,
+                'px-3 py-[7px]',
                 i < standings.length - 1 ? 'border-b border-white/5' : '',
                 isClassified && !isMe ? 'bg-secondary/[0.04]' : '',
                 isMe ? 'bg-secondary/[0.08] ring-inset ring-1 ring-secondary/25' : '',
               ].join(' ')}
-              style={{ gridTemplateColumns: '1rem 1fr 2rem 1.5rem 1.5rem 1.5rem' }}
             >
               {/* Position */}
               <span
@@ -200,6 +213,34 @@ function GroupCard({
               <div className="text-center">
                 <span className="text-[10px] tabular-nums text-white/30">{row.d}</span>
               </div>
+
+              {/* Colunas completas (landscape / telas largas) — fix #12 */}
+              <div className={WIDE_CELL}>
+                <span className="text-[10px] tabular-nums text-white/50">{row.sets_ganhos}</span>
+              </div>
+              <div className={WIDE_CELL}>
+                <span className="text-[10px] tabular-nums text-white/30">{row.sets_perdidos}</span>
+              </div>
+              <div className={WIDE_CELL}>
+                <span className="text-[10px] tabular-nums text-white/50">{row.pontos_favor}</span>
+              </div>
+              <div className={WIDE_CELL}>
+                <span className="text-[10px] tabular-nums text-white/30">{row.pontos_contra}</span>
+              </div>
+              <div className={WIDE_CELL}>
+                <span
+                  className={`text-[10px] tabular-nums font-medium ${
+                    row.saldo_pontos > 0
+                      ? 'text-secondary/75'
+                      : row.saldo_pontos < 0
+                        ? 'text-red-400/60'
+                        : 'text-white/30'
+                  }`}
+                >
+                  {row.saldo_pontos > 0 ? '+' : ''}
+                  {row.saldo_pontos}
+                </span>
+              </div>
             </div>
           )
         })
@@ -247,8 +288,10 @@ export function GroupsView({
   const off = useOfflineStandings(offlineData)
 
   const refetch = useCallback(async () => {
+    // get_group_standings: classificação restrita aos jogos da fase de grupos
+    // (não soma os jogos da eliminatória — fix #13).
     const [sResult, mResult] = await Promise.all([
-      supabase.rpc('get_standings', { _championship_id: championshipId }),
+      supabase.rpc('get_group_standings', { _championship_id: championshipId }),
       supabase
         .from('matches')
         .select('id, status, stage_id, side_a_participant_id, side_b_participant_id')

@@ -59,6 +59,7 @@ export default async function AppLayout({
           avatarUrl={profile.avatar_url}
           isAdmin={isAdmin}
           canManage={canManage}
+          userId={user.id}
         />
         <main className="flex flex-1 flex-col pb-32 landscape-sm:pb-8 landscape-sm:pl-[max(4.75rem,calc(env(safe-area-inset-left)+4rem))] landscape-sm:pr-[max(0.5rem,env(safe-area-inset-right))] lg:mx-auto lg:w-full lg:max-w-3xl lg:px-2 lg:pb-16 lg:pl-2">
           {children}
