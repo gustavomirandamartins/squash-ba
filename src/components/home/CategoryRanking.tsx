@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import Image from 'next/image'
-import { BarChart3, Crown, Star, User } from 'lucide-react'
+import { BarChart3, Crown, Info, Star, Trophy, User, X, Zap } from 'lucide-react'
 
 export interface RankRow {
   user_id: string
@@ -20,12 +20,109 @@ export interface RankRow {
   rank: number // posição geral (do servidor)
 }
 
+function RankingInfoModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+      onClick={onClose}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" aria-hidden />
+
+      {/* Sheet */}
+      <div
+        className="relative w-full max-w-sm rounded-t-3xl sm:rounded-3xl glass glass-card glass-overlay px-5 pb-8 pt-5 space-y-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Handle */}
+        <div className="mx-auto h-1 w-10 rounded-full bg-white/20 sm:hidden" />
+
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <h3 className="font-display text-base font-bold text-white flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-secondary" />
+            Como funciona o ranking
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid h-7 w-7 place-items-center rounded-full bg-white/[0.07] text-white/50 transition hover:bg-white/[0.12] hover:text-white"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Pontos por jogo */}
+        <div className="space-y-2">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/40">
+            <Zap className="h-3 w-3" /> Pontos por partida
+          </p>
+          <div className="glass glass-card divide-y divide-white/[0.06] overflow-hidden text-sm">
+            {[
+              { label: 'Vitória', pts: '+2', color: 'text-secondary' },
+              { label: 'Derrota', pts: '+1', color: 'text-white/55' },
+              { label: 'Empate', pts: '+1 cada', color: 'text-white/55' },
+            ].map(({ label, pts, color }) => (
+              <div key={label} className="flex items-center justify-between px-3.5 py-2">
+                <span className="text-white/70">{label}</span>
+                <span className={`font-bold tabular-nums ${color}`}>{pts}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Bônus campeonatos */}
+        <div className="space-y-2">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/40">
+            <Trophy className="h-3 w-3" /> Bônus de campeonato encerrado
+          </p>
+          <div className="glass glass-card overflow-hidden text-sm">
+            {/* Cabeçalho */}
+            <div className="grid grid-cols-3 border-b border-white/8 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/30">
+              <span>Posição</span>
+              <span className="text-center">Normal</span>
+              <span className="text-right">Oficial ⭐</span>
+            </div>
+            {[
+              { label: 'Participar', normal: '—', official: '+5' },
+              { label: '🥇 1º lugar', normal: '+5', official: '+15' },
+              { label: '🥈 2º lugar', normal: '+3', official: '+10' },
+              { label: '🥉 3º lugar', normal: '+1', official: '+5' },
+            ].map(({ label, normal, official }) => (
+              <div
+                key={label}
+                className="grid grid-cols-3 items-center border-b border-white/[0.05] px-3.5 py-2 last:border-0"
+              >
+                <span className="text-white/70">{label}</span>
+                <span className="text-center font-semibold text-white/50">{normal}</span>
+                <span className="text-right font-bold text-secondary">{official}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-white/30 leading-snug px-0.5">
+            ⭐ Campeonatos oficiais são marcados pelo organizador ao criar o evento.
+          </p>
+        </div>
+
+        {/* Desempate */}
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/40">Desempate</p>
+          <p className="text-[12px] text-white/45 leading-relaxed">
+            Em caso de empate de pontos: saldo de sets &gt; número de vitórias.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 interface Props {
   rows: RankRow[]
 }
 
 export function CategoryRanking({ rows }: Props) {
   const [activeCategory, setActiveCategory] = useState<string | null>(null) // null = Geral
+  const [showInfo, setShowInfo] = useState(false)
 
   // Deriva categorias únicas (na ordem de aparição no ranking geral)
   const categories = useMemo(() => {
@@ -50,13 +147,20 @@ export function CategoryRanking({ rows }: Props) {
 
   return (
     <section className="px-5">
+      {showInfo && <RankingInfoModal onClose={() => setShowInfo(false)} />}
+
       <h2 className="mb-1 flex items-center gap-2 font-display text-lg font-bold text-white">
         <BarChart3 className="h-5 w-5 text-secondary" />
         Ranking
       </h2>
-      <p className="mb-3 text-[11px] text-white/35">
-        Vitória +2 pts · Derrota +1 pt · Empate +1 cada · Pódio e participação em campeonatos somam bônus
-      </p>
+      <button
+        type="button"
+        onClick={() => setShowInfo(true)}
+        className="mb-3 flex items-center gap-1 text-[11px] font-medium text-secondary/70 transition hover:text-secondary"
+      >
+        <Info className="h-3 w-3" />
+        Como são calculados os pontos?
+      </button>
 
       {/* Abas: Geral + categorias */}
       <div className="no-scrollbar -mx-5 mb-3 flex gap-2 overflow-x-auto px-5">
