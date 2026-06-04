@@ -61,6 +61,7 @@ interface WizardState {
   // Step 1
   name: string
   startDate: string  // 'YYYY-MM-DD' ou '' (sem data definida)
+  isOfficial: boolean
   format: Format
   unit: Unit
   // Step 2 — Liga
@@ -167,6 +168,7 @@ const GROUP_NAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 const DEFAULT_STATE: WizardState = {
   name: '',
   startDate: '',
+  isOfficial: false,
   format: 'liga',
   unit: 'player',
   rounds: 1,
@@ -672,6 +674,38 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
           })}
         </div>
       </div>
+
+      {/* Campeonato oficial — visível só para formatos reais */}
+      {state.format !== 'desafio' && (
+        <button
+          type="button"
+          onClick={() => onChange({ isOfficial: !state.isOfficial })}
+          className={`glass glass-card flex w-full items-center gap-3 px-4 py-3 text-left transition active:scale-[0.98] ${
+            state.isOfficial ? 'border-secondary/50 bg-secondary/10' : ''
+          }`}
+        >
+          {/* toggle pill */}
+          <span
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+              state.isOfficial ? 'bg-secondary' : 'bg-white/20'
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+                state.isOfficial ? 'translate-x-4' : 'translate-x-0.5'
+              }`}
+            />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-white/90">Campeonato oficial</p>
+            <p className="text-[11px] leading-snug text-white/40">
+              {state.isOfficial
+                ? '+5 por participar, +15/10/5 para pódio'
+                : 'Não oficial: +5/3/1 para pódio apenas'}
+            </p>
+          </div>
+        </button>
+      )}
 
       {blocked && <ComingSoonBanner />}
     </div>
@@ -1686,6 +1720,9 @@ function Step5({
         )}
         <SummaryRow label="Formato" value={FORMAT_LABEL[state.format]} />
         <SummaryRow label="Unidade" value={UNIT_LABEL[state.unit]} />
+        {state.format !== 'desafio' && (
+          <SummaryRow label="Oficial" value={state.isOfficial ? 'Sim' : 'Não'} />
+        )}
         <div className="h-px bg-white/8" />
 
         {isGruposElim ? (
@@ -1920,6 +1957,7 @@ export function ChampionshipWizard() {
             cfg: {
               name: state.name,
               startDate: state.startDate || null,
+              isOfficial: state.isOfficial,
               hasThirdPlace: state.hasThirdPlace,
               counting: state.counting,
               setsToPlay: state.setsToPlay,
@@ -1951,6 +1989,7 @@ export function ChampionshipWizard() {
               cfg: {
                 name: state.name,
                 startDate: state.startDate || null,
+                isOfficial: state.isOfficial,
                 numGroups: state.numGroups,
                 qualifiersPerGroup: state.qualifiersPerGroup,
                 pointsWin: state.pointsWin,
@@ -1994,6 +2033,7 @@ export function ChampionshipWizard() {
             cfg: {
               name: state.name,
               startDate: state.startDate || null,
+              isOfficial: state.isOfficial,
               numGroups: state.numGroups,
               qualifiersPerGroup: state.qualifiersPerGroup,
               pointsWin: state.pointsWin,
@@ -2029,6 +2069,7 @@ export function ChampionshipWizard() {
             cfg: {
               name: state.name,
               startDate: state.startDate || null,
+              isOfficial: state.isOfficial,
               pointsWin: state.pointsWin,
               pointsDraw: allowDraw ? state.pointsDraw : 0,
               pointsLoss: state.pointsLoss,

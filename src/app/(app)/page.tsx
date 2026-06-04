@@ -5,7 +5,7 @@ import { Lembretes, type LembretesData } from '@/components/home/Lembretes'
 import { SponsorBanner } from '@/components/home/SponsorBanner'
 import { OngoingSection, type LiveMatch, type OngoingItem } from '@/components/home/OngoingSection'
 import { TeachersSection, type Teacher } from '@/components/home/TeachersSection'
-import { CategoryRanking, type RankCategory, type RankRow } from '@/components/home/CategoryRanking'
+import { CategoryRanking, type RankRow } from '@/components/home/CategoryRanking'
 
 const EPOCH = new Date(0).toISOString()
 
@@ -64,7 +64,7 @@ export default async function HomePage() {
       .eq('format', 'desafio')
       .eq('created_by', user.id)
       .in('status', ['rascunho', 'ativo']),
-    supabase.rpc('get_category_rankings'),
+    supabase.rpc('get_rankings'),
     supabase.storage.from('sponsors').list('', { limit: 100, sortBy: { column: 'name', order: 'asc' } }),
     supabase.from('sponsor_banners').select('image_name, link_url'),
   ])
@@ -250,35 +250,36 @@ export default async function HomePage() {
   // ── Professores (organizadores) ───────────────────────────────────────────
   const teachers: Teacher[] = (teacherProfilesRes.data ?? []) as Teacher[]
 
-  // ── Ranking por categoria (agrupa linhas da RPC) ──────────────────────────
-  const rankRows = (rankingRes.data ?? []) as Array<{
-    category_id: string
-    category_name: string
+  // ── Ranking geral (nova RPC get_rankings) ────────────────────────────────
+  const rankRows: RankRow[] = ((rankingRes.data ?? []) as Array<{
     user_id: string
     full_name: string | null
     avatar_url: string | null
+    category_id: string | null
+    category_name: string | null
     points: number
+    game_points: number
+    bonus_points: number
     wins: number
+    losses: number
     played: number
+    set_balance: number
     rank: number
-  }>
-  const catMap = new Map<string, RankCategory>()
-  for (const r of rankRows) {
-    if (!catMap.has(r.category_id)) {
-      catMap.set(r.category_id, { id: r.category_id, name: r.category_name, rows: [] })
-    }
-    const row: RankRow = {
-      user_id: r.user_id,
-      full_name: r.full_name,
-      avatar_url: r.avatar_url,
-      points: r.points,
-      wins: r.wins,
-      played: r.played,
-      rank: Number(r.rank),
-    }
-    catMap.get(r.category_id)!.rows.push(row)
-  }
-  const rankCategories = [...catMap.values()]
+  }>).map((r) => ({
+    user_id: r.user_id,
+    full_name: r.full_name,
+    avatar_url: r.avatar_url,
+    category_id: r.category_id,
+    category_name: r.category_name,
+    points: r.points,
+    game_points: r.game_points,
+    bonus_points: r.bonus_points,
+    wins: r.wins,
+    losses: r.losses,
+    played: r.played,
+    set_balance: r.set_balance,
+    rank: Number(r.rank),
+  }))
 
   // ── Banner do patrocinador (todos os do bucket; carrossel rotaciona no client) ─
   const linkByName = new Map(
@@ -302,7 +303,7 @@ export default async function HomePage() {
     <SponsorBanner key="sponsor" banners={banners} />,
     <OngoingSection key="ongoing" liveMatches={liveMatches} active={activeItems} />,
     <TeachersSection key="teachers" teachers={teachers} currentUserId={user.id} />,
-    <CategoryRanking key="ranking" categories={rankCategories} />,
+    <CategoryRanking key="ranking" rows={rankRows} />,
   ]
 
   return (

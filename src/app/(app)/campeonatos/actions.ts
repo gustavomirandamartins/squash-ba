@@ -7,6 +7,7 @@ import { createClient } from '@/utils/supabase/server'
 export type LigaCfg = {
   name: string
   startDate?: string | null
+  isOfficial?: boolean
   pointsWin: number
   pointsDraw: number
   pointsLoss: number
@@ -43,6 +44,7 @@ export async function createLigaChampionship(
         unit: 'pair',
         status: 'rascunho',
         start_date: cfg.startDate ?? null,
+        is_official: cfg.isOfficial ?? false,
         allow_draw: cfg.allowDraw,
         points_win: cfg.pointsWin,
         points_draw: cfg.allowDraw ? cfg.pointsDraw : 0,
@@ -119,9 +121,12 @@ export async function createLigaChampionship(
   })
   if (error) return { error: error.message }
   if (!id) return { error: 'Campeonato não foi criado.' }
-  // Data de início (RPC não recebe; grava em seguida se informada)
-  if (cfg.startDate) {
-    await supabase.from('championships').update({ start_date: cfg.startDate }).eq('id', id as string)
+  // Campos adicionais que o RPC não recebe: start_date e is_official
+  const extras: Record<string, unknown> = {}
+  if (cfg.startDate) extras.start_date = cfg.startDate
+  if (cfg.isOfficial) extras.is_official = true
+  if (Object.keys(extras).length) {
+    await supabase.from('championships').update(extras).eq('id', id as string)
   }
   return { id: id as string }
 }
@@ -131,6 +136,7 @@ export async function createLigaChampionship(
 export type EliminatoriaCfg = {
   name: string
   startDate?: string | null
+  isOfficial?: boolean
   hasThirdPlace: boolean
   counting: 'set' | 'tempo'
   setsToPlay: 1 | 3 | 5
@@ -178,6 +184,7 @@ export async function createEliminatoriaChampionship(
       unit: isPairMode ? 'pair' : 'player',
       status: 'rascunho',
       start_date: cfg.startDate ?? null,
+      is_official: cfg.isOfficial ?? false,
       allow_draw: allowDraw,
       has_third_place: cfg.hasThirdPlace,
       points_win: cfg.pointsWin,
@@ -269,6 +276,7 @@ export async function createEliminatoriaChampionship(
 export type GruposElimCfg = {
   name: string
   startDate?: string | null
+  isOfficial?: boolean
   numGroups: number
   qualifiersPerGroup: number
   pointsWin: number
@@ -319,6 +327,7 @@ export async function createGruposElimChampionship(
         unit: 'pair',
         status: 'rascunho',
         start_date: cfg.startDate ?? null,
+        is_official: cfg.isOfficial ?? false,
         allow_draw: cfg.allowDraw,
         points_win: cfg.pointsWin,
         points_draw: cfg.allowDraw ? cfg.pointsDraw : 0,
@@ -465,9 +474,12 @@ export async function createGruposElimChampionship(
   // TODO: o RPC atual sempre ativa. Quando status='rascunho' desejado,
   // usar uma variante que não ativa — por ora aceitamos esse comportamento.
   if (!id) return { error: 'Campeonato não foi criado.' }
-  // Data de início (RPC não recebe; grava em seguida se informada)
-  if (cfg.startDate) {
-    await supabase.from('championships').update({ start_date: cfg.startDate }).eq('id', id as string)
+  // Campos adicionais que o RPC não recebe: start_date e is_official
+  const extras2: Record<string, unknown> = {}
+  if (cfg.startDate) extras2.start_date = cfg.startDate
+  if (cfg.isOfficial) extras2.is_official = true
+  if (Object.keys(extras2).length) {
+    await supabase.from('championships').update(extras2).eq('id', id as string)
   }
   return { id: id as string }
 }
