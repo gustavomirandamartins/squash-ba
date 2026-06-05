@@ -694,6 +694,26 @@ function Step1({
         </div>
       </div>
 
+      {/* Local (disponível para todos os campeonatos) */}
+      {state.format !== 'desafio' && venues.length > 0 && (
+        <div className="glass glass-card px-4 py-2.5 space-y-1">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
+            Local{' '}
+            <span className="normal-case font-normal text-white/25">(opcional)</span>
+          </p>
+          <select
+            value={state.venueId}
+            onChange={(e) => onChange({ venueId: e.target.value })}
+            className="w-full bg-transparent text-sm text-white outline-none [color-scheme:dark]"
+          >
+            <option value="" className="bg-primary">Sem local definido</option>
+            {venues.map((v) => (
+              <option key={v.id} value={v.id} className="bg-primary">{v.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Campeonato oficial — só admin/professor; força modalidade individual */}
       {state.format !== 'desafio' && canCreateOfficial && (
         <button
@@ -747,27 +767,6 @@ function Step1({
               rows={3}
               className="w-full resize-none bg-transparent text-sm text-white placeholder-white/30 outline-none"
             />
-          </div>
-
-          <div className="glass glass-card px-4 py-2.5 space-y-1">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
-              Local{' '}
-              <span className="normal-case font-normal text-white/25">(opcional)</span>
-            </p>
-            <select
-              value={state.venueId}
-              onChange={(e) => onChange({ venueId: e.target.value })}
-              className="w-full bg-transparent text-sm text-white outline-none [color-scheme:dark]"
-            >
-              <option value="" className="bg-primary">
-                Sem local definido
-              </option>
-              {venues.map((v) => (
-                <option key={v.id} value={v.id} className="bg-primary">
-                  {v.name}
-                </option>
-              ))}
-            </select>
           </div>
 
           <div className="glass glass-card px-4 py-2.5 space-y-1">
@@ -2046,7 +2045,7 @@ export function ChampionshipWizard({
               endDate: state.isOfficial ? state.endDate || null : null,
               isOfficial: state.isOfficial,
               description: state.isOfficial ? state.description || null : null,
-              venueId: state.isOfficial ? state.venueId || null : null,
+              venueId: state.venueId || null,
               hasThirdPlace: state.hasThirdPlace,
               counting: state.counting,
               setsToPlay: state.setsToPlay,
@@ -2081,7 +2080,7 @@ export function ChampionshipWizard({
                 endDate: state.isOfficial ? state.endDate || null : null,
                 isOfficial: state.isOfficial,
                 description: state.isOfficial ? state.description || null : null,
-                venueId: state.isOfficial ? state.venueId || null : null,
+                venueId: state.venueId || null,
                 numGroups: state.numGroups,
                 qualifiersPerGroup: state.qualifiersPerGroup,
                 pointsWin: state.pointsWin,
@@ -2164,7 +2163,7 @@ export function ChampionshipWizard({
               endDate: state.isOfficial ? state.endDate || null : null,
               isOfficial: state.isOfficial,
               description: state.isOfficial ? state.description || null : null,
-              venueId: state.isOfficial ? state.venueId || null : null,
+              venueId: state.venueId || null,
               pointsWin: state.pointsWin,
               pointsDraw: allowDraw ? state.pointsDraw : 0,
               pointsLoss: state.pointsLoss,

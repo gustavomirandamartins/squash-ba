@@ -20,8 +20,8 @@ export default async function NovoCampeonatoPage() {
     canCreateOfficial = set.has('admin') || set.has('organizer')
   }
 
-  // Locais para o seletor (só úteis no fluxo oficial).
-  const { data: venues } = canCreateOfficial
+  // Locais para o seletor (disponível para todos os campeonatos).
+  const { data: venues } = user
     ? await supabase.from('venues').select('id, name').order('name')
     : { data: [] }
 
