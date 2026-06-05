@@ -22,7 +22,7 @@ export default async function CampeonatosPage() {
   // Todos os campeonatos públicos (exceto desafios)
   const { data: championships } = await supabase
     .from('championships')
-    .select('id, name, format, status, created_at')
+    .select('id, name, format, status, is_official, created_at')
     .neq('format', 'desafio')
     .order('created_at', { ascending: false })
 

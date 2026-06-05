@@ -12,6 +12,7 @@ import { GroupsView, type Group } from './GroupsView'
 import { StatsTab } from './StatsTab'
 import { Podium, type PodiumPlace } from '@/components/Podium'
 import { ManageBar } from '@/components/ManageBar'
+import { OfficialPanel } from './OfficialPanel'
 import { activateChampionship } from '@/app/(app)/campeonatos/manage-actions'
 
 // ─── Tipos exportados (reutilizados em page.tsx) ──────────────────────────────
@@ -56,6 +57,10 @@ export type ChampData = {
   unit: string
   status: string
   start_date: string | null
+  end_date?: string | null
+  is_official?: boolean
+  description?: string | null
+  venue_name?: string | null
   allow_draw: boolean
   points_win: number
   points_draw: number
@@ -63,6 +68,13 @@ export type ChampData = {
   tiebreakers: string[]
   created_by: string
   has_third_place: boolean
+}
+
+export type PendingEnrollment = {
+  participantId: string
+  userId: string
+  name: string | null
+  avatarUrl: string | null
 }
 
 export type ParticipantInfo = {
@@ -89,6 +101,11 @@ type Props = {
   participantGroups?: Record<string, string>
   /** ID da conversa de grupo do campeonato (se existir) */
   groupConversationId?: string | null
+  // ── Oficiais ──────────────────────────────────────────────────────────────
+  pendingEnrollments?: PendingEnrollment[]
+  myEnrollmentStatus?: 'none' | 'pending' | 'confirmed'
+  confirmedCount?: number
+  confirmedUserIds?: string[]
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -336,6 +353,10 @@ export function ChampionshipDetailClient({
   groups = [],
   participantGroups = {},
   groupConversationId = null,
+  pendingEnrollments = [],
+  myEnrollmentStatus = 'none',
+  confirmedCount = 0,
+  confirmedUserIds = [],
 }: Props) {
   // Classificação da fase de grupos (escopada). Fallback p/ a geral se não vier.
   const groupStandings = initialGroupStandings ?? initialStandings
@@ -594,8 +615,8 @@ export function ChampionshipDetailClient({
         <ManageBar id={champ.id} basePath="/campeonatos" listPath="/campeonatos" />
       )}
 
-      {/* Ativar campeonato (rascunho) — #3 */}
-      {canManage && champ.status === 'rascunho' && (
+      {/* Ativar campeonato (rascunho) — #3. Oficiais usam o OfficialPanel. */}
+      {canManage && champ.status === 'rascunho' && !champ.is_official && (
         <div className="glass glass-card px-4 py-4 space-y-3" style={{ borderColor: 'rgba(205,253,81,0.25)' }}>
           <div className="flex items-start gap-3">
             <div className="h-9 w-9 rounded-full bg-secondary/15 grid place-items-center shrink-0">
@@ -671,6 +692,24 @@ export function ChampionshipDetailClient({
           </span>
         </div>
       </div>
+
+      {/* ── Painel de campeonato oficial (meta + inscrições + gestão) ── */}
+      {champ.is_official && (
+        <OfficialPanel
+          champId={champ.id}
+          status={champ.status}
+          unit={champ.unit}
+          canManage={canManage}
+          description={champ.description ?? null}
+          venueName={champ.venue_name ?? null}
+          startDate={champ.start_date}
+          endDate={champ.end_date ?? null}
+          myEnrollmentStatus={myEnrollmentStatus}
+          pendingEnrollments={pendingEnrollments}
+          confirmedCount={confirmedCount}
+          confirmedUserIds={confirmedUserIds}
+        />
+      )}
 
       {/* ── Pódio (campeão / vice / 3º lugar) ── */}
       {podium.length > 0 && <Podium places={podium} />}

@@ -19,6 +19,7 @@
   --color-primary-300: #2a3d61;    /* azul mais claro p/ gradiente */
   --color-secondary: #cdfd51;      /* acento neon — CTA / pill ativa */
   --color-secondary-dim: #a9d62f;  /* neon levemente apagado */
+  --color-cane: #8bc34a;           /* verde-cana — campeonatos oficiais */
   --color-surface: #2c3b58;        /* cards */
   --color-neutral: #3c4b66;        /* bordas / surfaces secundárias */
   --color-fg: #ffffff;             /* texto base */
@@ -93,6 +94,19 @@ body::before {
 
 .glass-pill {
   border-radius: var(--radius-pill);
+}
+
+/* ── Variante "oficial" (verde-cana) ───────────────────────────────────────
+   Mantém o glassmorphism, mas troca o tint frio por um verde-cana translúcido
+   e a borda por um verde sutil. Usada em cards/cabeçalho de campeonatos
+   oficiais. Acompanha o token --color-cane. */
+.glass-official {
+  background: linear-gradient(
+    135deg,
+    rgba(140, 195, 74, 0.22) 0%,
+    rgba(140, 195, 74, 0.06) 100%
+  );
+  border-color: rgba(140, 195, 74, 0.38);
 }
 
 @layer utilities {

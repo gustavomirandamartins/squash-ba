@@ -22,8 +22,10 @@ export default async function ChampionshipPage({
   const { data: champ } = await supabase
     .from('championships')
     .select(
-      `id, name, format, unit, status, start_date, allow_draw, has_third_place,
+      `id, name, format, unit, status, start_date, end_date, allow_draw, has_third_place,
+       is_official, description, venue_id,
        points_win, points_draw, points_loss, tiebreakers, created_at, created_by,
+       venues(name),
        championship_stages(
          id, name, kind, counting, rounds,
          sets_to_play, points_per_set, win_by_two, set_draw_enabled, time_minutes
@@ -137,6 +139,49 @@ export default async function ChampionshipPage({
         )?.id ?? null)
       : null
 
+  // ── 7b. Oficial: inscrições pendentes + status do usuário logado ──────────
+  const isOfficial = (champ as { is_official?: boolean }).is_official ?? false
+  type PendingEnroll = { participantId: string; name: string | null; avatarUrl: string | null; userId: string }
+  let pendingEnrollments: PendingEnroll[] = []
+  let myEnrollmentStatus: 'none' | 'pending' | 'confirmed' = 'none'
+
+  if (isOfficial) {
+    const { data: pendingRaw } = await supabase
+      .from('participants')
+      .select('id, participant_members(user_id)')
+      .eq('championship_id', id)
+      .eq('enrollment_status', 'pendente')
+
+    const pendUserIds = (pendingRaw ?? []).flatMap((p) =>
+      (p.participant_members ?? []).map((m: { user_id: string }) => m.user_id),
+    )
+    const { data: pendProfiles } = pendUserIds.length
+      ? await supabase.from('profiles').select('id, full_name, avatar_url').in('id', pendUserIds)
+      : { data: [] }
+    const pendMap = new Map((pendProfiles ?? []).map((p) => [p.id, p]))
+
+    pendingEnrollments = (pendingRaw ?? []).map((p) => {
+      const uid = (p.participant_members ?? [])[0]?.user_id ?? ''
+      const prof = pendMap.get(uid)
+      return {
+        participantId: p.id as string,
+        userId: uid,
+        name: prof?.full_name ?? null,
+        avatarUrl: prof?.avatar_url ?? null,
+      }
+    })
+
+    if (user) {
+      if (currentUserParticipantId) {
+        myEnrollmentStatus = 'confirmed'
+      } else if (pendingEnrollments.some((p) => p.userId === user.id)) {
+        myEnrollmentStatus = 'pending'
+      }
+    }
+  }
+
+  const confirmedCount = (participantsRaw ?? []).length
+
   // ── 8. Classificação inicial via RPC (SSR) ────────────────────────────────
   const { data: standingsRaw } = await supabase.rpc('get_standings', {
     _championship_id: id,
@@ -203,6 +248,14 @@ export default async function ChampionshipPage({
         unit: champ.unit,
         status: champ.status,
         start_date: (champ as { start_date?: string | null }).start_date ?? null,
+        end_date: (champ as { end_date?: string | null }).end_date ?? null,
+        is_official: isOfficial,
+        description: (champ as { description?: string | null }).description ?? null,
+        venue_name: (() => {
+          const v = (champ as { venues?: { name: string } | { name: string }[] | null }).venues
+          if (!v) return null
+          return Array.isArray(v) ? (v[0]?.name ?? null) : v.name
+        })(),
         allow_draw: champ.allow_draw ?? false,
         has_third_place: (champ.has_third_place as boolean) ?? false,
         points_win: champ.points_win ?? 3,
@@ -211,6 +264,10 @@ export default async function ChampionshipPage({
         tiebreakers: (champ.tiebreakers as string[]) ?? [],
         created_by: champ.created_by ?? '',
       }}
+      pendingEnrollments={pendingEnrollments}
+      myEnrollmentStatus={myEnrollmentStatus}
+      confirmedCount={confirmedCount}
+      confirmedUserIds={[...new Set(allUserIds)]}
       stage={normalizeStage(primaryStageRaw)}
       elimStage={normalizeStage(elimStageRaw)}
       matches={(matchesRaw ?? []).map((m) => ({

@@ -73,8 +73,11 @@ Deno.serve(async (req: Request) => {
             payload,
           )
           sent++
+          console.log(`[notify-push] sent ok → ${sub.endpoint.slice(0, 60)}`)
         } catch (err) {
-          if (err instanceof Error && err.message.includes('410')) {
+          const msg = err instanceof Error ? err.message : String(err)
+          console.error(`[notify-push] send error (${msg}) → ${sub.endpoint.slice(0, 60)}`)
+          if (msg.includes('410') || msg.includes('404')) {
             staleEndpoints.push(sub.endpoint)
           }
         }

@@ -1,7 +1,42 @@
 {
-  "count": 131,
-  "lastCommitAt": "202606022203",
+  "count": 138,
+  "lastCommitAt": "202606042307",
   "commits": [
+    {
+      "hash": "7d48571",
+      "subject": "Campeonatos Oficiais — Fase 1+2: banco + criação",
+      "date": "2026-06-04"
+    },
+    {
+      "hash": "e3707e6",
+      "subject": "Adiciona modal explicativo do sistema de pontos do ranking",
+      "date": "2026-06-04"
+    },
+    {
+      "hash": "d82666b",
+      "subject": "Novo sistema de pontuação do ranking com campeonatos oficiais",
+      "date": "2026-06-04"
+    },
+    {
+      "hash": "02ef914",
+      "subject": "fix: 16 ajustes de placar, campeonatos, partida por tempo, admin e notificações",
+      "date": "2026-06-03"
+    },
+    {
+      "hash": "6d09efd",
+      "subject": "Atualiza README com estado real do produto",
+      "date": "2026-06-03"
+    },
+    {
+      "hash": "a693b8e",
+      "subject": "Refatora painel admin em layout com abas (5 seções)",
+      "date": "2026-06-03"
+    },
+    {
+      "hash": "a778582",
+      "subject": "Fix: placar de série por participante + feedback visual imediato",
+      "date": "2026-06-02"
+    },
     {
       "hash": "a24901d",
       "subject": "Corrigir: participantes podem gravar scores + reabrir partida",

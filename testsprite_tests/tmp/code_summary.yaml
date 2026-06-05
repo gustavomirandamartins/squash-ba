@@ -1,0 +1,228 @@
+version: "2"
+type: frontend
+tech_stack:
+  - TypeScript
+  - Next.js 16 (App Router)
+  - React 19
+  - Tailwind CSS v4
+  - Supabase (Auth + Postgres SSR via @supabase/ssr)
+  - PWA (Serwist service worker)
+  - lucide-react
+routes:
+  - path: /login
+    file: src/app/login/page.tsx
+    auth_required: false
+    description: Login, signup, magic link and password reset
+  - path: /auth/update-password
+    file: src/app/auth/update-password/page.tsx
+    auth_required: false
+    description: Set a new password after a recovery link
+  - path: /onboarding
+    file: src/app/onboarding/page.tsx
+    auth_required: true
+    description: First-run profile/onboarding flow
+  - path: /
+    file: src/app/(app)/page.tsx
+    auth_required: true
+    description: Home feed (stories, hero match, activity feed)
+  - path: /campeonatos
+    file: src/app/(app)/campeonatos/page.tsx
+    auth_required: true
+    description: Championships list
+  - path: /campeonatos/novo
+    file: src/app/(app)/campeonatos/novo/page.tsx
+    auth_required: true
+    description: Create a new championship
+  - path: /campeonatos/[id]
+    file: src/app/(app)/campeonatos/[id]/page.tsx
+    auth_required: true
+    description: Championship detail (participants, standings, matches)
+  - path: /campeonatos/[id]/editar
+    file: src/app/(app)/campeonatos/[id]/editar/page.tsx
+    auth_required: true
+    description: Edit a championship
+  - path: /campeonatos/[id]/jogos/[matchId]
+    file: src/app/(app)/campeonatos/[id]/jogos/[matchId]/page.tsx
+    auth_required: true
+    description: Championship match detail and score entry
+  - path: /desafios
+    file: src/app/(app)/desafios/page.tsx
+    auth_required: true
+    description: Challenges list
+  - path: /desafios/novo
+    file: src/app/(app)/desafios/novo/page.tsx
+    auth_required: true
+    description: Create a new challenge
+  - path: /desafios/[id]
+    file: src/app/(app)/desafios/[id]/page.tsx
+    auth_required: true
+    description: Challenge detail and matches
+  - path: /desafios/[id]/jogos/[matchId]
+    file: src/app/(app)/desafios/[id]/jogos/[matchId]/page.tsx
+    auth_required: true
+    description: Challenge match detail and score entry
+  - path: /jogos
+    file: src/app/(app)/jogos/page.tsx
+    auth_required: true
+    description: Player's matches list
+  - path: /comunidade
+    file: src/app/(app)/comunidade/page.tsx
+    auth_required: true
+    description: Community / players directory
+  - path: /jogador/[id]
+    file: src/app/(app)/jogador/[id]/page.tsx
+    auth_required: true
+    description: Player public profile
+  - path: /mensagens
+    file: src/app/(app)/mensagens/page.tsx
+    auth_required: true
+    description: Conversations list
+  - path: /mensagens/[id]
+    file: src/app/(app)/mensagens/[id]/page.tsx
+    auth_required: true
+    description: Conversation thread
+  - path: /marketplace
+    file: src/app/(app)/marketplace/page.tsx
+    auth_required: true
+    description: Marketplace listings
+  - path: /organizador
+    file: src/app/(app)/organizador/page.tsx
+    auth_required: true
+    description: Organizer dashboard
+  - path: /gestao
+    file: src/app/(app)/gestao/page.tsx
+    auth_required: true
+    description: Admin/management hub (categories, places, teams, announcements, feedbacks)
+  - path: /perfil
+    file: src/app/perfil/page.tsx
+    auth_required: true
+    description: Current user profile and settings
+  - path: /ajuda
+    file: src/app/(app)/ajuda/page.tsx
+    auth_required: true
+    description: Help page
+  - path: /versao
+    file: src/app/(app)/versao/page.tsx
+    auth_required: true
+    description: App version / changelog
+  - path: /privacidade
+    file: src/app/privacidade/page.tsx
+    auth_required: false
+    description: Privacy policy
+features:
+  - name: Authentication
+    description: Email/password login, signup with email confirmation, magic link, and password reset via Supabase
+    files:
+      - src/app/login/page.tsx
+      - src/app/auth/update-password/page.tsx
+      - src/utils/supabase/client.ts
+      - src/proxy.ts
+    entry_route: /login
+    user_interactions:
+      - Fill email input
+      - Fill password input
+      - Toggle password visibility
+      - Click Entrar to sign in
+      - Switch to signup or forgot-password mode
+      - Request magic link with email only
+      - See translated error message on invalid credentials
+    api_calls:
+      - method: POST
+        endpoint: Supabase auth.signInWithPassword
+      - method: POST
+        endpoint: Supabase auth.signUp
+      - method: POST
+        endpoint: Supabase auth.resetPasswordForEmail
+    auth_required: false
+  - name: Championships
+    description: Create, view, edit championships, manage participants, view standings and record match scores
+    files:
+      - src/app/(app)/campeonatos/page.tsx
+      - src/app/(app)/campeonatos/novo/page.tsx
+      - src/app/(app)/campeonatos/[id]/page.tsx
+      - src/app/(app)/campeonatos/[id]/jogos/[matchId]/page.tsx
+    entry_route: /campeonatos
+    user_interactions:
+      - Browse championships list
+      - Open create championship form and submit
+      - Open a championship to view participants and standings
+      - Open a match and record set scores
+      - Reopen a finished match
+    api_calls:
+      - method: POST
+        endpoint: Supabase Postgres (championships, matches tables)
+    auth_required: true
+  - name: Challenges
+    description: Create and manage 1v1/series challenges with match score entry and W.O. handling
+    files:
+      - src/app/(app)/desafios/page.tsx
+      - src/app/(app)/desafios/novo/page.tsx
+      - src/app/(app)/desafios/[id]/page.tsx
+      - src/app/(app)/desafios/[id]/jogos/[matchId]/page.tsx
+    entry_route: /desafios
+    user_interactions:
+      - Browse challenges list
+      - Create a new challenge
+      - Record match scores as a participant
+      - Declare a walkover (W.O.)
+    api_calls:
+      - method: POST
+        endpoint: Supabase Postgres (challenges, matches tables)
+    auth_required: true
+  - name: Player Matches
+    description: View the current player's scheduled and completed matches
+    files:
+      - src/app/(app)/jogos/page.tsx
+    entry_route: /jogos
+    user_interactions:
+      - View list of own matches
+      - Navigate to a match detail
+    api_calls: []
+    auth_required: true
+  - name: Community and Profiles
+    description: Browse the community of players and view public player profiles
+    files:
+      - src/app/(app)/comunidade/page.tsx
+      - src/app/(app)/jogador/[id]/page.tsx
+      - src/app/perfil/page.tsx
+    entry_route: /comunidade
+    user_interactions:
+      - Browse players
+      - Open a player profile
+      - Edit own profile
+    api_calls: []
+    auth_required: true
+  - name: Messaging
+    description: Direct conversations between players
+    files:
+      - src/app/(app)/mensagens/page.tsx
+      - src/app/(app)/mensagens/[id]/page.tsx
+    entry_route: /mensagens
+    user_interactions:
+      - Open conversations list
+      - Open a thread and send a message
+    api_calls: []
+    auth_required: true
+  - name: Management Hub
+    description: Organizer/admin management of categories, places, teams, announcements and feedbacks
+    files:
+      - src/app/(app)/gestao/page.tsx
+      - src/app/(app)/gestao/categorias/page.tsx
+      - src/app/(app)/gestao/locais/page.tsx
+      - src/app/(app)/gestao/times/page.tsx
+      - src/app/(app)/gestao/anuncios/page.tsx
+      - src/app/(app)/gestao/feedbacks/page.tsx
+    entry_route: /gestao
+    user_interactions:
+      - Manage categories, places, teams
+      - Publish announcements
+      - Review feedbacks
+    api_calls: []
+    auth_required: true
+known_limitations:
+  - issue: App requires Supabase authentication; valid test credentials are needed to reach any authenticated route
+    location: src/proxy.ts
+    impact: Without credentials, only /login, /privacidade and auth pages are reachable
+  - issue: Email confirmation is enabled for signup
+    location: src/app/login/page.tsx
+    impact: New signups cannot complete login until the confirmation email is clicked
