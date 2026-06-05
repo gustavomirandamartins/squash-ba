@@ -781,3 +781,116 @@ export async function startOfficialChampionship(
   revalidatePath(`/campeonatos/${championshipId}`)
   return { ok: true }
 }
+
+// ─── Edição de campeonato oficial (até o início; status='rascunho') ─────────
+export type OfficialStageEdit = {
+  id: string
+  counting: 'set' | 'tempo'
+  rounds: number
+  setsToPlay: number
+  pointsPerSet: number
+  winByTwo: boolean
+  setDrawEnabled: boolean
+  timeMinutes: number | null
+}
+
+export type OfficialEditPayload = {
+  name: string
+  description: string | null
+  venueId: string | null
+  startDate: string | null
+  endDate: string | null
+  pointsWin: number
+  pointsDraw: number
+  pointsLoss: number
+  allowDraw: boolean
+  hasThirdPlace: boolean
+  stages: OfficialStageEdit[]
+  /** grupos_elim: nº de grupos (recria os grupos vazios se mudar) */
+  numGroups?: number
+}
+
+export async function updateOfficialChampionship(
+  id: string,
+  p: OfficialEditPayload,
+): Promise<{ ok: true } | { error: string }> {
+  const supabase = await createClient()
+
+  const { data: champ, error: cErr } = await supabase
+    .from('championships')
+    .select('id, status, is_official, format')
+    .eq('id', id)
+    .single()
+  if (cErr || !champ) return { error: cErr?.message ?? 'Campeonato não encontrado.' }
+  if (!champ.is_official) return { error: 'Apenas campeonatos oficiais podem ser editados aqui.' }
+  if (champ.status !== 'rascunho') return { error: 'Só é possível editar antes do início.' }
+
+  // 1. Campeonato
+  const { error: upErr } = await supabase
+    .from('championships')
+    .update({
+      name: p.name.trim(),
+      description: p.description,
+      venue_id: p.venueId,
+      start_date: p.startDate,
+      end_date: p.endDate,
+      points_win: p.pointsWin,
+      points_draw: p.allowDraw ? p.pointsDraw : 0,
+      points_loss: p.pointsLoss,
+      allow_draw: p.allowDraw,
+      has_third_place: p.hasThirdPlace,
+    })
+    .eq('id', id)
+  if (upErr) return { error: upErr.message }
+
+  // 2. Fases
+  for (const s of p.stages) {
+    const { error: sErr } = await supabase
+      .from('championship_stages')
+      .update({
+        counting: s.counting,
+        rounds: s.rounds,
+        sets_to_play: s.setsToPlay,
+        points_per_set: s.pointsPerSet,
+        win_by_two: s.winByTwo,
+        set_draw_enabled: s.setDrawEnabled,
+        time_minutes: s.timeMinutes,
+      })
+      .eq('id', s.id)
+    if (sErr) return { error: sErr.message }
+  }
+
+  // 3. grupos_elim: recria grupos vazios se o número mudou
+  if (champ.format === 'grupos_elim' && p.numGroups && p.numGroups > 0) {
+    const { data: gruposStage } = await supabase
+      .from('championship_stages')
+      .select('id')
+      .eq('championship_id', id)
+      .eq('kind', 'grupos')
+      .single()
+    if (gruposStage) {
+      const { data: existing } = await supabase
+        .from('groups')
+        .select('id')
+        .eq('stage_id', gruposStage.id)
+      if ((existing?.length ?? 0) !== p.numGroups) {
+        // limpa vínculo dos participantes e recria os grupos
+        await supabase
+          .from('participants')
+          .update({ group_id: null })
+          .eq('championship_id', id)
+        await supabase.from('groups').delete().eq('stage_id', gruposStage.id)
+        const GROUP_NAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+        for (let gi = 0; gi < p.numGroups; gi++) {
+          const { error: gErr } = await supabase
+            .from('groups')
+            .insert({ stage_id: gruposStage.id, name: `Grupo ${GROUP_NAMES[gi] ?? String(gi + 1)}`, ordering: gi + 1 })
+          if (gErr) return { error: gErr.message }
+        }
+      }
+    }
+  }
+
+  revalidatePath(`/campeonatos/${id}`)
+  return { ok: true }
+}
