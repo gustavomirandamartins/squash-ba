@@ -51,3 +51,25 @@ export async function deleteAd(id: string): Promise<void> {
   revalidatePath('/admin/anuncios')
   revalidatePath('/marketplace')
 }
+
+export async function updateAd(id: string, _prev: AdResult | null, formData: FormData): Promise<AdResult> {
+  if (!(await isAdmin())) return { error: 'Não autorizado.' }
+  const supabase = await createClient()
+
+  const name            = (formData.get('name') as string)?.trim()
+  const product_service = (formData.get('product_service') as string)?.trim()
+  const phone           = (formData.get('phone') as string)?.trim() || null
+  const email           = (formData.get('email') as string)?.trim() || null
+  const address         = (formData.get('address') as string)?.trim() || null
+  const ordering        = parseInt(formData.get('ordering') as string, 10) || 0
+
+  if (!name || !product_service) return { error: 'Nome e produto/serviço são obrigatórios.' }
+
+  const { error } = await supabase.from('ads').update({ name, product_service, phone, email, address, ordering }).eq('id', id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/gestao/anuncios')
+  revalidatePath('/admin/anuncios')
+  revalidatePath('/marketplace')
+  return { ok: true }
+}
