@@ -5,6 +5,7 @@ import { BottomNav } from '@/components/BottomNav'
 import { DesktopSidebar } from '@/components/DesktopSidebar'
 import { OfflineSync } from '@/components/offline/OfflineSync'
 import { OfflinePreloader } from '@/components/offline/OfflinePreloader'
+import { UpdateBanner } from '@/components/offline/UpdateBanner'
 
 export default async function AppLayout({
   children,
@@ -69,6 +70,7 @@ export default async function AppLayout({
       <BottomNav userId={user.id} />
       <OfflineSync />
       <OfflinePreloader />
+      <UpdateBanner />
     </div>
   )
 }
