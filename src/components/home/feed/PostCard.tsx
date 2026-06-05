@@ -2,7 +2,8 @@
 
 /**
  * PostCard — um item do feed da comunidade (estilo Instagram).
- * Cabeçalho (avatar + nome + tempo + excluir) · texto · mídia.
+ * Cabeçalho (avatar + nome + tempo + excluir) · texto · mídia · ações
+ * (curtir + comentar) · seção de comentários (sob demanda).
  * Mídia: foto (bucket), YouTube/Instagram (iframe embed) ou link (cartão).
  */
 
@@ -10,25 +11,35 @@ import { useState, useTransition, Fragment } from 'react'
 import Image from 'next/image'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Trash2, ExternalLink, Globe, UserRound, Loader2 } from 'lucide-react'
+import { Trash2, ExternalLink, Globe, UserRound, Loader2, Heart, MessageCircle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { prettyDomain, parseMediaUrl } from './embed'
-import type { FeedPost } from './types'
+import { CommentsSection } from './CommentsSection'
+import type { CurrentUser, FeedPost } from './types'
 
 const URL_SPLIT = /(https?:\/\/[^\s<>"')]+)/gi
 const URL_ONE = /^https?:\/\/[^\s<>"')]+$/i
 
 export function PostCard({
   post,
-  canDelete,
+  me,
   onDeleted,
 }: {
   post: FeedPost
-  canDelete: boolean
+  me: CurrentUser
   onDeleted: () => void
 }) {
   const [pending, startTransition] = useTransition()
   const [confirming, setConfirming] = useState(false)
+
+  // Estado local de curtida (otimista) e contagens.
+  const [liked, setLiked] = useState(post.liked)
+  const [likeCount, setLikeCount] = useState(post.like_count)
+  const [commentCount, setCommentCount] = useState(post.comment_count)
+  const [showComments, setShowComments] = useState(false)
+  const [likeBusy, setLikeBusy] = useState(false)
+
+  const canDelete = me.isAdmin || post.author_id === me.id
 
   function remove() {
     startTransition(async () => {
@@ -39,6 +50,25 @@ export function PostCard({
       }
       onDeleted()
     })
+  }
+
+  async function toggleLike() {
+    if (likeBusy) return
+    setLikeBusy(true)
+    const next = !liked
+    // Otimista
+    setLiked(next)
+    setLikeCount((c) => c + (next ? 1 : -1))
+    const supabase = createClient()
+    const { error } = next
+      ? await supabase.from('community_post_likes').insert({ post_id: post.id, user_id: me.id })
+      : await supabase.from('community_post_likes').delete().eq('post_id', post.id).eq('user_id', me.id)
+    if (error) {
+      // Reverte em caso de falha
+      setLiked(!next)
+      setLikeCount((c) => c + (next ? -1 : 1))
+    }
+    setLikeBusy(false)
   }
 
   const when = (() => {
@@ -113,6 +143,40 @@ export function PostCard({
 
       {/* Mídia */}
       <Media post={post} />
+
+      {/* Ações */}
+      <div className="flex items-center gap-1 pt-0.5">
+        <button
+          type="button"
+          onClick={toggleLike}
+          className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
+            liked ? 'text-red-400' : 'text-white/55 hover:text-white/85'
+          }`}
+        >
+          <Heart className={`h-4.5 w-4.5 transition ${liked ? 'fill-red-400' : ''}`} />
+          {likeCount > 0 && <span>{likeCount}</span>}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowComments((v) => !v)}
+          className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
+            showComments ? 'text-secondary' : 'text-white/55 hover:text-white/85'
+          }`}
+        >
+          <MessageCircle className="h-4.5 w-4.5" />
+          {commentCount > 0 ? <span>{commentCount}</span> : <span>Comentar</span>}
+        </button>
+      </div>
+
+      {/* Comentários (montados só quando abertos) */}
+      {showComments && (
+        <CommentsSection
+          postId={post.id}
+          postAuthorId={post.author_id}
+          me={me}
+          onCountChange={(d) => setCommentCount((c) => Math.max(0, c + d))}
+        />
+      )}
     </article>
   )
 }

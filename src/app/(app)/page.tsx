@@ -68,12 +68,8 @@ export default async function HomePage() {
     supabase.rpc('get_rankings'),
     supabase.storage.from('sponsors').list('', { limit: 100, sortBy: { column: 'name', order: 'asc' } }),
     supabase.from('sponsor_banners').select('image_name, link_url'),
-    // Feed da comunidade — 20 posts mais recentes + autor
-    supabase
-      .from('community_posts')
-      .select('id, author_id, body, image_path, embed_url, embed_provider, created_at, profiles!community_posts_author_id_fkey(full_name, avatar_url)')
-      .order('created_at', { ascending: false })
-      .limit(20),
+    // Feed da comunidade — 20 posts recentes + autor + contagens + se curti
+    supabase.rpc('get_community_feed', { _limit: 20, _offset: 0 }),
     supabase.from('user_roles').select('role').eq('user_id', user.id),
   ])
 
@@ -290,7 +286,7 @@ export default async function HomePage() {
       href: linkByName.get(f.name) ?? null,
     }))
 
-  // ── Feed da comunidade ─────────────────────────────────────────────────────
+  // ── Feed da comunidade (RPC get_community_feed) ─────────────────────────────
   const feedPosts: FeedPost[] = ((feedRes.data ?? []) as unknown as Array<{
     id: string
     author_id: string
@@ -299,24 +295,28 @@ export default async function HomePage() {
     embed_url: string | null
     embed_provider: FeedPost['embed_provider']
     created_at: string
-    profiles: { full_name: string | null; avatar_url: string | null } | { full_name: string | null; avatar_url: string | null }[] | null
-  }>).map((row) => {
-    const prof = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles
-    return {
-      id: row.id,
-      author_id: row.author_id,
-      body: row.body,
-      image_path: row.image_path,
-      image_url: row.image_path
-        ? supabase.storage.from('community').getPublicUrl(row.image_path).data.publicUrl
-        : null,
-      embed_url: row.embed_url,
-      embed_provider: row.embed_provider,
-      created_at: row.created_at,
-      author_name: prof?.full_name ?? null,
-      author_avatar: prof?.avatar_url ?? null,
-    }
-  })
+    author_name: string | null
+    author_avatar: string | null
+    like_count: number | string
+    comment_count: number | string
+    liked: boolean
+  }>).map((row) => ({
+    id: row.id,
+    author_id: row.author_id,
+    body: row.body,
+    image_path: row.image_path,
+    image_url: row.image_path
+      ? supabase.storage.from('community').getPublicUrl(row.image_path).data.publicUrl
+      : null,
+    embed_url: row.embed_url,
+    embed_provider: row.embed_provider,
+    created_at: row.created_at,
+    author_name: row.author_name,
+    author_avatar: row.author_avatar,
+    like_count: Number(row.like_count),
+    comment_count: Number(row.comment_count),
+    liked: row.liked,
+  }))
   const isAdmin = ((rolesRes.data ?? []) as Array<{ role: string }>).some((r) => r.role === 'admin')
 
   // ── Render ────────────────────────────────────────────────────────────────

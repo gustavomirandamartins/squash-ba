@@ -3,14 +3,16 @@
 /**
  * CommunityFeed — seção da home (após o ranking). Composer + lista de posts.
  * Recebe os posts já resolvidos do server; após publicar/excluir, faz
- * router.refresh() para re-buscar o feed atualizado.
+ * router.refresh() para re-buscar o feed atualizado. Curtidas/comentários são
+ * otimistas no client e não exigem refresh.
  */
 
+import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Users2 } from 'lucide-react'
 import { PostComposer } from './PostComposer'
 import { PostCard } from './PostCard'
-import type { FeedPost } from './types'
+import type { CurrentUser, FeedPost } from './types'
 
 export function CommunityFeed({
   posts,
@@ -27,6 +29,11 @@ export function CommunityFeed({
 }) {
   const router = useRouter()
   const refresh = () => router.refresh()
+
+  const me: CurrentUser = useMemo(
+    () => ({ id: currentUserId, name: currentUserName, avatar: currentUserAvatar, isAdmin }),
+    [currentUserId, currentUserName, currentUserAvatar, isAdmin],
+  )
 
   return (
     <section className="space-y-3">
@@ -51,12 +58,7 @@ export function CommunityFeed({
       ) : (
         <div className="space-y-3">
           {posts.map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              canDelete={isAdmin || post.author_id === currentUserId}
-              onDeleted={refresh}
-            />
+            <PostCard key={post.id} post={post} me={me} onDeleted={refresh} />
           ))}
         </div>
       )}
