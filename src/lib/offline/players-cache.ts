@@ -10,6 +10,11 @@
 import { get, set } from 'idb-keyval'
 import { createClient } from '@/utils/supabase/client'
 
+// Retorna true se certamente offline (evita tocar a rede desnecessariamente).
+function isOfflineNow(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false
+}
+
 export type CachedPlayer = {
   id: string
   full_name: string | null
@@ -25,6 +30,10 @@ const CATEGORIES_KEY = 'categories-cache'
 // ── Categorias ────────────────────────────────────────────────────────────────
 
 export async function loadCategories(): Promise<CachedCategory[]> {
+  // Se offline, retorna o cache imediatamente sem tocar a rede.
+  if (isOfflineNow()) {
+    return ((await get(CATEGORIES_KEY)) as CachedCategory[] | undefined) ?? []
+  }
   try {
     const { data, error } = await createClient()
       .from('categories')
@@ -44,6 +53,11 @@ export async function loadCategories(): Promise<CachedCategory[]> {
 // o que mantém o cache utilizável offline com qualquer combinação de categorias.
 
 export async function loadPlayerPool(): Promise<CachedPlayer[]> {
+  // Se offline, retorna o cache imediatamente sem tocar a rede.
+  // Isso evita que o wizard fique preso esperando o timeout do fetch.
+  if (isOfflineNow()) {
+    return ((await get(PLAYERS_KEY)) as CachedPlayer[] | undefined) ?? []
+  }
   try {
     const { data, error } = await createClient()
       .from('profiles')

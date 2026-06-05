@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, Loader2, X } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { loadPlayerPool, loadCategories } from '@/lib/offline/players-cache'
+import { flushAllPending } from '@/lib/score-engine/SyncEngine'
 
 const SESSION_KEY = 'sb-offline-preloaded'
 
@@ -43,6 +44,19 @@ function warm(path: string): Promise<unknown> {
 export function OfflinePreloader() {
   const router = useRouter()
   const [phase, setPhase] = useState<Phase>('idle')
+
+  // Sincroniza filas de placar pendentes sempre que o app fica online,
+  // independentemente da tela atual. Garante que placares offline gravados em
+  // outra sessão (app fechado antes de sincronizar) não se percam.
+  useEffect(() => {
+    const handleOnline = () => { void flushAllPending() }
+    window.addEventListener('online', handleOnline)
+    // Também dispara imediatamente se já está online ao montar
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      void flushAllPending()
+    }
+    return () => window.removeEventListener('online', handleOnline)
+  }, [])
 
   useEffect(() => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return

@@ -8,7 +8,7 @@
  * startAutoSync() dispara flush a cada 3 s enquanto online.
  */
 
-import { get, set } from 'idb-keyval'
+import { get, set, keys } from 'idb-keyval'
 import { createClient } from '@/utils/supabase/client'
 import { getDeviceId } from './deviceId'
 
@@ -177,6 +177,30 @@ export async function getQueuedGames(
 
 export async function clearQueue(matchId: string): Promise<void> {
   await saveQueue(matchId, [])
+}
+
+// ─── flushAllPending ──────────────────────────────────────────────────────────
+// Escaneia todo o IDB em busca de filas `queue:*` com itens pendentes e as
+// sincroniza. Chamado no startup do app e ao reconectar, independentemente de
+// qual tela o usuário está — garante que placares offline não se percam mesmo
+// que o app tenha sido fechado antes de sincronizar.
+
+export async function flushAllPending(): Promise<void> {
+  if (typeof navigator === 'undefined' || !navigator.onLine) return
+  try {
+    const allKeys = (await keys()) as string[]
+    const queueKeys = allKeys.filter((k) => typeof k === 'string' && k.startsWith('queue:'))
+    await Promise.allSettled(
+      queueKeys.map(async (key) => {
+        const matchId = (key as string).slice('queue:'.length)
+        const queue = (await get(key)) as QueueAction[] | undefined
+        if (!queue || queue.length === 0) return
+        await flush(matchId)
+      }),
+    )
+  } catch {
+    /* best-effort: ignora erros de IDB */
+  }
 }
 
 // ─── Auto-sync ────────────────────────────────────────────────────────────────
