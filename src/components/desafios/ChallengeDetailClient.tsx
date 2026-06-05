@@ -535,11 +535,11 @@ export function ChallengeDetailClient({
     <div className="px-5 py-4 space-y-4">
       {/* Voltar */}
       <Link
-        href="/jogos"
+        href="/campeonatos"
         className="inline-flex items-center gap-1.5 text-sm text-white/50 hover:text-white/80 transition"
       >
         <ChevronLeft className="h-4 w-4" />
-        Jogos
+        Campeonatos
       </Link>
 
       {canManage && (

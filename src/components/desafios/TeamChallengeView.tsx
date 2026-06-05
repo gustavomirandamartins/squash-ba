@@ -227,9 +227,9 @@ export function TeamChallengeView({
 
   return (
     <div className="px-5 py-4 space-y-4">
-      <Link href="/jogos" className="inline-flex items-center gap-1.5 text-sm text-white/50 hover:text-white/80 transition">
+      <Link href="/campeonatos" className="inline-flex items-center gap-1.5 text-sm text-white/50 hover:text-white/80 transition">
         <ChevronLeft className="h-4 w-4" />
-        Jogos
+        Campeonatos
       </Link>
 
       {canManage && <ManageBar id={challenge.id} basePath="/desafios" listPath="/desafios" />}

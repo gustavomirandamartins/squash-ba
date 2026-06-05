@@ -17,6 +17,7 @@ export type ChallengeConfig = {
   pointsDraw: number
   pointsLoss: number
   tiebreakers: string[]
+  venueId?: string | null
 }
 
 // ─── Criar Desafio 1v1 ────────────────────────────────────────────────────────
@@ -49,6 +50,7 @@ export async function createDesafio1v1(
       points_loss: config.pointsLoss,
       tiebreakers: config.tiebreakers,
       created_by: user.id,
+      venue_id: config.venueId ?? null,
     })
     .select('id')
     .single()
@@ -170,6 +172,7 @@ export async function createDesafioDuplas(
       points_loss: config.pointsLoss,
       tiebreakers: config.tiebreakers,
       created_by: user.id,
+      venue_id: config.venueId ?? null,
     })
     .select('id')
     .single()
@@ -285,6 +288,7 @@ export async function createDesafioTimes(
       points_loss: config.pointsLoss,
       tiebreakers: config.tiebreakers,
       created_by: user.id,
+      venue_id: config.venueId ?? null,
     })
     .select('id')
     .single()

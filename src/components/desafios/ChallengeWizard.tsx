@@ -74,6 +74,7 @@ const DEFAULT: WizardState = {
   pointsDraw: 1,
   pointsLoss: 0,
   tiebreakers: ['sets_ganhos', 'pontos_ganhos', 'pontos_sofridos_asc'],
+  venueId: null,
   opponent: null,
   partner: null,
   opp1: null,
@@ -233,7 +234,17 @@ function Step1({ onSelect }: { onSelect: (type: ChallengeType) => void }) {
 
 // ─── ConfigFields (compartilhado: nome, partidas, contagem, pontuação, desempate) ─
 
-function ConfigFields({ state, onChange }: { state: WizardState; onChange: (p: Patch) => void }) {
+type VenueOption = { id: string; name: string }
+
+function ConfigFields({
+  state,
+  onChange,
+  venues = [],
+}: {
+  state: WizardState
+  onChange: (p: Patch) => void
+  venues?: VenueOption[]
+}) {
   const allowDraw = state.counting === 'tempo' || state.setDrawEnabled
 
   function moveTiebreaker(idx: number, dir: -1 | 1) {
@@ -259,6 +270,26 @@ function ConfigFields({ state, onChange }: { state: WizardState; onChange: (p: P
           className="w-full bg-transparent text-sm text-white placeholder-white/30 outline-none"
         />
       </div>
+
+      {/* Local (opcional) */}
+      {venues.length > 0 && (
+        <div className="glass glass-card px-4 py-3.5 space-y-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">
+            Local{' '}
+            <span className="normal-case font-normal text-white/25">(opcional)</span>
+          </p>
+          <select
+            value={state.venueId ?? ''}
+            onChange={(e) => onChange({ venueId: e.target.value || null })}
+            className="w-full bg-transparent text-sm text-white outline-none [color-scheme:dark]"
+          >
+            <option value="" className="bg-primary">Sem local definido</option>
+            {venues.map((v) => (
+              <option key={v.id} value={v.id} className="bg-primary">{v.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Partidas */}
       <div className="glass glass-card px-4 py-4 space-y-3">
@@ -501,14 +532,16 @@ function Step2_1v1({
   state,
   onChange,
   currentUserId,
+  venues,
 }: {
   state: WizardState
   onChange: (p: Patch) => void
   currentUserId: string
+  venues?: VenueOption[]
 }) {
   return (
     <div className="space-y-4">
-      <ConfigFields state={state} onChange={onChange} />
+      <ConfigFields state={state} onChange={onChange} venues={venues} />
       <PlayerSearchPicker
         label="Oponente"
         selected={state.opponent}
@@ -526,10 +559,12 @@ function Step2_Duplas({
   state,
   onChange,
   currentUserId,
+  venues,
 }: {
   state: WizardState
   onChange: (p: Patch) => void
   currentUserId: string
+  venues?: VenueOption[]
 }) {
   const partnerId = state.partner?.id
   const opp1Id = state.opp1?.id
@@ -538,7 +573,7 @@ function Step2_Duplas({
 
   return (
     <div className="space-y-4">
-      <ConfigFields state={state} onChange={onChange} />
+      <ConfigFields state={state} onChange={onChange} venues={venues} />
 
       <div className="glass glass-card px-4 py-3 text-xs text-white/45 leading-relaxed">
         Você monta as duas duplas. <span className="text-white/70">Sua dupla</span> = você + parceiro.
@@ -672,7 +707,7 @@ function TeamSide({
   )
 }
 
-function Step2_Teams({ state, onChange }: { state: WizardState; onChange: (p: Patch) => void }) {
+function Step2_Teams({ state, onChange, venues }: { state: WizardState; onChange: (p: Patch) => void; venues?: VenueOption[] }) {
   const [teams, setTeams] = useState<{ id: string; name: string; count: number }[]>([])
   const [rosters, setRosters] = useState<Map<string, RosterProfile[]>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -728,7 +763,7 @@ function Step2_Teams({ state, onChange }: { state: WizardState; onChange: (p: Pa
 
   return (
     <div className="space-y-4">
-      <ConfigFields state={state} onChange={onChange} />
+      <ConfigFields state={state} onChange={onChange} venues={venues} />
 
       {/* Total de jogadores */}
       <div className="glass glass-card px-4 py-4 space-y-3">
@@ -936,9 +971,10 @@ function canAdvance(step: number, s: WizardState): boolean {
 interface Props {
   currentUserId: string
   initialName?: string
+  venues?: VenueOption[]
 }
 
-export function ChallengeWizard({ currentUserId, initialName = '' }: Props) {
+export function ChallengeWizard({ currentUserId, initialName = '', venues = [] }: Props) {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [state, setState] = useState<WizardState>(() =>
@@ -981,6 +1017,7 @@ export function ChallengeWizard({ currentUserId, initialName = '' }: Props) {
       pointsDraw: state.pointsDraw,
       pointsLoss: state.pointsLoss,
       tiebreakers: state.tiebreakers,
+      venueId: state.venueId ?? null,
     }
     startTransition(async () => {
       try {
@@ -1047,7 +1084,7 @@ export function ChallengeWizard({ currentUserId, initialName = '' }: Props) {
           </div>
           {step === 1 ? (
             <Link
-              href="/jogos"
+              href="/campeonatos"
               className="h-8 w-8 grid place-items-center rounded-full bg-white/8 text-white/40 transition active:scale-95"
             >
               <X className="h-4 w-4" />
@@ -1070,13 +1107,13 @@ export function ChallengeWizard({ currentUserId, initialName = '' }: Props) {
       <div className="px-5 pb-6 space-y-0">
         {step === 1 && <Step1 onSelect={handleTypeSelect} />}
         {step === 2 && state.type === '1v1' && (
-          <Step2_1v1 state={state} onChange={onChange} currentUserId={currentUserId} />
+          <Step2_1v1 state={state} onChange={onChange} currentUserId={currentUserId} venues={venues} />
         )}
         {step === 2 && state.type === 'duplas' && (
-          <Step2_Duplas state={state} onChange={onChange} currentUserId={currentUserId} />
+          <Step2_Duplas state={state} onChange={onChange} currentUserId={currentUserId} venues={venues} />
         )}
         {step === 2 && state.type === 'teams' && (
-          <Step2_Teams state={state} onChange={onChange} />
+          <Step2_Teams state={state} onChange={onChange} venues={venues} />
         )}
         {step === 3 && (
           <Step3 state={state} onSubmit={handleSubmit} isPending={isPending} error={error} />

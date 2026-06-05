@@ -18,5 +18,13 @@ export default async function NovoDesafioPage({
   const { name } = await searchParams
   const initialName = (name ?? '').trim()
 
-  return <ChallengeWizard currentUserId={user.id} initialName={initialName} />
+  const { data: venues } = await supabase.from('venues').select('id, name').order('name')
+
+  return (
+    <ChallengeWizard
+      currentUserId={user.id}
+      initialName={initialName}
+      venues={(venues ?? []) as { id: string; name: string }[]}
+    />
+  )
 }
