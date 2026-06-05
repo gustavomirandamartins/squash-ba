@@ -4,7 +4,6 @@ import { PwaInstallBanner } from '@/components/home/PwaInstallBanner'
 import { Lembretes, type LembretesData } from '@/components/home/Lembretes'
 import { SponsorBanner } from '@/components/home/SponsorBanner'
 import { OngoingSection, type LiveMatch, type OngoingItem } from '@/components/home/OngoingSection'
-import { TeachersSection, type Teacher } from '@/components/home/TeachersSection'
 import { CategoryRanking, type RankRow } from '@/components/home/CategoryRanking'
 
 const EPOCH = new Date(0).toISOString()
@@ -32,7 +31,6 @@ export default async function HomePage() {
     invitesRes,
     activeChampsRes,
     liveMatchesRes,
-    organizersRes,
     myCreatedChallengesRes,
     rankingRes,
     sponsorsRes,
@@ -55,7 +53,6 @@ export default async function HomePage() {
       .select('id, championship_id, side_a_participant_id, side_b_participant_id, championships(format)')
       .eq('status', 'em_andamento')
       .limit(6),
-    supabase.from('user_roles').select('user_id').eq('role', 'organizer'),
     // Desafios que EU criei e onde o convidado já respondeu (aceite ou recusa)
     // pendente = ainda sem resposta → não mostra lembrete ainda
     supabase
@@ -118,16 +115,9 @@ export default async function HomePage() {
     ...new Set(liveRaw.flatMap((m) => [m.side_a_participant_id, m.side_b_participant_id].filter(Boolean) as string[])),
   ]
 
-  // Todos os organizadores (professores), inclusive o próprio usuário se for
-  // professor — antes o filtro `id !== user.id` escondia o professor logado da
-  // própria lista. O botão "Contato" é ocultado para si mesmo no componente.
-  const organizerIds = [
-    ...new Set((organizersRes.data ?? []).map((r: { user_id: string }) => r.user_id)),
-  ]
-
   // ── Fase 2: lookups dependentes, todos independentes entre si → em paralelo ─
   const emptyData = <T,>() => Promise.resolve({ data: [] as T })
-  const [unreadRes, challengePartsRes, sidePartsRes, teacherProfilesRes] = await Promise.all([
+  const [unreadRes, challengePartsRes, sidePartsRes] = await Promise.all([
     myConvIds.length
       ? supabase.from('messages').select('conversation_id, created_at').in('conversation_id', myConvIds).neq('sender_id', user.id)
       : emptyData<Array<{ conversation_id: string; created_at: string }>>(),
@@ -137,9 +127,6 @@ export default async function HomePage() {
     sideIds.length
       ? supabase.from('participants').select('id, display_name').in('id', sideIds)
       : emptyData<Array<{ id: string; display_name: string | null }>>(),
-    organizerIds.length
-      ? supabase.from('profiles').select('id, full_name, avatar_url').in('id', organizerIds)
-      : emptyData<Teacher[]>(),
   ])
 
   // Não lidas: 1 query + redução em JS contra o last_read_at por conversa.
@@ -247,9 +234,6 @@ export default async function HomePage() {
     }
   })
 
-  // ── Professores (organizadores) ───────────────────────────────────────────
-  const teachers: Teacher[] = (teacherProfilesRes.data ?? []) as Teacher[]
-
   // ── Ranking geral (nova RPC get_rankings) ────────────────────────────────
   const rankRows: RankRow[] = ((rankingRes.data ?? []) as Array<{
     user_id: string
@@ -302,7 +286,6 @@ export default async function HomePage() {
     <Lembretes key="lembretes" data={lembretes} />,
     <SponsorBanner key="sponsor" banners={banners} />,
     <OngoingSection key="ongoing" liveMatches={liveMatches} active={activeItems} />,
-    <TeachersSection key="teachers" teachers={teachers} currentUserId={user.id} />,
     <CategoryRanking key="ranking" rows={rankRows} />,
   ]
 
