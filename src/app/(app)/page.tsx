@@ -5,6 +5,8 @@ import { Lembretes, type LembretesData } from '@/components/home/Lembretes'
 import { SponsorBanner } from '@/components/home/SponsorBanner'
 import { OngoingSection, type LiveMatch, type OngoingItem } from '@/components/home/OngoingSection'
 import { CategoryRanking, type RankRow } from '@/components/home/CategoryRanking'
+import { CommunityFeed } from '@/components/home/feed/CommunityFeed'
+import type { FeedPost } from '@/components/home/feed/types'
 
 const EPOCH = new Date(0).toISOString()
 
@@ -35,8 +37,10 @@ export default async function HomePage() {
     rankingRes,
     sponsorsRes,
     sponsorLinksRes,
+    feedRes,
+    rolesRes,
   ] = await Promise.all([
-    supabase.from('profiles').select('full_name, gender, birth_date').eq('id', user.id).single(),
+    supabase.from('profiles').select('full_name, gender, birth_date, avatar_url').eq('id', user.id).single(),
     supabase.from('conversation_members').select('conversation_id, last_read_at').eq('user_id', user.id),
     supabase
       .from('participant_members')
@@ -64,6 +68,13 @@ export default async function HomePage() {
     supabase.rpc('get_rankings'),
     supabase.storage.from('sponsors').list('', { limit: 100, sortBy: { column: 'name', order: 'asc' } }),
     supabase.from('sponsor_banners').select('image_name, link_url'),
+    // Feed da comunidade — 20 posts mais recentes + autor
+    supabase
+      .from('community_posts')
+      .select('id, author_id, body, image_path, embed_url, embed_provider, created_at, profiles!community_posts_author_id_fkey(full_name, avatar_url)')
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabase.from('user_roles').select('role').eq('user_id', user.id),
   ])
 
   const firstName = (profileRes.data?.full_name ?? 'Jogador').trim().split(/\s+/)[0]
@@ -279,6 +290,35 @@ export default async function HomePage() {
       href: linkByName.get(f.name) ?? null,
     }))
 
+  // ── Feed da comunidade ─────────────────────────────────────────────────────
+  const feedPosts: FeedPost[] = ((feedRes.data ?? []) as unknown as Array<{
+    id: string
+    author_id: string
+    body: string | null
+    image_path: string | null
+    embed_url: string | null
+    embed_provider: FeedPost['embed_provider']
+    created_at: string
+    profiles: { full_name: string | null; avatar_url: string | null } | { full_name: string | null; avatar_url: string | null }[] | null
+  }>).map((row) => {
+    const prof = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles
+    return {
+      id: row.id,
+      author_id: row.author_id,
+      body: row.body,
+      image_path: row.image_path,
+      image_url: row.image_path
+        ? supabase.storage.from('community').getPublicUrl(row.image_path).data.publicUrl
+        : null,
+      embed_url: row.embed_url,
+      embed_provider: row.embed_provider,
+      created_at: row.created_at,
+      author_name: prof?.full_name ?? null,
+      author_avatar: prof?.avatar_url ?? null,
+    }
+  })
+  const isAdmin = ((rolesRes.data ?? []) as Array<{ role: string }>).some((r) => r.role === 'admin')
+
   // ── Render ────────────────────────────────────────────────────────────────
   const sections = [
     <WelcomeHeader key="welcome" firstName={firstName} gender={gender} />,
@@ -287,6 +327,14 @@ export default async function HomePage() {
     <SponsorBanner key="sponsor" banners={banners} />,
     <OngoingSection key="ongoing" liveMatches={liveMatches} active={activeItems} />,
     <CategoryRanking key="ranking" rows={rankRows} />,
+    <CommunityFeed
+      key="community"
+      posts={feedPosts}
+      currentUserId={user.id}
+      currentUserName={profileRes.data?.full_name ?? null}
+      currentUserAvatar={profileRes.data?.avatar_url ?? null}
+      isAdmin={isAdmin}
+    />,
   ]
 
   return (
