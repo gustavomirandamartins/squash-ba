@@ -61,7 +61,10 @@ interface WizardState {
   // Step 1
   name: string
   startDate: string  // 'YYYY-MM-DD' ou '' (sem data definida)
+  endDate: string    // só oficial
   isOfficial: boolean
+  description: string // só oficial
+  venueId: string     // só oficial ('' = nenhum)
   format: Format
   unit: Unit
   // Step 2 — Liga
@@ -168,7 +171,10 @@ const GROUP_NAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 const DEFAULT_STATE: WizardState = {
   name: '',
   startDate: '',
+  endDate: '',
   isOfficial: false,
+  description: '',
+  venueId: '',
   format: 'liga',
   unit: 'player',
   rounds: 1,
@@ -570,6 +576,9 @@ function canAdvance(step: number, s: WizardState): boolean {
     return true
   }
   if (step === 4) {
+    // Oficial: jogadores são opcionais na criação (entram depois, por inscrição
+    // ou pelo organizador). Pode avançar com 0.
+    if (s.isOfficial) return true
     if (s.unit === 'pair') return s.pairs.length >= 2
     return s.players.length >= 2
   }
@@ -578,7 +587,17 @@ function canAdvance(step: number, s: WizardState): boolean {
 
 // ─── Step 1 ───────────────────────────────────────────────────────────────────
 
-function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) => void }) {
+function Step1({
+  state,
+  onChange,
+  venues = [],
+  canCreateOfficial = false,
+}: {
+  state: WizardState
+  onChange: (p: Patch) => void
+  venues?: VenueOption[]
+  canCreateOfficial?: boolean
+}) {
   const blocked =
     (state.format !== 'liga' &&
       state.format !== 'eliminatoria' &&
@@ -675,11 +694,17 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
         </div>
       </div>
 
-      {/* Campeonato oficial — visível só para formatos reais */}
-      {state.format !== 'desafio' && (
+      {/* Campeonato oficial — só admin/professor; força modalidade individual */}
+      {state.format !== 'desafio' && canCreateOfficial && (
         <button
           type="button"
-          onClick={() => onChange({ isOfficial: !state.isOfficial })}
+          onClick={() =>
+            onChange(
+              state.isOfficial
+                ? { isOfficial: false }
+                : { isOfficial: true, unit: 'player' }, // oficial é sempre individual
+            )
+          }
           className={`glass glass-card flex w-full items-center gap-3 px-4 py-3 text-left transition active:scale-[0.98] ${
             state.isOfficial ? 'border-secondary/50 bg-secondary/10' : ''
           }`}
@@ -700,11 +725,64 @@ function Step1({ state, onChange }: { state: WizardState; onChange: (p: Patch) =
             <p className="text-sm font-semibold text-white/90">Campeonato oficial</p>
             <p className="text-[11px] leading-snug text-white/40">
               {state.isOfficial
-                ? '+5 por participar, +15/10/5 para pódio'
-                : 'Não oficial: +5/3/1 para pódio apenas'}
+                ? '+5 por participar, +15/10/5 para pódio · inscrições abertas a todos'
+                : 'Vale a pontuação especial do ranking · jogadores entram por inscrição'}
             </p>
           </div>
         </button>
+      )}
+
+      {/* Campos exclusivos do oficial */}
+      {state.isOfficial && (
+        <div className="space-y-3">
+          <div className="glass glass-card px-4 py-2.5 space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
+              Descrição{' '}
+              <span className="normal-case font-normal text-white/25">(opcional)</span>
+            </p>
+            <textarea
+              value={state.description}
+              onChange={(e) => onChange({ description: e.target.value })}
+              placeholder="Regras, premiação, observações…"
+              rows={3}
+              className="w-full resize-none bg-transparent text-sm text-white placeholder-white/30 outline-none"
+            />
+          </div>
+
+          <div className="glass glass-card px-4 py-2.5 space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
+              Local{' '}
+              <span className="normal-case font-normal text-white/25">(opcional)</span>
+            </p>
+            <select
+              value={state.venueId}
+              onChange={(e) => onChange({ venueId: e.target.value })}
+              className="w-full bg-transparent text-sm text-white outline-none [color-scheme:dark]"
+            >
+              <option value="" className="bg-primary">
+                Sem local definido
+              </option>
+              {venues.map((v) => (
+                <option key={v.id} value={v.id} className="bg-primary">
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="glass glass-card px-4 py-2.5 space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
+              Data de término{' '}
+              <span className="normal-case font-normal text-white/25">(opcional)</span>
+            </p>
+            <input
+              type="date"
+              value={state.endDate}
+              onChange={(e) => onChange({ endDate: e.target.value })}
+              className="w-full bg-transparent text-sm text-white placeholder-white/30 outline-none [color-scheme:dark]"
+            />
+          </div>
+        </div>
       )}
 
       {blocked && <ComingSoonBanner />}
@@ -1890,7 +1968,15 @@ function Step5({
 
 // ─── Main wizard ──────────────────────────────────────────────────────────────
 
-export function ChampionshipWizard() {
+export interface VenueOption { id: string; name: string }
+
+export function ChampionshipWizard({
+  venues = [],
+  canCreateOfficial = false,
+}: {
+  venues?: VenueOption[]
+  canCreateOfficial?: boolean
+} = {}) {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [state, setState] = useState<WizardState>(DEFAULT_STATE)
@@ -1957,7 +2043,10 @@ export function ChampionshipWizard() {
             cfg: {
               name: state.name,
               startDate: state.startDate || null,
+              endDate: state.isOfficial ? state.endDate || null : null,
               isOfficial: state.isOfficial,
+              description: state.isOfficial ? state.description || null : null,
+              venueId: state.isOfficial ? state.venueId || null : null,
               hasThirdPlace: state.hasThirdPlace,
               counting: state.counting,
               setsToPlay: state.setsToPlay,
@@ -1976,7 +2065,7 @@ export function ChampionshipWizard() {
                 ? state.pairs.map((p) => ({ p1: p.p1.id, p2: p.p2.id, seed: state.pairSeeds[p.id] ?? null }))
                 : undefined,
               // Offline → força 'ativo' p/ o servidor gerar o bracket ao sincronizar.
-              status: offlineNow ? 'ativo' : state.status,
+              status: state.isOfficial ? 'rascunho' : offlineNow ? 'ativo' : state.status,
             },
           }
         } else if (state.format === 'grupos_elim') {
@@ -1989,7 +2078,10 @@ export function ChampionshipWizard() {
               cfg: {
                 name: state.name,
                 startDate: state.startDate || null,
+                endDate: state.isOfficial ? state.endDate || null : null,
                 isOfficial: state.isOfficial,
+                description: state.isOfficial ? state.description || null : null,
+                venueId: state.isOfficial ? state.venueId || null : null,
                 numGroups: state.numGroups,
                 qualifiersPerGroup: state.qualifiersPerGroup,
                 pointsWin: state.pointsWin,
@@ -2069,7 +2161,10 @@ export function ChampionshipWizard() {
             cfg: {
               name: state.name,
               startDate: state.startDate || null,
+              endDate: state.isOfficial ? state.endDate || null : null,
               isOfficial: state.isOfficial,
+              description: state.isOfficial ? state.description || null : null,
+              venueId: state.isOfficial ? state.venueId || null : null,
               pointsWin: state.pointsWin,
               pointsDraw: allowDraw ? state.pointsDraw : 0,
               pointsLoss: state.pointsLoss,
@@ -2088,13 +2183,19 @@ export function ChampionshipWizard() {
                 : undefined,
               // Offline → força 'ativo' para o servidor gerar as partidas ao
               // sincronizar (a Liga provisória já está em uso com placares).
-              status: offlineNow ? 'ativo' : state.status,
+              status: state.isOfficial ? 'rascunho' : offlineNow ? 'ativo' : state.status,
             },
           }
         }
 
         const result = await submitCreation({ kind: 'campeonato', op, snapshot })
         if ('error' in result) throw new Error(result.error)
+
+        // Oficial é online-only: abre direto a página do campeonato (inscrições).
+        if (state.isOfficial) {
+          router.push(`/campeonatos/${result.id}`)
+          return
+        }
 
         // Offline → tenta criar um snapshot local "provisório" utilizável na hora
         // (abre direto a tela provisória). Se conseguir, retorna; senão cai no card.
@@ -2327,7 +2428,14 @@ export function ChampionshipWizard() {
 
       {/* Step content */}
       <div className="px-5 pb-4 space-y-0">
-        {step === 1 && <Step1 state={state} onChange={onChange} />}
+        {step === 1 && (
+          <Step1
+            state={state}
+            onChange={onChange}
+            venues={venues}
+            canCreateOfficial={canCreateOfficial}
+          />
+        )}
         {step === 2 && state.format === 'eliminatoria' && (
           <Step2Eliminatoria state={state} onChange={onChange} />
         )}

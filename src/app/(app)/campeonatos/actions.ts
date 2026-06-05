@@ -1,5 +1,6 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/utils/supabase/server'
 
 // ─── Liga (wrap do RPC create_liga_championship como server action) ───────────
@@ -7,7 +8,10 @@ import { createClient } from '@/utils/supabase/server'
 export type LigaCfg = {
   name: string
   startDate?: string | null
+  endDate?: string | null
   isOfficial?: boolean
+  description?: string | null
+  venueId?: string | null
   pointsWin: number
   pointsDraw: number
   pointsLoss: number
@@ -44,7 +48,10 @@ export async function createLigaChampionship(
         unit: 'pair',
         status: 'rascunho',
         start_date: cfg.startDate ?? null,
+        end_date: cfg.endDate ?? null,
         is_official: cfg.isOfficial ?? false,
+        description: cfg.description ?? null,
+        venue_id: cfg.venueId ?? null,
         allow_draw: cfg.allowDraw,
         points_win: cfg.pointsWin,
         points_draw: cfg.allowDraw ? cfg.pointsDraw : 0,
@@ -121,10 +128,13 @@ export async function createLigaChampionship(
   })
   if (error) return { error: error.message }
   if (!id) return { error: 'Campeonato não foi criado.' }
-  // Campos adicionais que o RPC não recebe: start_date e is_official
+  // Campos adicionais que o RPC não recebe: start_date, end_date, is_official, …
   const extras: Record<string, unknown> = {}
   if (cfg.startDate) extras.start_date = cfg.startDate
+  if (cfg.endDate) extras.end_date = cfg.endDate
   if (cfg.isOfficial) extras.is_official = true
+  if (cfg.description) extras.description = cfg.description
+  if (cfg.venueId) extras.venue_id = cfg.venueId
   if (Object.keys(extras).length) {
     await supabase.from('championships').update(extras).eq('id', id as string)
   }
@@ -136,7 +146,10 @@ export async function createLigaChampionship(
 export type EliminatoriaCfg = {
   name: string
   startDate?: string | null
+  endDate?: string | null
   isOfficial?: boolean
+  description?: string | null
+  venueId?: string | null
   hasThirdPlace: boolean
   counting: 'set' | 'tempo'
   setsToPlay: 1 | 3 | 5
@@ -184,7 +197,10 @@ export async function createEliminatoriaChampionship(
       unit: isPairMode ? 'pair' : 'player',
       status: 'rascunho',
       start_date: cfg.startDate ?? null,
+      end_date: cfg.endDate ?? null,
       is_official: cfg.isOfficial ?? false,
+      description: cfg.description ?? null,
+      venue_id: cfg.venueId ?? null,
       allow_draw: allowDraw,
       has_third_place: cfg.hasThirdPlace,
       points_win: cfg.pointsWin,
@@ -276,7 +292,10 @@ export async function createEliminatoriaChampionship(
 export type GruposElimCfg = {
   name: string
   startDate?: string | null
+  endDate?: string | null
   isOfficial?: boolean
+  description?: string | null
+  venueId?: string | null
   numGroups: number
   qualifiersPerGroup: number
   pointsWin: number
@@ -317,6 +336,116 @@ export async function createGruposElimChampionship(
 
   if (!user) return { error: 'Usuário não autenticado.' }
 
+  // ── Modo oficial: cria stages + grupos VAZIOS e fica em rascunho ──────────
+  // (jogadores entram depois; a alocação em grupos acontece no "Iniciar").
+  // O RPC padrão ativa de imediato e exige jogadores, por isso a via manual.
+  if (cfg.isOfficial) {
+    const { data: champ, error: champErr } = await supabase
+      .from('championships')
+      .insert({
+        name: cfg.name.trim(),
+        format: 'grupos_elim',
+        unit: 'player',
+        status: 'rascunho',
+        start_date: cfg.startDate ?? null,
+        end_date: cfg.endDate ?? null,
+        is_official: true,
+        description: cfg.description ?? null,
+        venue_id: cfg.venueId ?? null,
+        allow_draw: cfg.allowDraw,
+        points_win: cfg.pointsWin,
+        points_draw: cfg.allowDraw ? cfg.pointsDraw : 0,
+        points_loss: cfg.pointsLoss,
+        tiebreakers: cfg.tiebreakers,
+        has_third_place: cfg.hasThirdPlace,
+        created_by: user.id,
+      })
+      .select('id')
+      .single()
+    if (champErr || !champ) return { error: champErr?.message ?? 'Erro ao criar campeonato.' }
+    const champId = champ.id as string
+
+    const { data: gruposStage, error: gsErr } = await supabase
+      .from('championship_stages')
+      .insert({
+        championship_id: champId,
+        name: 'Grupos',
+        ordering: 1,
+        kind: 'grupos',
+        counting: cfg.groupsCounting,
+        rounds: cfg.groupsRounds,
+        sets_to_play: cfg.groupsSetsToPlay,
+        points_per_set: cfg.groupsPointsPerSet,
+        win_by_two: cfg.groupsWinByTwo,
+        set_draw_enabled: cfg.groupsSetDrawEnabled,
+        time_minutes: cfg.groupsTimeMinutes,
+      })
+      .select('id')
+      .single()
+    if (gsErr || !gruposStage) {
+      await supabase.from('championships').delete().eq('id', champId)
+      return { error: gsErr?.message ?? 'Erro ao criar fase de grupos.' }
+    }
+
+    const { error: esErr } = await supabase.from('championship_stages').insert({
+      championship_id: champId,
+      name: 'Eliminatórias',
+      ordering: 2,
+      kind: 'eliminatoria',
+      counting: cfg.elimCounting,
+      rounds: 1,
+      sets_to_play: cfg.elimSetsToPlay,
+      points_per_set: cfg.elimPointsPerSet,
+      win_by_two: cfg.elimWinByTwo,
+      set_draw_enabled: false,
+      time_minutes: cfg.elimTimeMinutes,
+    })
+    if (esErr) {
+      await supabase.from('championships').delete().eq('id', champId)
+      return { error: esErr.message }
+    }
+
+    // Grupos vazios (A, B, …) — alocação dos jogadores ocorre no início.
+    const GROUP_NAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+    for (let gi = 0; gi < cfg.numGroups; gi++) {
+      const { error: grpErr } = await supabase
+        .from('groups')
+        .insert({ stage_id: gruposStage.id, name: `Grupo ${GROUP_NAMES[gi] ?? String(gi + 1)}`, ordering: gi + 1 })
+      if (grpErr) {
+        await supabase.from('championships').delete().eq('id', champId)
+        return { error: grpErr.message }
+      }
+    }
+
+    // Jogadores iniciais (opcionais) — confirmados, sem grupo ainda.
+    for (const p of cfg.players) {
+      const { data: part, error: partErr } = await supabase
+        .from('participants')
+        .insert({
+          championship_id: champId,
+          kind: 'player',
+          enrollment_source: 'organizador',
+          enrollment_status: 'confirmado',
+          seed: p.seed ?? null,
+        })
+        .select('id')
+        .single()
+      if (partErr || !part) {
+        await supabase.from('championships').delete().eq('id', champId)
+        return { error: partErr?.message ?? 'Erro ao adicionar jogador.' }
+      }
+      const { error: mErr } = await supabase
+        .from('participant_members')
+        .insert({ participant_id: part.id, user_id: p.userId })
+      if (mErr) {
+        await supabase.from('championships').delete().eq('id', champId)
+        return { error: mErr.message }
+      }
+    }
+
+    return { id: champId }
+  }
+
   // ── Modo duplas: criação manual (o RPC só conhece unit='player') ──────────
   if (cfg.pairs?.length) {
     const { data: champ, error: champErr } = await supabase
@@ -327,7 +456,10 @@ export async function createGruposElimChampionship(
         unit: 'pair',
         status: 'rascunho',
         start_date: cfg.startDate ?? null,
+        end_date: cfg.endDate ?? null,
         is_official: cfg.isOfficial ?? false,
+        description: cfg.description ?? null,
+        venue_id: cfg.venueId ?? null,
         allow_draw: cfg.allowDraw,
         points_win: cfg.pointsWin,
         points_draw: cfg.allowDraw ? cfg.pointsDraw : 0,
@@ -484,3 +616,168 @@ export async function createGruposElimChampionship(
   return { id: id as string }
 }
 
+
+// ════════════════════════════════════════════════════════════════════════════
+// Campeonatos Oficiais — inscrição, gestão e início
+// ════════════════════════════════════════════════════════════════════════════
+
+// ─── Jogador solicita inscrição (cria participante pendente) ─────────────────
+export async function requestEnrollment(
+  championshipId: string,
+): Promise<{ ok: true } | { error: string }> {
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('request_enrollment', {
+    _championship_id: championshipId,
+  })
+  if (error) return { error: error.message }
+  revalidatePath(`/campeonatos/${championshipId}`)
+  return { ok: true }
+}
+
+// ─── Organizador aprova inscrição pendente ──────────────────────────────────
+export async function approveEnrollment(
+  participantId: string,
+  championshipId: string,
+): Promise<{ ok: true } | { error: string }> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('participants')
+    .update({ enrollment_status: 'confirmado' })
+    .eq('id', participantId)
+  if (error) return { error: error.message }
+  revalidatePath(`/campeonatos/${championshipId}`)
+  return { ok: true }
+}
+
+// ─── Organizador recusa/remove inscrição ────────────────────────────────────
+export async function rejectEnrollment(
+  participantId: string,
+  championshipId: string,
+): Promise<{ ok: true } | { error: string }> {
+  const supabase = await createClient()
+  const { error } = await supabase.from('participants').delete().eq('id', participantId)
+  if (error) return { error: error.message }
+  revalidatePath(`/campeonatos/${championshipId}`)
+  return { ok: true }
+}
+
+// ─── Organizador adiciona jogador diretamente (confirmado) ──────────────────
+export async function addPlayerToChampionship(
+  championshipId: string,
+  userId: string,
+): Promise<{ ok: true } | { error: string }> {
+  const supabase = await createClient()
+
+  // Já inscrito? evita duplicidade
+  const { data: existing } = await supabase
+    .from('participants')
+    .select('id, participant_members!inner(user_id)')
+    .eq('championship_id', championshipId)
+    .eq('participant_members.user_id', userId)
+    .limit(1)
+  if (existing && existing.length > 0) {
+    return { error: 'Jogador já inscrito neste campeonato.' }
+  }
+
+  const { data: part, error: partErr } = await supabase
+    .from('participants')
+    .insert({
+      championship_id: championshipId,
+      kind: 'player',
+      enrollment_source: 'organizador',
+      enrollment_status: 'confirmado',
+    })
+    .select('id')
+    .single()
+  if (partErr || !part) return { error: partErr?.message ?? 'Erro ao adicionar jogador.' }
+
+  const { error: mErr } = await supabase
+    .from('participant_members')
+    .insert({ participant_id: part.id, user_id: userId })
+  if (mErr) {
+    await supabase.from('participants').delete().eq('id', part.id)
+    return { error: mErr.message }
+  }
+  revalidatePath(`/campeonatos/${championshipId}`)
+  return { ok: true }
+}
+
+// ─── Organizador inicia o campeonato oficial ────────────────────────────────
+// Para grupos_elim: distribui os confirmados nos grupos (snake draft) antes de
+// ativar. Depois muda status→ativo (o trigger gera as partidas).
+export async function startOfficialChampionship(
+  championshipId: string,
+): Promise<{ ok: true } | { error: string }> {
+  const supabase = await createClient()
+
+  const { data: champ, error: cErr } = await supabase
+    .from('championships')
+    .select('id, format, status, is_official')
+    .eq('id', championshipId)
+    .single()
+  if (cErr || !champ) return { error: cErr?.message ?? 'Campeonato não encontrado.' }
+  if (champ.status !== 'rascunho') return { error: 'O campeonato já foi iniciado.' }
+
+  // Confirmados
+  const { data: confirmed } = await supabase
+    .from('participants')
+    .select('id, seed')
+    .eq('championship_id', championshipId)
+    .eq('enrollment_status', 'confirmado')
+  const parts = confirmed ?? []
+  if (parts.length < 2) return { error: 'É preciso ao menos 2 jogadores confirmados.' }
+
+  // Remove pendentes que não foram aprovados (não entram no chaveamento)
+  await supabase
+    .from('participants')
+    .delete()
+    .eq('championship_id', championshipId)
+    .eq('enrollment_status', 'pendente')
+
+  // grupos_elim: aloca confirmados nos grupos via snake draft
+  if (champ.format === 'grupos_elim') {
+    const { data: gruposStage } = await supabase
+      .from('championship_stages')
+      .select('id')
+      .eq('championship_id', championshipId)
+      .eq('kind', 'grupos')
+      .single()
+    if (!gruposStage) return { error: 'Fase de grupos não encontrada.' }
+
+    const { data: groups } = await supabase
+      .from('groups')
+      .select('id, ordering')
+      .eq('stage_id', gruposStage.id)
+      .order('ordering', { ascending: true })
+    const groupIds = (groups ?? []).map((g) => g.id as string)
+    if (groupIds.length === 0) return { error: 'Nenhum grupo configurado.' }
+
+    // Snake draft: ordena por seed (nulls por último), distribui em zigue-zague.
+    const ordered = [...parts].sort((a, b) => {
+      const sa = a.seed ?? 9999
+      const sb = b.seed ?? 9999
+      return sa - sb
+    })
+    const n = groupIds.length
+    for (let i = 0; i < ordered.length; i++) {
+      const round = Math.floor(i / n)
+      const pos = i % n
+      const gi = round % 2 === 0 ? pos : n - 1 - pos
+      const { error: upErr } = await supabase
+        .from('participants')
+        .update({ group_id: groupIds[gi] })
+        .eq('id', ordered[i].id)
+      if (upErr) return { error: upErr.message }
+    }
+  }
+
+  // Ativa → trigger championship_status gera as partidas
+  const { error: actErr } = await supabase
+    .from('championships')
+    .update({ status: 'ativo' })
+    .eq('id', championshipId)
+  if (actErr) return { error: actErr.message }
+
+  revalidatePath(`/campeonatos/${championshipId}`)
+  return { ok: true }
+}
