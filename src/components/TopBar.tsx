@@ -19,7 +19,7 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage, userId }: Props) {
   const [searchOpen, setSearchOpen] = useState(false)
 
   return (
-    <header className="sticky top-0 z-30">
+    <header className="relative z-30 shrink-0">
       {/*
         Gradient glassmorphism background:
         top → full blur + semi-transparent dark (glass effect)

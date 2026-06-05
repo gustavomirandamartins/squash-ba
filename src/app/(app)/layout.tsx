@@ -39,7 +39,7 @@ export default async function AppLayout({
   const canManage = roleSet.has('organizer') || roleSet.has('admin')
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col landscape-sm:max-w-none lg:max-w-none lg:flex-row">
+    <div className="mx-auto flex h-dvh w-full max-w-[480px] flex-col overflow-hidden landscape-sm:max-w-none lg:max-w-none lg:flex-row">
       {/* Rail de navegação (apenas desktop) */}
       <DesktopSidebar
         name={profile.full_name}
@@ -62,7 +62,7 @@ export default async function AppLayout({
           canManage={canManage}
           userId={user.id}
         />
-        <main className="flex flex-1 flex-col pb-32 landscape-sm:pb-8 landscape-sm:pl-[max(4.75rem,calc(env(safe-area-inset-left)+4rem))] landscape-sm:pr-[max(0.5rem,env(safe-area-inset-right))] lg:mx-auto lg:w-full lg:max-w-3xl lg:px-2 lg:pb-16 lg:pl-2">
+        <main className="flex flex-1 flex-col overflow-y-auto overscroll-y-contain pb-32 landscape-sm:pb-8 landscape-sm:pl-[max(4.75rem,calc(env(safe-area-inset-left)+4rem))] landscape-sm:pr-[max(0.5rem,env(safe-area-inset-right))] lg:mx-auto lg:w-full lg:max-w-3xl lg:px-2 lg:pb-16 lg:pl-2">
           {children}
         </main>
       </div>
