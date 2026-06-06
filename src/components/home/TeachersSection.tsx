@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { GraduationCap, MessageSquare, User } from 'lucide-react'
+import { MessageSquare, User } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 
 export interface Teacher {
@@ -31,10 +31,6 @@ export function TeachersSection({ teachers, currentUserId }: { teachers: Teacher
 
   return (
     <section className="px-5">
-      <h2 className="mb-3 flex items-center gap-2 font-display text-lg font-bold text-white">
-        <GraduationCap className="h-5 w-5 text-secondary" />
-        Professores
-      </h2>
       <div className="space-y-1.5">
         {teachers.map((t) => (
           <div key={t.id} className="glass glass-card flex items-center gap-3 px-3.5 py-3">
