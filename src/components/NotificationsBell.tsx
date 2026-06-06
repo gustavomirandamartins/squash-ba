@@ -47,10 +47,13 @@ export function NotificationsBell({
   userId,
   className = '',
   openUp = false,
+  openRight = false,
 }: {
   userId: string | null
   className?: string
   openUp?: boolean
+  /** Abre o painel para a direita (left-0). Use quando o sino está no canto esquerdo da tela. */
+  openRight?: boolean
 }) {
   const router = useRouter()
   const [supabase] = useState(() => createClient())
@@ -146,7 +149,7 @@ export function NotificationsBell({
       </button>
 
       {open && (
-        <div className={`absolute right-0 z-50 w-[300px] max-w-[calc(100vw-2rem)] glass glass-card glass-overlay overflow-hidden ${openUp ? 'bottom-full mb-2' : 'mt-2'}`}>
+        <div className={`absolute z-50 w-[300px] max-w-[calc(100vw-2rem)] glass glass-card glass-overlay overflow-hidden ${openRight ? 'left-0' : 'right-0'} ${openUp ? 'bottom-full mb-2' : 'mt-2'}`}>
           <div className="flex items-center justify-between border-b border-white/8 px-3.5 py-2.5">
             <p className="text-xs font-bold text-white">Notificações</p>
             {unread > 0 && (

@@ -104,7 +104,7 @@ export function DesktopSidebar({ name, avatarUrl, isAdmin, canManage, userId }: 
             {isAdmin ? 'Administrador' : canManage ? 'Professor' : 'Jogador'}
           </p>
         </div>
-        <NotificationsBell userId={userId ?? null} openUp />
+        <NotificationsBell userId={userId ?? null} openUp openRight />
       </div>
     </aside>
   )
