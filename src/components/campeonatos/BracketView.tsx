@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { User, Check, Medal, Clock, Zap } from 'lucide-react'
+import { User, Check, Medal, Clock, Zap, Shuffle, X } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { StandingsTable, type Standing } from './StandingsTable'
 
@@ -46,7 +46,11 @@ type Props = {
   initialStandings: Standing[]
   /** sub-label por participante: "1º Grupo A", "2º Grupo B" etc. (grupos_elim) */
   participantGroupLabels?: Record<string, string>
+  /** Exibe botão "Editar chave" para rearranjar slots da 1ª rodada (grupos_elim) */
+  allowReorder?: boolean
 }
+
+type SelectedSlot = { matchId: string; side: 'a' | 'b' }
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
@@ -192,6 +196,15 @@ function PlayerSlot({
 
 // ─── MatchCard ────────────────────────────────────────────────────────────────
 
+type EditSlotProps = {
+  /** Lado selecionado neste card (highlight amarelo) */
+  selectedSide: 'a' | 'b' | null
+  /** Algum slot já está selecionado globalmente (dim non-selected) */
+  anySelected: boolean
+  /** Callback ao clicar em um lado */
+  onClickSide: (side: 'a' | 'b') => void
+}
+
 function MatchCard({
   match,
   participantInfo,
@@ -199,6 +212,7 @@ function MatchCard({
   champId,
   onClick,
   participantGroupLabels,
+  editSlots,
 }: {
   match: BracketMatch
   participantInfo: Record<string, BracketParticipantInfo>
@@ -206,6 +220,7 @@ function MatchCard({
   champId: string
   onClick?: () => void
   participantGroupLabels?: Record<string, string>
+  editSlots?: EditSlotProps
 }) {
   const isByeA = match.side_a_participant_id === null
   const isByeB = match.side_b_participant_id === null
@@ -230,12 +245,38 @@ function MatchCard({
   const slotB = isSingleGame ? sortedGames[0].score_b : score ? score.b : null
 
   const canClick =
+    !editSlots &&
     onClick &&
     !isBye &&
     match.side_a_participant_id !== null &&
     match.side_b_participant_id !== null
 
-  const card = (
+  // No modo edição, um lado é clicável se tiver participante real
+  function slotButton(side: 'a' | 'b', child: React.ReactNode) {
+    if (!editSlots) return <>{child}</>
+    const participantId = side === 'a' ? match.side_a_participant_id : match.side_b_participant_id
+    if (!participantId) return <>{child}</>
+    const isSelected = editSlots.selectedSide === side
+    const isDimmed = editSlots.anySelected && !isSelected
+    return (
+      <button
+        type="button"
+        onClick={() => editSlots.onClickSide(side)}
+        className={[
+          'w-full text-left transition-all duration-150',
+          isSelected
+            ? 'bg-secondary/15 ring-1 ring-inset ring-secondary/50'
+            : isDimmed
+              ? 'opacity-40'
+              : 'hover:bg-white/[0.05] active:bg-white/[0.09]',
+        ].join(' ')}
+      >
+        {child}
+      </button>
+    )
+  }
+
+  return (
     <div
       onClick={canClick ? onClick : undefined}
       className={[
@@ -244,25 +285,28 @@ function MatchCard({
         canClick ? 'cursor-pointer hover:border-white/20 active:scale-[0.97]' : '',
         isDone && !isBye ? 'opacity-90' : '',
         isLive ? 'border-secondary/30' : '',
+        editSlots ? 'border-white/15' : '',
       ]
         .filter(Boolean)
         .join(' ')}
       style={{ width: CARD_W, height: CARD_H }}
     >
       {/* Side A */}
-      <PlayerSlot
-        participantId={match.side_a_participant_id}
-        participantInfo={participantInfo}
-        isBye={isByeA && isAutoAdvance}
-        isPlaceholder={isPlaceholderA}
-        isWinner={winnerA}
-        score={slotA}
-        groupLabel={
-          match.side_a_participant_id
-            ? participantGroupLabels?.[match.side_a_participant_id]
-            : undefined
-        }
-      />
+      {slotButton('a', (
+        <PlayerSlot
+          participantId={match.side_a_participant_id}
+          participantInfo={participantInfo}
+          isBye={isByeA && isAutoAdvance}
+          isPlaceholder={isPlaceholderA}
+          isWinner={winnerA}
+          score={slotA}
+          groupLabel={
+            match.side_a_participant_id
+              ? participantGroupLabels?.[match.side_a_participant_id]
+              : undefined
+          }
+        />
+      ))}
 
       {/* Separator */}
       <div className="mx-2.5 h-px bg-white/8 shrink-0 relative">
@@ -295,23 +339,23 @@ function MatchCard({
       </div>
 
       {/* Side B */}
-      <PlayerSlot
-        participantId={match.side_b_participant_id}
-        participantInfo={participantInfo}
-        isBye={isByeB && isAutoAdvance}
-        isPlaceholder={isPlaceholderB}
-        isWinner={winnerB}
-        score={slotB}
-        groupLabel={
-          match.side_b_participant_id
-            ? participantGroupLabels?.[match.side_b_participant_id]
-            : undefined
-        }
-      />
+      {slotButton('b', (
+        <PlayerSlot
+          participantId={match.side_b_participant_id}
+          participantInfo={participantInfo}
+          isBye={isByeB && isAutoAdvance}
+          isPlaceholder={isPlaceholderB}
+          isWinner={winnerB}
+          score={slotB}
+          groupLabel={
+            match.side_b_participant_id
+              ? participantGroupLabels?.[match.side_b_participant_id]
+              : undefined
+          }
+        />
+      ))}
     </div>
   )
-
-  return card
 }
 
 // ─── BracketConnector (SVG) ───────────────────────────────────────────────────
@@ -371,11 +415,16 @@ export function BracketView({
   currentUserParticipantId,
   initialStandings,
   participantGroupLabels,
+  allowReorder = false,
 }: Props) {
   const router = useRouter()
   const [matches, setMatches] = useState<BracketMatch[]>(initialMatches)
   const [supabase] = useState(() => createClient())
   const refetchRef = useRef<() => Promise<void>>(() => Promise.resolve())
+
+  // ── Modo edição da chave ───────────────────────────────────────────────────
+  const [editingMode, setEditingMode] = useState(false)
+  const [selectedSlot, setSelectedSlot] = useState<SelectedSlot | null>(null)
 
   // ── Realtime refetch ───────────────────────────────────────────────────────
   const refetch = useCallback(async () => {
@@ -412,6 +461,64 @@ export function BracketView({
   useEffect(() => {
     refetchRef.current = refetch
   }, [refetch])
+
+  // ── Swap de slots ──────────────────────────────────────────────────────────
+  function handleSlotClick(matchId: string, side: 'a' | 'b') {
+    if (!selectedSlot) {
+      setSelectedSlot({ matchId, side })
+      return
+    }
+    if (selectedSlot.matchId === matchId && selectedSlot.side === side) {
+      // Mesmo slot → deseleciona
+      setSelectedSlot(null)
+      return
+    }
+    const { matchId: matchIdA, side: sideA } = selectedSlot
+    const matchIdB = matchId
+    const sideB = side
+    setSelectedSlot(null)
+
+    // Lê os participant_ids atuais (state local)
+    const matchA = matches.find((m) => m.id === matchIdA)
+    const matchB = matches.find((m) => m.id === matchIdB)
+    if (!matchA || !matchB) return
+
+    const partA = sideA === 'a' ? matchA.side_a_participant_id : matchA.side_b_participant_id
+    const partB = sideB === 'a' ? matchB.side_a_participant_id : matchB.side_b_participant_id
+
+    // Atualização otimista
+    setMatches((prev) =>
+      prev.map((m) => {
+        if (m.id === matchIdA) {
+          return sideA === 'a'
+            ? { ...m, side_a_participant_id: partB }
+            : { ...m, side_b_participant_id: partB }
+        }
+        if (m.id === matchIdB) {
+          return sideB === 'a'
+            ? { ...m, side_a_participant_id: partA }
+            : { ...m, side_b_participant_id: partA }
+        }
+        return m
+      }),
+    )
+
+    // Persiste no banco
+    void supabase
+      .rpc('swap_bracket_participants', {
+        _championship_id: championshipId,
+        _match_id_a: matchIdA,
+        _side_a: sideA,
+        _match_id_b: matchIdB,
+        _side_b: sideB,
+      })
+      .then(({ error }) => {
+        if (error) {
+          // Rollback: re-busca o estado real
+          void refetchRef.current()
+        }
+      })
+  }
 
   useEffect(() => {
     const channel = supabase
@@ -507,6 +614,10 @@ export function BracketView({
   const firstRoundCount = rounds[0].length
   const totalHeight = firstRoundCount * SLOT_BASE
 
+  // Pode rearranjar a chave: apenas se nenhuma partida do bracket iniciou
+  const noBracketStarted = bracketMatches.every((m) => m.status === 'agendado')
+  const canReorder = allowReorder && noBracketStarted
+
   // Para calcular completedPairs (connector colorido quando ambos avançaram)
   function isCompletedPair(roundIdx: number, pairIdx: number): boolean {
     const roundMatches = rounds[roundIdx]
@@ -517,14 +628,45 @@ export function BracketView({
 
   return (
     <div className="space-y-4">
-      {/* Status indicator */}
-      {champStatus === 'ativo' && (
-        <div className="flex items-center gap-2 px-1">
-          <span className="live-dot h-1.5 w-1.5 rounded-full bg-secondary inline-block" />
-          <span className="text-[11px] font-semibold text-secondary">Ao vivo</span>
-          <span className="text-[11px] text-white/30">— bracket atualiza automaticamente</span>
-        </div>
-      )}
+      {/* Status indicator / edit toolbar */}
+      <div className="flex items-center gap-2 px-1 min-h-[24px]">
+        {!editingMode && champStatus === 'ativo' && (
+          <>
+            <span className="live-dot h-1.5 w-1.5 rounded-full bg-secondary inline-block" />
+            <span className="text-[11px] font-semibold text-secondary">Ao vivo</span>
+            <span className="text-[11px] text-white/30">— bracket atualiza automaticamente</span>
+          </>
+        )}
+        {editingMode && (
+          <>
+            <Shuffle className="h-3.5 w-3.5 text-secondary shrink-0" />
+            <span className="text-[11px] font-semibold text-secondary">Modo edição</span>
+            <span className="text-[11px] text-white/40 flex-1">
+              {selectedSlot ? '— Selecione o 2º jogador para trocar' : '— Selecione um jogador'}
+            </span>
+          </>
+        )}
+        {canReorder && !editingMode && (
+          <button
+            type="button"
+            onClick={() => { setEditingMode(true); setSelectedSlot(null) }}
+            className="ml-auto flex items-center gap-1.5 rounded-full bg-white/[0.06] px-3 py-1.5 text-[11px] font-semibold text-white/60 transition hover:bg-white/[0.1] hover:text-white/90 active:scale-95"
+          >
+            <Shuffle className="h-3 w-3" />
+            Editar chave
+          </button>
+        )}
+        {editingMode && (
+          <button
+            type="button"
+            onClick={() => { setEditingMode(false); setSelectedSlot(null) }}
+            className="ml-auto flex items-center gap-1.5 rounded-full bg-secondary/15 px-3 py-1.5 text-[11px] font-bold text-secondary transition hover:bg-secondary/25 active:scale-95"
+          >
+            <X className="h-3 w-3" />
+            Confirmar chave
+          </button>
+        )}
+      </div>
 
       {/* Bracket horizontal scroll
           Os labels de round ficam numa faixa separada ACIMA do grid de partidas,
@@ -557,26 +699,44 @@ export function BracketView({
                 <div key={ri} className="flex items-start shrink-0" style={{ height: totalHeight }}>
                   {/* Coluna de cards */}
                   <div style={{ width: CARD_W }}>
-                    {roundMatches.map((match) => (
-                      <div
-                        key={match.id}
-                        style={{ height: slotH, paddingTop: slotH / 2 - CARD_H / 2 }}
-                      >
-                        <MatchCard
-                          match={match}
-                          participantInfo={participantInfo}
-                          stage={stage}
-                          champId={championshipId}
-                          participantGroupLabels={participantGroupLabels}
-                          onClick={
-                            match.side_a_participant_id !== null &&
-                            match.side_b_participant_id !== null
-                              ? () => router.push(`/campeonatos/${championshipId}/jogos/${match.id}`)
-                              : undefined
-                          }
-                        />
-                      </div>
-                    ))}
+                    {roundMatches.map((match) => {
+                      // Modo edição: apenas na 1ª rodada
+                      const isR1 = ri === 0
+                      const editSlots: EditSlotProps | undefined =
+                        editingMode && isR1
+                          ? {
+                              selectedSide:
+                                selectedSlot?.matchId === match.id
+                                  ? selectedSlot.side
+                                  : null,
+                              anySelected: selectedSlot !== null,
+                              onClickSide: (side) => handleSlotClick(match.id, side),
+                            }
+                          : undefined
+
+                      return (
+                        <div
+                          key={match.id}
+                          style={{ height: slotH, paddingTop: slotH / 2 - CARD_H / 2 }}
+                        >
+                          <MatchCard
+                            match={match}
+                            participantInfo={participantInfo}
+                            stage={stage}
+                            champId={championshipId}
+                            participantGroupLabels={participantGroupLabels}
+                            editSlots={editSlots}
+                            onClick={
+                              !editingMode &&
+                              match.side_a_participant_id !== null &&
+                              match.side_b_participant_id !== null
+                                ? () => router.push(`/campeonatos/${championshipId}/jogos/${match.id}`)
+                                : undefined
+                            }
+                          />
+                        </div>
+                      )
+                    })}
                   </div>
 
                   {/* Conector SVG (apenas entre rodadas) */}

@@ -785,6 +785,7 @@ export function ChampionshipDetailClient({
               currentUserParticipantId={currentUserParticipantId}
               initialStandings={initialStandings}
               participantGroupLabels={participantGroupLabels}
+              allowReorder={canManage}
             />
           ) : (
             <div
