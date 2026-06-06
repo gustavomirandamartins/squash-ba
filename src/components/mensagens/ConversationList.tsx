@@ -419,7 +419,7 @@ export function ConversationList({ initialConversations, currentUserId }: Props)
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <MessageSquare className="h-5 w-5 text-secondary" />
-          <h1 className="text-base font-bold text-white">Mensagens</h1>
+          <h1 className="font-display text-lg font-bold text-white">Mensagens</h1>
           {totalUnread > 0 && !editMode && (
             <span className="h-5 min-w-5 px-1 rounded-full bg-secondary text-primary text-[10px] font-black grid place-items-center">
               {totalUnread > 99 ? '99+' : totalUnread}

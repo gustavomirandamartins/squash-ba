@@ -1,3 +1,4 @@
+import { Users } from 'lucide-react'
 import { createClient } from '@/utils/supabase/server'
 import { ComunidadeClient, type CommunityUser } from '@/components/comunidade/ComunidadeClient'
 
@@ -49,7 +50,10 @@ export default async function ComunidadePage() {
   return (
     <div className="px-5 py-4 space-y-4">
       <div>
-        <h1 className="text-lg font-semibold text-white">Comunidade</h1>
+        <h1 className="flex items-center gap-2 font-display text-lg font-bold text-white">
+          <Users className="h-5 w-5 text-secondary" />
+          Comunidade
+        </h1>
         <p className="text-xs text-white/40 mt-0.5">
           {users.length} {users.length === 1 ? 'jogador' : 'jogadores'} no SquashBa
         </p>

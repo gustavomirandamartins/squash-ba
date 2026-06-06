@@ -1,6 +1,5 @@
-import Link from 'next/link'
 import {
-  ChevronLeft, BookOpen, Shield, MessageSquarePlus,
+  CircleHelp, BookOpen, Shield, MessageSquarePlus,
   Heart, ChevronRight, Wifi, Trophy, Swords, Users,
   BarChart2, Smartphone, Store,
 } from 'lucide-react'
@@ -91,18 +90,12 @@ const INSTRUCOES = [
 export default function AjudaPage() {
   return (
     <div className="px-5 py-4 space-y-8 pb-10">
-      {/* Voltar */}
-      <Link
-        href="/"
-        className="inline-flex items-center gap-1.5 text-sm text-white/50 transition hover:text-white/80"
-      >
-        <ChevronLeft className="h-4 w-4" />
-        Início
-      </Link>
-
       {/* Título */}
       <div>
-        <h1 className="font-display text-2xl font-extrabold text-white">Ajuda</h1>
+        <h1 className="flex items-center gap-2 font-display text-lg font-bold text-white">
+          <CircleHelp className="h-5 w-5 text-secondary" />
+          Ajuda
+        </h1>
         <p className="mt-1 text-sm text-white/40">Instruções, termos e suporte</p>
       </div>
 

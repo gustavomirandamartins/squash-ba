@@ -37,12 +37,10 @@ export function CommunityFeed({
 
   return (
     <section className="px-5 space-y-3">
-      <div className="flex items-center gap-2">
-        <Users2 className="h-4 w-4 text-secondary" />
-        <h2 className="font-display text-sm font-bold uppercase tracking-widest text-white/70">
-          Comunidade
-        </h2>
-      </div>
+      <h2 className="flex items-center gap-2 font-display text-lg font-bold text-white">
+        <Users2 className="h-5 w-5 text-secondary" />
+        Comunidade
+      </h2>
 
       <PostComposer
         userId={currentUserId}

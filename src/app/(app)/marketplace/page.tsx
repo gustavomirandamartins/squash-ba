@@ -48,7 +48,7 @@ export default async function MarketplacePage() {
       {/* Header */}
       <div className="px-5 flex items-center gap-2">
         <Store className="h-5 w-5 text-secondary" />
-        <h1 className="font-display text-xl font-extrabold text-white">Marketplace</h1>
+        <h1 className="font-display text-lg font-bold text-white">Marketplace</h1>
       </div>
 
       {/* ── Professores ──────────────────────────────────────────────── */}

@@ -56,7 +56,10 @@ export default async function CampeonatosPage() {
     <div className="px-5 py-4 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-white">Campeonatos</h1>
+        <h1 className="flex items-center gap-2 font-display text-lg font-bold text-white">
+          <Trophy className="h-5 w-5 text-secondary" />
+          Campeonatos
+        </h1>
         <Link
           href="/campeonatos/novo"
           className="flex items-center gap-1.5 rounded-full bg-secondary px-4 py-2 text-sm font-semibold text-primary transition active:scale-95"

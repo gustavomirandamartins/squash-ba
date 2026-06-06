@@ -202,7 +202,8 @@ export function EditProfileForm({ userId, email, categories, teams, initial }: P
           </Link>
         </div>
 
-        <h1 className="mb-6 font-display text-2xl font-extrabold tracking-tight text-white">
+        <h1 className="mb-6 flex items-center gap-2 font-display text-lg font-bold text-white">
+          <User className="h-5 w-5 text-secondary" />
           Editar perfil
         </h1>
 

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { Settings2 } from 'lucide-react'
 
 const TABS_BASE = [
   { label: 'Categorias', href: '/gestao/categorias' },
@@ -15,7 +16,14 @@ export function GestaoNav() {
   const tabs = TABS_BASE
 
   return (
-    <nav className="flex gap-2 overflow-x-auto no-scrollbar border-b border-white/8 px-5 pb-3 pt-4">
+    <div>
+      <div className="px-5 pt-4 pb-3">
+        <h2 className="flex items-center gap-2 font-display text-lg font-bold text-white">
+          <Settings2 className="h-5 w-5 text-secondary" />
+          Gestão
+        </h2>
+      </div>
+      <nav className="flex gap-2 overflow-x-auto no-scrollbar border-b border-white/8 px-5 pb-3">
       {tabs.map((tab) => {
         const isActive = pathname.startsWith(tab.href)
         return (
@@ -32,6 +40,7 @@ export function GestaoNav() {
           </Link>
         )
       })}
-    </nav>
+      </nav>
+    </div>
   )
 }
