@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { Settings2 } from 'lucide-react'
 
 const TABS_BASE = [
+  { label: 'Jogadores', href: '/gestao/jogadores' },
   { label: 'Categorias', href: '/gestao/categorias' },
   { label: 'Locais', href: '/gestao/locais' },
   { label: 'Times', href: '/gestao/times' },
