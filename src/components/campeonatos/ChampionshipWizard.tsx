@@ -1981,8 +1981,9 @@ export function ChampionshipWizard({
   const [state, setState] = useState<WizardState>(DEFAULT_STATE)
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
-  // Controla posição do sticky CTA: online tem tab-bar fixa (~8rem), offline não.
+  // Controla posição do sticky CTA: online tem tab-bar fixa (~8rem), offline/desktop não.
   const [isOffline, setIsOffline] = useState(false)
+  const [isDesktop, setIsDesktop] = useState(false)
   useEffect(() => {
     setIsOffline(!navigator.onLine)
     const up = () => setIsOffline(false)
@@ -1990,6 +1991,13 @@ export function ChampionshipWizard({
     window.addEventListener('online', up)
     window.addEventListener('offline', down)
     return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down) }
+  }, [])
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    setIsDesktop(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
   }, [])
 
   function onChange(patch: Patch) {
@@ -2385,8 +2393,8 @@ export function ChampionshipWizard({
     return defaults[step - 1]
   })()
 
-  // Offset do sticky CTA: online tem tab-bar fixa, offline não tem.
-  const ctaBottom = isOffline
+  // Offset do sticky CTA: desktop e offline não têm tab-bar, mobile online tem (~8rem).
+  const ctaBottom = isDesktop || isOffline
     ? 'max(1rem, env(safe-area-inset-bottom))'
     : 'max(8rem, calc(7rem + env(safe-area-inset-bottom)))'
 
@@ -2465,7 +2473,7 @@ export function ChampionshipWizard({
           style={{
             bottom: ctaBottom,
             background: 'linear-gradient(to top, #16233a 55%, #16233a99 78%, transparent)',
-            paddingBottom: isOffline
+            paddingBottom: isDesktop || isOffline
               ? 'max(0.75rem, env(safe-area-inset-bottom))'
               : '0.75rem',
           }}
