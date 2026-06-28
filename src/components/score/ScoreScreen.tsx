@@ -611,12 +611,39 @@ export function ScoreScreen({
       setFinishError(null)
       try {
         await flushQueue(matchId) // garante placar parcial no servidor
-        const rpc = isOrganizer ? 'finalize_match_manual' : 'finalize_match_by_participant'
-        const { error } = await supabase.rpc(rpc, {
-          _match_id: matchId,
-          _result: res,
-        })
-        if (error) { setFinishError(error.message); return }
+
+        let rpcError: any = null
+        let networkFailed = false
+
+        if (navigator.onLine) {
+          try {
+            const rpc = isOrganizer ? 'finalize_match_manual' : 'finalize_match_by_participant'
+            const { error } = await supabase.rpc(rpc, { _match_id: matchId, _result: res })
+            rpcError = error
+          } catch (err: any) {
+            if (err instanceof TypeError && (err.message.includes('Load failed') || err.message.includes('Failed to fetch') || err.message.includes('fetch'))) {
+              networkFailed = true
+            } else {
+              throw err
+            }
+          }
+        } else {
+          networkFailed = true
+        }
+
+        if (networkFailed) {
+          const { enqueue } = await import('@/lib/score-engine/SyncEngine')
+          await enqueue({
+            matchId,
+            type: 'finalize_match',
+            payload: { result: res, isOrganizer }
+          })
+          try { await flushQueue(matchId) } catch {}
+        } else if (rpcError) {
+          setFinishError(rpcError.message)
+          return
+        }
+
         // Atualiza estado otimista: exibe vencedor imediatamente sem esperar realtime
         setOptimisticStatus('finalizado')
         setOptimisticResult(res)
@@ -664,11 +691,41 @@ export function ScoreScreen({
       setFinishError(null)
       try {
         await flushQueue(matchId)
-        const rpc = isOrganizer ? 'finalize_match_dq' : 'finalize_match_dq_by_participant'
-        const { error } = await supabase.rpc(rpc, { _match_id: matchId, _winner: winner })
-        if (error) { setFinishError(error.message); return }
-        // Limpa a fila local para não re-enviar os games anulados após o DQ.
-        await clearQueue(matchId)
+
+        let rpcError: any = null
+        let networkFailed = false
+
+        if (navigator.onLine) {
+          try {
+            const rpc = isOrganizer ? 'finalize_match_dq' : 'finalize_match_dq_by_participant'
+            const { error } = await supabase.rpc(rpc, { _match_id: matchId, _winner: winner })
+            rpcError = error
+          } catch (err: any) {
+            if (err instanceof TypeError && (err.message.includes('Load failed') || err.message.includes('Failed to fetch') || err.message.includes('fetch'))) {
+              networkFailed = true
+            } else {
+              throw err
+            }
+          }
+        } else {
+          networkFailed = true
+        }
+
+        if (networkFailed) {
+          const { enqueue } = await import('@/lib/score-engine/SyncEngine')
+          await enqueue({
+            matchId,
+            type: 'finalize_match',
+            payload: { result: winner, isOrganizer, isDq: true }
+          })
+          try { await flushQueue(matchId) } catch {}
+        } else if (rpcError) {
+          setFinishError(rpcError.message)
+          return
+        } else {
+          await clearQueue(matchId) // limpa apenas se rodou com sucesso online
+        }
+
         setOptimisticStatus('finalizado')
         setOptimisticResult(winner)
         setShowFinishModal(false)
@@ -713,14 +770,40 @@ export function ScoreScreen({
     setWoSide(side)
     try {
       const winner = side === 'a' ? 'lado_a' : 'lado_b'
-      const rpc = isOrganizer ? 'finalize_match_wo' : 'finalize_match_wo_by_participant'
-      const { error } = await supabase.rpc(rpc, { _match_id: matchId, _winner: winner })
-      if (error) {
-        setWoSide(null)
+      let rpcError: any = null
+      let networkFailed = false
+
+      if (navigator.onLine) {
+        try {
+          const rpc = isOrganizer ? 'finalize_match_wo' : 'finalize_match_wo_by_participant'
+          const { error } = await supabase.rpc(rpc, { _match_id: matchId, _winner: winner })
+          rpcError = error
+        } catch (err: any) {
+          if (err instanceof TypeError && (err.message.includes('Load failed') || err.message.includes('Failed to fetch') || err.message.includes('fetch'))) {
+            networkFailed = true
+          } else {
+            throw err
+          }
+        }
       } else {
-        setOptimisticStatus('finalizado')
-        setOptimisticResult(winner)
+        networkFailed = true
       }
+
+      if (networkFailed) {
+        const { enqueue, flush } = await import('@/lib/score-engine/SyncEngine')
+        await enqueue({
+          matchId,
+          type: 'finalize_match',
+          payload: { result: winner, isOrganizer, isWo: true }
+        })
+        try { await flush(matchId) } catch {}
+      } else if (rpcError) {
+        setWoSide(null)
+        return
+      }
+      
+      setOptimisticStatus('finalizado')
+      setOptimisticResult(winner)
     } catch {
       setWoSide(null)
     }

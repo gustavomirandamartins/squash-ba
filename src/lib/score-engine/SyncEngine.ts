@@ -14,7 +14,7 @@ import { getDeviceId } from './deviceId'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-export type ActionType = 'upsert_game' | 'delete_game'
+export type ActionType = 'upsert_game' | 'delete_game' | 'finalize_match'
 
 export type QueueAction = {
   id: string
@@ -126,6 +126,21 @@ export async function flush(matchId: string): Promise<FlushResult> {
         .delete()
         .eq('match_id', matchId)
         .eq('game_number', game_number)
+      synced++
+    } else if (action.type === 'finalize_match') {
+      const { result, isOrganizer, isDq, isWo } = action.payload as { result: string; isOrganizer: boolean; isDq?: boolean; isWo?: boolean }
+      let rpc = isOrganizer ? 'finalize_match_manual' : 'finalize_match_by_participant'
+      let params: any = { _match_id: matchId, _result: result }
+      
+      if (isDq) {
+        rpc = isOrganizer ? 'finalize_match_dq' : 'finalize_match_dq_by_participant'
+        params = { _match_id: matchId, _winner: result }
+      } else if (isWo) {
+        rpc = isOrganizer ? 'finalize_match_wo' : 'finalize_match_wo_by_participant'
+        params = { _match_id: matchId, _winner: result }
+      }
+
+      await supabase.rpc(rpc, params)
       synced++
     }
   }

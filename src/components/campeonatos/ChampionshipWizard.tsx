@@ -2434,7 +2434,7 @@ export function ChampionshipWizard({
       </div>
 
       {/* Step content */}
-      <div className="px-5 pb-4 space-y-0">
+      <div className="px-5 pb-32 space-y-0">
         {step === 1 && (
           <Step1
             state={state}

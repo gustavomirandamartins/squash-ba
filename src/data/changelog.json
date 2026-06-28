@@ -1,7 +1,102 @@
 {
-  "count": 138,
-  "lastCommitAt": "202606042307",
+  "count": 157,
+  "lastCommitAt": "202606060005",
   "commits": [
+    {
+      "hash": "d897302",
+      "subject": "Remove título duplicado \"Professores\" em TeachersSection",
+      "date": "2026-06-06"
+    },
+    {
+      "hash": "ee6956d",
+      "subject": "Padroniza títulos de todas as páginas no padrão ícone verde + Título Case",
+      "date": "2026-06-06"
+    },
+    {
+      "hash": "8acf0ea",
+      "subject": "feat: cross-seeding correto + rearranjo manual da chave (grupos_elim)",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "46bdb8f",
+      "subject": "fix: painel de notificações visível no desktop (abre para a direita)",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "0757dfc",
+      "subject": "fix: botão Avançar fica na base no desktop (lg breakpoint)",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "364c878",
+      "subject": "Alinha largura da seção Comunidade às demais (px-5)",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "2e0d5ad",
+      "subject": "Feed da Comunidade: curtidas e comentários",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "a668bb6",
+      "subject": "Feed da Comunidade na home (estilo Instagram)",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "a300448",
+      "subject": "Auditoria: error boundaries + migration de endurecimento",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "5effef2",
+      "subject": "Corrige TopBar e BottomNav fixos ao scroll no iOS PWA",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "c34eab7",
+      "subject": "Adiciona botão de edição inline nos cards de anúncios",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "b83883b",
+      "subject": "Remove seção de professores da tela inicial",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "48cd041",
+      "subject": "Detectar e notificar atualização do PWA (novo service worker)",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "68d9987",
+      "subject": "Corrigir dois bugs offline: jogadores e sincronização de placares",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "07672bd",
+      "subject": "Adicionar seletor de local nos desafios e corrigir navegação",
+      "date": "2026-06-05"
+    },
+    {
+      "hash": "0f944b8",
+      "subject": "Disponibilizar seleção de local para campeonatos normais",
+      "date": "2026-06-04"
+    },
+    {
+      "hash": "61db36c",
+      "subject": "Remove arquivos do TestSprite do versionamento",
+      "date": "2026-06-04"
+    },
+    {
+      "hash": "8223d2c",
+      "subject": "Campeonatos Oficiais — Fase 4: edição até o início",
+      "date": "2026-06-04"
+    },
+    {
+      "hash": "55e19a9",
+      "subject": "Campeonatos Oficiais — Fase 3+5: gestão, inscrição e visual verde-cana",
+      "date": "2026-06-04"
+    },
     {
       "hash": "7d48571",
       "subject": "Campeonatos Oficiais — Fase 1+2: banco + criação",
