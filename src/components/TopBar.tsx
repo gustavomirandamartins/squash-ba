@@ -21,25 +21,6 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage, userId }: Props) {
   return (
     <header className="relative z-30 shrink-0">
       {/*
-        Gradient glassmorphism background:
-        top → full blur + semi-transparent dark (glass effect)
-        bottom → fully transparent (page content shows through)
-        mask-image fades the backdrop-filter + background together.
-      */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background: 'rgba(29, 43, 69, 0.80)',
-          backdropFilter: 'blur(20px) saturate(130%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(130%)',
-          maskImage: 'linear-gradient(to bottom, black 45%, transparent 100%)',
-          WebkitMaskImage:
-            'linear-gradient(to bottom, black 45%, transparent 100%)',
-        }}
-      />
-
-      {/*
         Grid layout — grid-template-columns IS animatable in CSS, so we get
         a smooth simultaneous collapse (logo) + expand (search) transition.
 

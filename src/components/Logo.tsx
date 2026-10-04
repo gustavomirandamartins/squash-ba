@@ -15,7 +15,7 @@ export function Logo({ className = "", showWordmark = true, size = 40 }: Props) 
         width={size}
         height={size}
         priority
-        className="shrink-0 drop-shadow-[0_2px_8px_rgba(0,0,0,0.35)]"
+        className="shrink-0"
       />
       {showWordmark && (
         <span className="font-display text-lg font-extrabold tracking-tight">

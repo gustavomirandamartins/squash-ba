@@ -149,7 +149,7 @@ export function SearchDropdown({ open, onOpen, onClose }: Props) {
           type="button"
           aria-label="Buscar"
           onClick={onOpen}
-          className="absolute inset-0 grid place-items-center rounded-full glass glass-overlay text-white/85 transition-all duration-200 active:scale-95"
+          className="absolute inset-0 grid place-items-center rounded-full glass text-white/85 transition-all duration-200 active:scale-95"
           style={{
             opacity: open ? 0 : 1,
             pointerEvents: open ? 'none' : 'auto',
@@ -161,7 +161,7 @@ export function SearchDropdown({ open, onOpen, onClose }: Props) {
 
         {/* Barra expandida */}
         <div
-          className="glass glass-overlay absolute inset-0 flex items-center gap-2 rounded-full px-3 transition-all duration-200"
+          className="glass absolute inset-0 flex items-center gap-2 rounded-full px-3 transition-all duration-200"
           style={{
             opacity: open ? 1 : 0,
             pointerEvents: open ? 'auto' : 'none',
