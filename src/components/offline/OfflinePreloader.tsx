@@ -145,7 +145,7 @@ export function OfflinePreloader() {
   if (phase === 'idle') return null
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-[60] flex justify-center px-4">
+    <div className="pointer-events-none fixed inset-x-0 top-[max(0.75rem,var(--top-inset))] z-[60] flex justify-center px-4">
       <div
         className={`glass glass-overlay glass-pill pointer-events-auto flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold shadow-lg transition-all duration-300 ${
           phase === 'done' ? 'text-secondary' : 'text-white/80'

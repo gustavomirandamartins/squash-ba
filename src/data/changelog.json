@@ -1,7 +1,32 @@
 {
-  "count": 157,
-  "lastCommitAt": "202606060005",
+  "count": 164,
+  "lastCommitAt": "202610041844",
   "commits": [
+    {
+      "hash": "32628c8",
+      "subject": "Remove blur do header",
+      "date": "2026-10-04"
+    },
+    {
+      "hash": "ab51a5e",
+      "subject": "Corrige finalização offline, adiciona W.O. duplo e amplia a classificação",
+      "date": "2026-10-04"
+    },
+    {
+      "hash": "c117eaf",
+      "subject": "docs: atualiza README com motor de campeonatos, oficiais, gestão e env vars corretas",
+      "date": "2026-10-04"
+    },
+    {
+      "hash": "479a5cd",
+      "subject": "docs: update README.md with comprehensive product details",
+      "date": "2026-06-28"
+    },
+    {
+      "hash": "3ae9617",
+      "subject": "Permite admin/professor editar categoria de jogadores em Gestão",
+      "date": "2026-06-06"
+    },
     {
       "hash": "d897302",
       "subject": "Remove título duplicado \"Professores\" em TeachersSection",

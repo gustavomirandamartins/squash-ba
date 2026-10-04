@@ -26,7 +26,7 @@ function OfflineShellHeader() {
     <div
       className="sticky top-0 z-10 flex items-center gap-2.5 px-5 pb-3 bg-primary/80"
       style={{
-        paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+        paddingTop: 'max(0.75rem, var(--top-inset))',
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
       }}

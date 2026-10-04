@@ -28,7 +28,7 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage, userId }: Props) {
         Search:  [logo: 0px]  [spacer: 0fr] [search: 1fr]  [gap: 10px] [avatar: auto]
       */}
       <div
-        className="relative grid items-center px-5 pb-3 pt-[max(1rem,env(safe-area-inset-top))]"
+        className="relative grid items-center px-5 pb-3 pt-[max(1rem,var(--top-inset))]"
         style={{
           gridTemplateColumns: searchOpen
             ? '0px 0fr 1fr 10px auto'

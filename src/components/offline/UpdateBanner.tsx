@@ -45,7 +45,7 @@ export function UpdateBanner() {
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-[70] flex justify-center px-4"
+      className="pointer-events-none fixed inset-x-0 top-[max(0.75rem,var(--top-inset))] z-[70] flex justify-center px-4"
       style={{ animation: 'reveal-up 0.35s ease-out' }}
     >
       <div className="glass glass-overlay glass-pill pointer-events-auto flex items-center gap-3 px-4 py-2.5 shadow-lg">

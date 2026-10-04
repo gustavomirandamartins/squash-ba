@@ -167,7 +167,7 @@ export function OnboardingForm({ userId, email }: Props) {
 
   return (
     <div
-      className="relative flex min-h-dvh flex-col items-center justify-start overflow-y-auto px-6 py-10"
+      className="relative flex min-h-dvh flex-col items-center justify-start overflow-y-auto px-6 pb-10 pt-[max(2.5rem,calc(var(--top-inset)+1rem))]"
       style={{
         background:
           'radial-gradient(ellipse 80% 60% at 50% 0%, #253652 0%, #1d2b45 100%)',

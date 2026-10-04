@@ -62,11 +62,19 @@ export default function RootLayout({
           sobrepõem a conteúdo que rola por baixo (ex.: menu inferior). O .glass
           comum fica sobre o gradiente liso do body, onde borrar não muda nada
           visualmente e só custa paint a cada frame — por isso não leva blur.
+
+          --top-inset: recuo superior dos headers. No web app instalado no iOS
+          (26+), o sistema aplica um desfoque automático sob a status bar que
+          avança ~3rem sobre o conteúdo e não pode ser desligado por CSS — então
+          o header desce além da safe area. Só iOS (-webkit-touch-callout) em
+          modo standalone; demais plataformas usam a safe area pura.
         */}
         <style
           dangerouslySetInnerHTML={{
             __html:
-              ".glass-overlay{-webkit-backdrop-filter:blur(20px) saturate(140%);backdrop-filter:blur(20px) saturate(140%)}",
+              ".glass-overlay{-webkit-backdrop-filter:blur(20px) saturate(140%);backdrop-filter:blur(20px) saturate(140%)}" +
+              ":root{--top-inset:env(safe-area-inset-top,0px)}" +
+              "@supports (-webkit-touch-callout:none){@media (display-mode:standalone){:root{--top-inset:calc(env(safe-area-inset-top,0px) + 3.5rem)}}}",
           }}
         />
         <SerwistProvider swUrl="/serwist/sw.js">{children}</SerwistProvider>

@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default function PrivacidadePage() {
   return (
     <div
-      className="relative min-h-dvh px-6 py-10"
+      className="relative min-h-dvh px-6 pb-10 pt-[max(2.5rem,calc(var(--top-inset)+1rem))]"
       style={{
         background:
           'radial-gradient(ellipse 80% 60% at 50% 0%, #253652 0%, #1d2b45 100%)',

@@ -42,7 +42,7 @@ export default async function AdminLayout({
           'radial-gradient(ellipse 80% 60% at 50% 0%, #253652 0%, #1d2b45 100%)',
       }}
     >
-      <div className="mx-auto w-full max-w-[480px] px-5 pb-24 pt-10 lg:max-w-3xl">
+      <div className="mx-auto w-full max-w-[480px] px-5 pb-24 pt-[max(2.5rem,calc(var(--top-inset)+1rem))] lg:max-w-3xl">
         {/* Voltar */}
         <Link
           href="/"
