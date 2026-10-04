@@ -28,6 +28,83 @@ export type QueueAction = {
 export type FlushResult = {
   conflict: boolean
   synced: number
+  /** Ação recusada pelo servidor (permissão, regra de negócio…) — descartada da fila. */
+  error?: string
+}
+
+type GameRow = { game_number: number; score_a: number; score_b: number }
+
+// ─── Finalização (encerrar / desclassificar / W.O. / W.O. duplo) ──────────────
+
+export type FinalizeKind = 'result' | 'dq' | 'wo' | 'double_wo'
+
+export type FinalizeInput = {
+  kind: FinalizeKind
+  /** lado_a | lado_b | empate (kind=result); lado_a | lado_b (dq/wo); ignorado em double_wo */
+  result?: string | null
+  isOrganizer: boolean
+}
+
+/** Formato persistido na fila (mantém compatibilidade com itens antigos: isDq/isWo). */
+type FinalizePayload = {
+  result: string | null
+  isOrganizer: boolean
+  isDq?: boolean
+  isWo?: boolean
+  isDoubleWo?: boolean
+}
+
+function toPayload(input: FinalizeInput): FinalizePayload {
+  return {
+    result: input.kind === 'double_wo' ? null : (input.result ?? null),
+    isOrganizer: input.isOrganizer,
+    isDq: input.kind === 'dq' || undefined,
+    isWo: input.kind === 'wo' || input.kind === 'double_wo' || undefined,
+    isDoubleWo: input.kind === 'double_wo' || undefined,
+  }
+}
+
+function kindOf(p: FinalizePayload): FinalizeKind {
+  if (p.isDoubleWo) return 'double_wo'
+  if (p.isWo) return 'wo'
+  if (p.isDq) return 'dq'
+  return 'result'
+}
+
+function finalizeRpc(matchId: string, p: FinalizePayload): { name: string; params: Record<string, unknown> } {
+  const suffix = p.isOrganizer ? '' : '_by_participant'
+  switch (kindOf(p)) {
+    case 'double_wo':
+      return { name: `finalize_match_double_wo${suffix}`, params: { _match_id: matchId } }
+    case 'wo':
+      return { name: `finalize_match_wo${suffix}`, params: { _match_id: matchId, _winner: p.result } }
+    case 'dq':
+      return { name: `finalize_match_dq${suffix}`, params: { _match_id: matchId, _winner: p.result } }
+    default:
+      return {
+        name: p.isOrganizer ? 'finalize_match_manual' : 'finalize_match_by_participant',
+        params: { _match_id: matchId, _result: p.result },
+      }
+  }
+}
+
+function isOnline(): boolean {
+  return typeof navigator === 'undefined' || navigator.onLine
+}
+
+/**
+ * Falha de rede? O supabase-js NÃO lança em fetch falho — devolve `{ error }` com
+ * a mensagem do TypeError ("Failed to fetch", "Load failed"…). Com sinal fraco o
+ * `navigator.onLine` segue true, então checar só ele deixa a ação se perder.
+ */
+export function isNetworkError(err: unknown): boolean {
+  const msg =
+    err instanceof Error
+      ? err.message
+      : typeof err === 'object' && err !== null && 'message' in err
+        ? String((err as { message: unknown }).message)
+        : String(err ?? '')
+  return /failed to fetch|load failed|networkerror|network request failed|fetch failed|internet connection/i.test(msg)
 }
 
 // ─── Helpers de IDB ───────────────────────────────────────────────────────────
@@ -63,6 +140,58 @@ export async function enqueue(
 
 // ─── flush ────────────────────────────────────────────────────────────────────
 
+// ok       → aplicada
+// retry    → falha de rede: mantém na fila e tenta de novo depois
+// rejected → o servidor recusou (permissão/regra): descarta p/ não travar a fila
+type Outcome = { kind: 'ok' } | { kind: 'retry' } | { kind: 'rejected'; error: string }
+
+async function applyAction(
+  supabase: ReturnType<typeof createClient>,
+  matchId: string,
+  deviceId: string,
+  action: QueueAction,
+): Promise<Outcome> {
+  try {
+    if (action.type === 'upsert_game') {
+      const { game_number, score_a, score_b } = action.payload as GameRow
+      const { error } = await supabase.from('match_games').upsert(
+        { match_id: matchId, game_number, score_a, score_b, last_device_id: deviceId },
+        { onConflict: 'match_id,game_number' },
+      )
+      if (error) return isNetworkError(error) ? { kind: 'retry' } : { kind: 'rejected', error: error.message }
+      // Atualiza last_device_id e status do match
+      await supabase
+        .from('matches')
+        .update({ last_device_id: deviceId, status: 'em_andamento' })
+        .eq('id', matchId)
+        .eq('status', 'agendado') // só muda se ainda estava agendado (trigger cuida do resto)
+      return { kind: 'ok' }
+    }
+
+    if (action.type === 'delete_game') {
+      const { game_number } = action.payload as { game_number: number }
+      const { error } = await supabase
+        .from('match_games')
+        .delete()
+        .eq('match_id', matchId)
+        .eq('game_number', game_number)
+      if (error) return isNetworkError(error) ? { kind: 'retry' } : { kind: 'rejected', error: error.message }
+      return { kind: 'ok' }
+    }
+
+    if (action.type === 'finalize_match') {
+      const { name, params } = finalizeRpc(matchId, action.payload as FinalizePayload)
+      const { error } = await supabase.rpc(name, params)
+      if (error) return isNetworkError(error) ? { kind: 'retry' } : { kind: 'rejected', error: error.message }
+      return { kind: 'ok' }
+    }
+  } catch (err) {
+    if (isNetworkError(err)) return { kind: 'retry' }
+    return { kind: 'rejected', error: err instanceof Error ? err.message : 'erro desconhecido' }
+  }
+  return { kind: 'ok' }
+}
+
 export async function flush(matchId: string): Promise<FlushResult> {
   const queue = await getQueue(matchId)
   if (queue.length === 0) return { conflict: false, synced: 0 }
@@ -87,9 +216,7 @@ export async function flush(matchId: string): Promise<FlushResult> {
 
   if (serverDevice && serverDevice !== deviceId && serverUpdatedAt > firstLocalTs) {
     // Conflito: grava snapshot do servidor e marca match como 'revisao'
-    const serverGames = (
-      serverMatch.match_games as Array<{ game_number: number; score_a: number; score_b: number }>
-    ) ?? []
+    const serverGames = (serverMatch.match_games as GameRow[]) ?? []
     await supabase.rpc('flag_match_conflict', {
       _match_id: matchId,
       _server_snapshot: { games: serverGames },
@@ -97,63 +224,60 @@ export async function flush(matchId: string): Promise<FlushResult> {
     return { conflict: true, synced: 0 }
   }
 
-  // Aplica fila em ordem
+  // Aplica a fila em ordem; para no primeiro item que falhar por rede.
   let synced = 0
+  let rejection: string | undefined
   for (const action of queue) {
-    if (action.type === 'upsert_game') {
-      const { game_number, score_a, score_b } = action.payload as {
-        game_number: number
-        score_a: number
-        score_b: number
-      }
-      const { error: upsertErr } = await supabase.from('match_games').upsert(
-        { match_id: matchId, game_number, score_a, score_b, last_device_id: deviceId },
-        { onConflict: 'match_id,game_number' },
-      )
-      if (!upsertErr) {
-        // Atualiza last_device_id e status do match
-        await supabase
-          .from('matches')
-          .update({ last_device_id: deviceId, status: 'em_andamento' })
-          .eq('id', matchId)
-          .eq('status', 'agendado') // só muda se ainda estava agendado (trigger cuida do resto)
-        synced++
-      }
-    } else if (action.type === 'delete_game') {
-      const { game_number } = action.payload as { game_number: number }
-      await supabase
-        .from('match_games')
-        .delete()
-        .eq('match_id', matchId)
-        .eq('game_number', game_number)
-      synced++
-    } else if (action.type === 'finalize_match') {
-      const { result, isOrganizer, isDq, isWo } = action.payload as { result: string; isOrganizer: boolean; isDq?: boolean; isWo?: boolean }
-      let rpc = isOrganizer ? 'finalize_match_manual' : 'finalize_match_by_participant'
-      let params: any = { _match_id: matchId, _result: result }
-      
-      if (isDq) {
-        rpc = isOrganizer ? 'finalize_match_dq' : 'finalize_match_dq_by_participant'
-        params = { _match_id: matchId, _winner: result }
-      } else if (isWo) {
-        rpc = isOrganizer ? 'finalize_match_wo' : 'finalize_match_wo_by_participant'
-        params = { _match_id: matchId, _winner: result }
-      }
+    const outcome = await applyAction(supabase, matchId, deviceId, action)
+    if (outcome.kind === 'retry') break
+    if (outcome.kind === 'rejected') rejection = outcome.error
+    synced++
+  }
 
-      await supabase.rpc(rpc, params)
-      synced++
+  // Remove só o que foi aplicado. Relê a fila: itens enfileirados durante o flush
+  // (ex.: novo toque no placar, ou "encerrar partida") não podem ser perdidos.
+  if (synced > 0) {
+    const applied = new Set(queue.slice(0, synced).map((a) => a.id))
+    const latest = await getQueue(matchId)
+    await saveQueue(matchId, latest.filter((a) => !applied.has(a.id)))
+  }
+
+  return { conflict: false, synced, error: rejection }
+}
+
+// ─── finalizeMatch ────────────────────────────────────────────────────────────
+// Encerra a partida online (RPC) ou, sem rede, enfileira a ação p/ o flush.
+// Substitui o bloco que cada botão da tela repetia (encerrar, DQ, W.O., W.O. duplo).
+
+export type FinalizeOutcome = { error: string | null; queued: boolean }
+
+export async function finalizeMatch(matchId: string, input: FinalizeInput): Promise<FinalizeOutcome> {
+  const payload = toPayload(input)
+
+  // Garante o placar parcial no servidor (no-op offline).
+  try { await flush(matchId) } catch { /* fica na fila */ }
+
+  if (isOnline()) {
+    const { name, params } = finalizeRpc(matchId, payload)
+    try {
+      const { error } = await createClient().rpc(name, params)
+      if (!error) {
+        // DQ/W.O. apagam os games no servidor: placar antigo na fila não pode ressuscitá-los.
+        if (input.kind !== 'result') await clearQueue(matchId)
+        return { error: null, queued: false }
+      }
+      if (!isNetworkError(error)) return { error: error.message, queued: false }
+    } catch (err) {
+      if (!isNetworkError(err)) {
+        return { error: err instanceof Error ? err.message : 'Não foi possível encerrar a partida.', queued: false }
+      }
     }
   }
 
-  // Limpa fila se tudo foi aplicado
-  if (synced === queue.length) {
-    await saveQueue(matchId, [])
-  } else {
-    // Remove apenas os itens aplicados (os primeiros `synced`)
-    await saveQueue(matchId, queue.slice(synced))
-  }
-
-  return { conflict: false, synced }
+  // Sem rede (ou falha de rede): grava na fila e tenta sincronizar quando der.
+  await enqueue({ matchId, type: 'finalize_match', payload })
+  try { await flush(matchId) } catch { /* idem */ }
+  return { error: null, queued: true }
 }
 
 // ─── pendingCount helper ──────────────────────────────────────────────────────
@@ -163,29 +287,52 @@ export async function getPendingCount(matchId: string): Promise<number> {
   return q.length
 }
 
-// ─── games da fila (para classificação offline) ───────────────────────────────
-// Reconstrói o estado atual dos games a partir da fila local (upserts/deletes).
-// Retorna null se não houver nada na fila para a partida.
-export async function getQueuedGames(
-  matchId: string,
-): Promise<Array<{ game_number: number; score_a: number; score_b: number }> | null> {
+// ─── Estado da fila (para telas/classificação offline) ────────────────────────
+// Reconstrói o que a fila local ainda vai aplicar na partida: placar (upserts/
+// deletes) e a finalização pendente. Retorna null se a fila estiver vazia.
+
+export type QueuedMatchState = {
+  /** games enfileirados (upserts) — sobrepõem os do snapshot */
+  games: GameRow[]
+  /** true quando há DQ/W.O. na fila: o servidor apaga os games, então o snapshot não vale */
+  clearsGames: boolean
+  finalization: { kind: FinalizeKind; result: string | null } | null
+}
+
+export async function getQueuedMatchState(matchId: string): Promise<QueuedMatchState | null> {
   const q = await getQueue(matchId)
   if (q.length === 0) return null
-  const map = new Map<number, { game_number: number; score_a: number; score_b: number }>()
+  const map = new Map<number, GameRow>()
+  let clearsGames = false
+  let finalization: QueuedMatchState['finalization'] = null
   for (const a of q) {
     if (a.type === 'upsert_game') {
-      const { game_number, score_a, score_b } = a.payload as {
-        game_number: number
-        score_a: number
-        score_b: number
-      }
-      map.set(game_number, { game_number, score_a, score_b })
+      const g = a.payload as GameRow
+      map.set(g.game_number, { game_number: g.game_number, score_a: g.score_a, score_b: g.score_b })
     } else if (a.type === 'delete_game') {
-      const { game_number } = a.payload as { game_number: number }
-      map.delete(game_number)
+      map.delete((a.payload as { game_number: number }).game_number)
+    } else if (a.type === 'finalize_match') {
+      const p = a.payload as FinalizePayload
+      const kind = kindOf(p)
+      finalization = { kind, result: kind === 'double_wo' ? null : p.result }
+      if (kind !== 'result') {
+        clearsGames = true
+        map.clear()
+      }
     }
   }
-  return [...map.values()].sort((x, y) => x.game_number - y.game_number)
+  return {
+    games: [...map.values()].sort((x, y) => x.game_number - y.game_number),
+    clearsGames,
+    finalization,
+  }
+}
+
+// ─── games da fila (para classificação offline) ───────────────────────────────
+// Retorna null se não houver nada na fila para a partida.
+export async function getQueuedGames(matchId: string): Promise<GameRow[] | null> {
+  const state = await getQueuedMatchState(matchId)
+  return state ? state.games : null
 }
 
 // ─── clearQueue ───────────────────────────────────────────────────────────────

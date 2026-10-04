@@ -16,6 +16,8 @@ export type CachedMatch = {
   groupId: string | null
   status: string
   result: string | null
+  isWo?: boolean
+  isDoubleWo?: boolean
   sideA: CachedSide
   sideB: CachedSide
   games: { game_number: number; score_a: number; score_b: number }[]

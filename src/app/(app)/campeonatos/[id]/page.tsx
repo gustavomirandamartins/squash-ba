@@ -64,7 +64,7 @@ export default async function ChampionshipPage({
   const { data: matchesRaw } = await supabase
     .from('matches')
     .select(
-      `id, stage_id, round, bracket_slot, result, status, is_wo,
+      `id, stage_id, round, bracket_slot, result, status, is_wo, is_double_wo,
        side_a_participant_id, side_b_participant_id,
        match_games(game_number, score_a, score_b)`,
     )
@@ -278,6 +278,7 @@ export default async function ChampionshipPage({
         result: m.result ?? null,
         status: m.status,
         is_wo: (m as { is_wo?: boolean }).is_wo ?? false,
+        is_double_wo: (m as { is_double_wo?: boolean }).is_double_wo ?? false,
         side_a_participant_id: m.side_a_participant_id ?? null,
         side_b_participant_id: m.side_b_participant_id ?? null,
         match_games: ((m.match_games as unknown as Array<{

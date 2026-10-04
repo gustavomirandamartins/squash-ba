@@ -6,6 +6,7 @@
 // RPC get_standings.
 
 import type { Standing } from '@/components/campeonatos/StandingsTable'
+import type { QueuedMatchState } from '@/lib/score-engine/SyncEngine'
 
 export type CGame = { game_number: number; score_a: number; score_b: number }
 
@@ -13,6 +14,14 @@ export type CMatch = {
   side_a_participant_id: string | null
   side_b_participant_id: string | null
   games: CGame[]
+  /**
+   * Estado já decidido da partida (encerrada manualmente, desclassificação, W.O.).
+   * Ausente → o resultado é deduzido só pelos games (resolveMatch).
+   */
+  status?: string
+  result?: string | null
+  is_wo?: boolean
+  is_double_wo?: boolean
 }
 
 export type StageCfg = {
@@ -77,6 +86,31 @@ export function resolveMatch(games: CGame[], st: StageCfg): Resolved {
   return { finalized: false, result: null, setsA: sa, setsB: sb }
 }
 
+// Estado de uma partida (snapshot do servidor/cache) sobre o qual a fila offline é aplicada.
+export type MatchState = {
+  games: CGame[]
+  status: string
+  result: string | null
+  isWo: boolean
+  isDoubleWo: boolean
+}
+
+// Sobrepõe o que ainda está na fila local (placar + encerramento/DQ/W.O.) ao estado
+// vindo do servidor/cache — é o que o usuário já fez neste aparelho, mesmo sem rede.
+export function overlayQueuedState(base: MatchState, q: QueuedMatchState | null): MatchState {
+  if (!q) return base
+  const games = q.clearsGames ? q.games : mergeGames(base.games, q.games)
+  const f = q.finalization
+  if (!f) return { ...base, games }
+  return {
+    games,
+    status: 'finalizado',
+    result: f.kind === 'double_wo' ? null : f.result,
+    isWo: f.kind === 'wo' || f.kind === 'double_wo',
+    isDoubleWo: f.kind === 'double_wo',
+  }
+}
+
 // Mescla os games do snapshot (servidor) com os games da fila offline.
 export function mergeGames(snapshot: CGame[], queued: CGame[] | null): CGame[] {
   if (!queued || queued.length === 0) return snapshot
@@ -113,24 +147,34 @@ export function computeStandings(
     const a = m.side_a_participant_id
     const b = m.side_b_participant_id
     if (!a || !b) continue
-    const r = resolveMatch(m.games, st)
-    if (!r.finalized) continue
+    // W.O. duplo: ninguém compareceu → a partida não conta para nenhum dos lados.
+    if (m.is_double_wo) continue
 
-    const pfA = m.games.reduce((s, g) => s + g.score_a, 0)
-    const pfB = m.games.reduce((s, g) => s + g.score_b, 0)
+    const r = resolveMatch(m.games, st)
+    // Encerramento manual (interrompida, DQ, W.O.) prevalece sobre o placar.
+    const forced = m.status === 'finalizado' && m.result ? m.result : null
+    const result = forced ?? (r.finalized ? r.result : null)
+    if (!result) continue
+
+    // W.O. não conta sets nem pontos de bola; tempo não conta sets (igual ao servidor).
+    const games = m.is_wo ? [] : m.games
+    const setsA = m.is_wo || st.counting === 'tempo' ? 0 : r.setsA
+    const setsB = m.is_wo || st.counting === 'tempo' ? 0 : r.setsB
+    const pfA = games.reduce((s, g) => s + g.score_a, 0)
+    const pfB = games.reduce((s, g) => s + g.score_b, 0)
 
     const accA = ensure(a)
     const accB = ensure(b)
     accA.pontos_favor += pfA; accA.pontos_contra += pfB
     accB.pontos_favor += pfB; accB.pontos_contra += pfA
-    accA.sets_ganhos += r.setsA; accA.sets_perdidos += r.setsB
-    accB.sets_ganhos += r.setsB; accB.sets_perdidos += r.setsA
+    accA.sets_ganhos += setsA; accA.sets_perdidos += setsB
+    accB.sets_ganhos += setsB; accB.sets_perdidos += setsA
 
-    if (r.result === 'empate') {
+    if (result === 'empate') {
       accA.e++; accB.e++
-    } else if (r.result === 'lado_a') {
+    } else if (result === 'lado_a') {
       accA.v++; accB.d++
-    } else if (r.result === 'lado_b') {
+    } else if (result === 'lado_b') {
       accB.v++; accA.d++
     }
   }

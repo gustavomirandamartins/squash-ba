@@ -5,8 +5,8 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { ChevronLeft, ChevronRight, Clock, Swords, User, Check, X } from 'lucide-react'
 import { ManageBar } from '@/components/ManageBar'
-import { getQueuedGames } from '@/lib/score-engine/SyncEngine'
-import { resolveMatch, mergeGames, type StageCfg, type ChampCfg, type ParticipantRef } from '@/lib/standings/compute'
+import { getQueuedMatchState } from '@/lib/score-engine/SyncEngine'
+import { resolveMatch, overlayQueuedState, type StageCfg, type ChampCfg, type ParticipantRef } from '@/lib/standings/compute'
 import { StandingsTable, type Standing } from '@/components/campeonatos/StandingsTable'
 import { Podium, type PodiumPlace } from '@/components/Podium'
 import { createClient } from '@/utils/supabase/client'
@@ -29,6 +29,8 @@ export type ChallengeMatch = {
   side_b_participant_id: string | null
   score_a: number
   score_b: number
+  is_wo?: boolean
+  is_double_wo?: boolean
   /** games crus — para recálculo offline (opcional) */
   match_games?: Array<{ game_number: number; score_a: number; score_b: number }>
 }
@@ -501,15 +503,20 @@ export function ChallengeDetailClient({
     if (!stage) { setEffectiveMatches(matches); return }
     const out = await Promise.all(
       matches.map(async (m) => {
-        const queued = await getQueuedGames(m.id)
-        const games = mergeGames(m.match_games ?? [], queued)
-        const r = resolveMatch(games, stage)
+        const st = overlayQueuedState(
+          { games: m.match_games ?? [], status: m.status, result: m.result, isWo: m.is_wo ?? false, isDoubleWo: m.is_double_wo ?? false },
+          await getQueuedMatchState(m.id),
+        )
+        const r = resolveMatch(st.games, stage)
+        const done = st.status === 'finalizado'
         return {
           ...m,
           score_a: r.setsA,
           score_b: r.setsB,
-          result: r.result,
-          status: r.finalized ? 'finalizado' : games.length > 0 ? 'em_andamento' : m.status,
+          result: done ? st.result : r.result,
+          status: done || r.finalized ? 'finalizado' : st.games.length > 0 ? 'em_andamento' : m.status,
+          is_wo: st.isWo,
+          is_double_wo: st.isDoubleWo,
         }
       }),
     )

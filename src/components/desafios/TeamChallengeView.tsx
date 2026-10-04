@@ -7,8 +7,8 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Users, User, Trophy, Flag } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { ManageBar } from '@/components/ManageBar'
-import { getQueuedGames } from '@/lib/score-engine/SyncEngine'
-import { computeStandings, resolveMatch, mergeGames, type StageCfg, type ChampCfg } from '@/lib/standings/compute'
+import { getQueuedMatchState } from '@/lib/score-engine/SyncEngine'
+import { computeStandings, resolveMatch, overlayQueuedState, type StageCfg, type ChampCfg } from '@/lib/standings/compute'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -31,6 +31,8 @@ export type TeamMatch = {
   score_a: number
   score_b: number
   bracket_slot: number | null
+  is_wo?: boolean
+  is_double_wo?: boolean
   match_games?: Array<{ game_number: number; score_a: number; score_b: number }>
 }
 
@@ -138,15 +140,20 @@ export function TeamChallengeView({
     // 1) jogos efetivos
     const em: TeamMatch[] = await Promise.all(
       matches.map(async (m) => {
-        const queued = await getQueuedGames(m.id)
-        const games = mergeGames(m.match_games ?? [], queued)
-        const r = resolveMatch(games, stage)
+        const st = overlayQueuedState(
+          { games: m.match_games ?? [], status: m.status, result: m.result, isWo: m.is_wo ?? false, isDoubleWo: m.is_double_wo ?? false },
+          await getQueuedMatchState(m.id),
+        )
+        const r = resolveMatch(st.games, stage)
+        const done = st.status === 'finalizado'
         return {
           ...m,
           score_a: r.setsA,
           score_b: r.setsB,
-          result: r.result,
-          status: r.finalized ? 'finalizado' : games.length > 0 ? 'em_andamento' : m.status,
+          result: done ? st.result : r.result,
+          status: done || r.finalized ? 'finalizado' : st.games.length > 0 ? 'em_andamento' : m.status,
+          is_wo: st.isWo,
+          is_double_wo: st.isDoubleWo,
         }
       }),
     )
@@ -157,11 +164,18 @@ export function TeamChallengeView({
       matches
         .filter((m) => m.bracket_slot !== -1)
         .map(async (m) => {
-          const queued = await getQueuedGames(m.id)
+          const st = overlayQueuedState(
+            { games: m.match_games ?? [], status: m.status, result: m.result, isWo: m.is_wo ?? false, isDoubleWo: m.is_double_wo ?? false },
+            await getQueuedMatchState(m.id),
+          )
           return {
             side_a_participant_id: m.side_a_participant_id,
             side_b_participant_id: m.side_b_participant_id,
-            games: mergeGames(m.match_games ?? [], queued),
+            games: st.games,
+            status: st.status,
+            result: st.result,
+            is_wo: st.isWo,
+            is_double_wo: st.isDoubleWo,
           }
         }),
     )

@@ -11,9 +11,10 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, User, WifiOff } from 'lucide-react'
 import { getCachedChamp, getCachedMatch, type CachedChamp, type CachedMatch } from '@/lib/offline/champ-cache'
-import { resolveMatch, mergeGames } from '@/lib/standings/compute'
-import { getQueuedGames } from '@/lib/score-engine/SyncEngine'
+import { resolveMatch, overlayQueuedState } from '@/lib/standings/compute'
+import { getQueuedMatchState } from '@/lib/score-engine/SyncEngine'
 import { ScoreScreen } from '@/components/score/ScoreScreen'
+import { OfflineBackButton } from '@/components/offline/OfflineBackButton'
 
 function NotCached() {
   return (
@@ -30,9 +31,27 @@ function NotCached() {
           Este campeonato ainda não foi carregado offline. Abra-o uma vez com
           internet para que os jogos fiquem disponíveis sem conexão.
         </p>
+        <OfflineBackButton fallbackHref="/campeonatos" className="w-full" />
       </div>
     </div>
   )
+}
+
+// Aplica ao snapshot do cache o que já foi feito neste aparelho e ainda está na
+// fila (placar, encerramento, DQ, W.O.). Sem isso a partida encerrada offline
+// continuava "agendada"/"ao vivo" e o placar sumia ao reabrir.
+async function withQueuedState(m: CachedMatch): Promise<CachedMatch> {
+  const st = overlayQueuedState(
+    {
+      games: m.games,
+      status: m.status,
+      result: m.result,
+      isWo: m.isWo ?? false,
+      isDoubleWo: m.isDoubleWo ?? false,
+    },
+    await getQueuedMatchState(m.id),
+  )
+  return { ...m, games: st.games, status: st.status, result: st.result, isWo: st.isWo, isDoubleWo: st.isDoubleWo }
 }
 
 // ── Lista de jogos (substitui o detalhe offline) ─────────────────────────────
@@ -45,13 +64,8 @@ export function OfflineChampMatches({ champId }: { champId: string }) {
     ;(async () => {
       const c = await getCachedChamp(champId)
       if (c) {
-        // Mescla os placares lançados offline (fila do motor) p/ exibição ao vivo.
-        c.matches = await Promise.all(
-          c.matches.map(async (m) => {
-            const queued = await getQueuedGames(m.id)
-            return { ...m, games: mergeGames(m.games, queued) }
-          }),
-        )
+        // Mescla placares e encerramentos lançados offline (fila do motor).
+        c.matches = await Promise.all(c.matches.map(withQueuedState))
       }
       if (cancelled) return
       setChamp(c)
@@ -108,7 +122,11 @@ export function OfflineChampMatches({ champId }: { champId: string }) {
                 <>
                   <Side info={m.sideA} winner={m.result === 'lado_a'} />
                   <div className="shrink-0 text-center min-w-[3rem]">
-                    {res.finalized || m.games.length > 0 ? (
+                    {m.status === 'finalizado' && m.isWo ? (
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400/80">
+                        {m.isDoubleWo ? 'W.O. duplo' : 'W.O.'}
+                      </span>
+                    ) : res.finalized || m.games.length > 0 ? (
                       <span className="text-sm font-black tabular-nums text-white/80">
                         {res.setsA}<span className="text-white/25 mx-0.5">×</span>{res.setsB}
                       </span>
@@ -153,10 +171,12 @@ export function OfflineScore({ champId, matchId }: { champId: string; matchId: s
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    getCachedMatch(champId, matchId).then((d) => {
-      setData(d)
+    ;(async () => {
+      const d = await getCachedMatch(champId, matchId)
+      // Estado local (fila) por cima do cache: placar e encerramento já lançados offline.
+      setData(d ? { champ: d.champ, match: await withQueuedState(d.match) } : null)
       setLoaded(true)
-    })
+    })()
   }, [champId, matchId])
 
   if (!loaded) return null
@@ -177,9 +197,15 @@ export function OfflineScore({ champId, matchId }: { champId: string; matchId: s
         setDrawEnabled={match.setDrawEnabled}
         timeMinutes={match.timeMinutes}
         canManage={champ.canManage}
+        // canManage do cache = organizador/admin. Sem isto a finalização offline ia
+        // para finalize_match_by_participant, que o servidor recusa p/ quem não joga a partida.
+        isOrganizer={champ.canManage}
+        allowDoubleWo={(match.bracketSlot ?? 0) === 0}
         initialGames={match.games}
         initialStatus={match.status}
         initialResult={match.result}
+        initialIsWo={match.isWo}
+        initialIsDoubleWo={match.isDoubleWo}
         initialConflictSnapshot={null}
       />
     </div>
