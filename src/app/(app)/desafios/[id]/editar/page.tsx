@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { EditChallengeForm } from '@/components/desafios/EditChallengeForm'
 
 export const metadata = { title: 'Editar desafio' }
@@ -12,9 +12,7 @@ export default async function EditChallengePage({
   const { id } = await params
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) notFound()
 
   const { data: champ } = await supabase

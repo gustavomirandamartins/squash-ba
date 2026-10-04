@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { MessageButton } from '@/components/jogador/MessageButton'
 import { ChevronLeft, User, Award, Users, Trophy, Settings } from 'lucide-react'
 
@@ -18,9 +18,7 @@ export default async function JogadorPage({
   const { from } = await searchParams
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   // ── Perfil (apenas dados públicos — nada de profiles_private) ──────────────
   const { data: profile } = await supabase

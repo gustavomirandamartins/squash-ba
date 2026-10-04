@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { Users } from 'lucide-react'
 import { AdminUsers, type AdminUser } from '@/components/admin/AdminUsers'
 
@@ -6,9 +6,7 @@ export const metadata = { title: 'Usuários — Admin' }
 
 export default async function AdminUsuariosPage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) return null
 
   const [{ data: allProfiles }, { data: allRoles }, { data: allEmails }] =

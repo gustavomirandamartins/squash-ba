@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Home, Trophy, Store, Users, MessageSquare, CircleHelp, type LucideIcon } from 'lucide-react'
 import { useUnreadCount } from '@/lib/use-unread-count'
+import { useIsDesktop } from '@/lib/use-is-desktop'
 
 interface Item {
   href: string
@@ -27,7 +28,9 @@ interface Props {
 
 export function BottomNav({ userId }: Props) {
   const pathname = usePathname()
-  const unread = useUnreadCount(userId ?? null)
+  // No desktop a BottomNav fica oculta e o contador roda na DesktopSidebar.
+  const isDesktop = useIsDesktop() === true
+  const unread = useUnreadCount(isDesktop ? null : userId ?? null)
 
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(1rem,env(safe-area-inset-bottom))] landscape-sm:inset-x-auto landscape-sm:inset-y-0 landscape-sm:left-0 landscape-sm:items-center landscape-sm:pb-0 landscape-sm:pl-[max(0.5rem,env(safe-area-inset-left))] lg:hidden">

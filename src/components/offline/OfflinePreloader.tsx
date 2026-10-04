@@ -1,24 +1,33 @@
 'use client'
 
 /**
- * OfflinePreloader — ao abrir o app (uma vez por sessão, estando online),
- * pré-carrega para uso offline:
+ * OfflinePreloader — pré-carrega para uso offline, sem disputar a rede com o
+ * usuário:
  *   • pool de jogadores + categorias (IndexedDB) → criar campeonato/desafio
- *   • páginas principais (documento + RSC) → o Serwist cacheia em runtime
- *   • as ligas e desafios DO USUÁRIO (rotas de detalhe) → abrir offline
+ *   • páginas principais + campeonatos/desafios EM ABERTO do usuário → o
+ *     documento HTML fica no cache do service worker. Offline, quando a
+ *     navegação client-side falha, o Next cai para navegação de documento e o
+ *     SW serve essa cópia.
  *
- * Mostra um chip de progresso e, ao concluir, o aviso
- * "Dados carregados para uso offline".
+ * Regras para não pesar:
+ *   • no máximo a cada 6 h (localStorage — no web app do iOS o sessionStorage
+ *     zera a cada reabertura, o que disparava tudo de novo);
+ *   • começa só depois que a tela inicial assentou (atraso + tempo ocioso);
+ *   • 1 requisição por rota, 2 por vez;
+ *   • só campeonatos/desafios ainda não encerrados (até 12).
  */
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { CheckCircle2, Loader2, X } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { loadPlayerPool, loadCategories } from '@/lib/offline/players-cache'
 import { flushAllPending } from '@/lib/score-engine/SyncEngine'
 
-const SESSION_KEY = 'sb-offline-preloaded'
+const STAMP_KEY = 'sb-offline-preloaded-at'
+const TTL_MS = 6 * 60 * 60 * 1000
+const START_DELAY_MS = 4000
+const CONCURRENCY = 2
+const MAX_DYNAMIC = 12
 
 const CORE_ROUTES = [
   '/',
@@ -33,16 +42,50 @@ const CORE_ROUTES = [
 
 type Phase = 'idle' | 'loading' | 'done'
 
-function warm(path: string): Promise<unknown> {
-  // Documento + payload RSC; o service worker (Serwist) intercepta e cacheia.
-  return Promise.allSettled([
-    fetch(path, { credentials: 'same-origin' }),
-    fetch(path, { credentials: 'same-origin', headers: { RSC: '1' } }),
-  ])
+function readStamp(): number {
+  try {
+    return Number(localStorage.getItem(STAMP_KEY) ?? 0)
+  } catch {
+    return 0
+  }
+}
+
+function writeStamp() {
+  try {
+    localStorage.setItem(STAMP_KEY, String(Date.now()))
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Espera o navegador ficar ocioso (com teto, para não esperar para sempre). */
+function whenIdle(): Promise<void> {
+  return new Promise((resolve) => {
+    const ric = (window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+    }).requestIdleCallback
+    if (ric) ric(() => resolve(), { timeout: 3000 })
+    else setTimeout(resolve, 500)
+  })
+}
+
+/** Busca as rotas com no máximo `limit` requisições simultâneas. */
+async function warmAll(paths: string[], limit: number, isCancelled: () => boolean) {
+  let next = 0
+  async function worker() {
+    while (next < paths.length && !isCancelled()) {
+      const path = paths[next++]
+      try {
+        await fetch(path, { credentials: 'same-origin' })
+      } catch {
+        /* best-effort */
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, paths.length) }, worker))
 }
 
 export function OfflinePreloader() {
-  const router = useRouter()
   const [phase, setPhase] = useState<Phase>('idle')
 
   // Sincroniza filas de placar pendentes sempre que o app fica online,
@@ -51,7 +94,6 @@ export function OfflinePreloader() {
   useEffect(() => {
     const handleOnline = () => { void flushAllPending() }
     window.addEventListener('online', handleOnline)
-    // Também dispara imediatamente se já está online ao montar
     if (typeof navigator !== 'undefined' && navigator.onLine) {
       void flushAllPending()
     }
@@ -61,85 +103,70 @@ export function OfflinePreloader() {
   useEffect(() => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return
     if (!('serviceWorker' in navigator)) return
-    if (sessionStorage.getItem(SESSION_KEY)) return
-    sessionStorage.setItem(SESSION_KEY, '1')
+    if (Date.now() - readStamp() < TTL_MS) return
 
     let cancelled = false
-    setPhase('loading')
+    const isCancelled = () => cancelled
 
-    ;(async () => {
-      try {
-        // Garante o SW ativo antes de aquecer as páginas.
-        await navigator.serviceWorker.ready
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          await whenIdle()
+          await navigator.serviceWorker.ready
+          if (cancelled) return
+          setPhase('loading')
 
-        const supabase = createClient()
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
+          const supabase = createClient()
+          const { data: { session } } = await supabase.auth.getSession()
+          const userId = session?.user.id
 
-        // Rotas de detalhe das participações do usuário (ligas + desafios).
-        const dynamicRoutes: string[] = []
-        if (user) {
-          const { data } = await supabase
-            .from('participant_members')
-            .select('participants!inner(championships!inner(id, format))')
-            .eq('user_id', user.id)
-            .limit(60)
+          // Campeonatos/desafios do usuário ainda em aberto.
+          const dynamicRoutes: string[] = []
+          if (userId) {
+            const { data } = await supabase
+              .from('participant_members')
+              .select('participants!inner(championships!inner(id, format, status))')
+              .eq('user_id', userId)
+              .neq('participants.championships.status', 'encerrado')
+              .limit(40)
 
-          const seen = new Set<string>()
-          for (const row of data ?? []) {
-            const participant = (row as unknown as {
-              participants?: { championships?: { id: string; format: string } | { id: string; format: string }[] }
-            }).participants
-            const champ = Array.isArray(participant?.championships)
-              ? participant?.championships[0]
-              : participant?.championships
-            if (!champ || seen.has(champ.id)) continue
-            seen.add(champ.id)
-            dynamicRoutes.push(
-              champ.format === 'desafio' ? `/desafios/${champ.id}` : `/campeonatos/${champ.id}`,
-            )
+            const seen = new Set<string>()
+            for (const row of data ?? []) {
+              const participant = (row as unknown as {
+                participants?: { championships?: { id: string; format: string } | { id: string; format: string }[] }
+              }).participants
+              const champ = Array.isArray(participant?.championships)
+                ? participant?.championships[0]
+                : participant?.championships
+              if (!champ || seen.has(champ.id)) continue
+              seen.add(champ.id)
+              dynamicRoutes.push(
+                champ.format === 'desafio' ? `/desafios/${champ.id}` : `/campeonatos/${champ.id}`,
+              )
+              if (dynamicRoutes.length >= MAX_DYNAMIC) break
+            }
           }
+
+          await Promise.allSettled([loadPlayerPool(), loadCategories()])
+          await warmAll([...CORE_ROUTES, ...dynamicRoutes], CONCURRENCY, isCancelled)
+          if (cancelled) return
+          writeStamp()
+        } catch {
+          /* best-effort */
         }
 
-        const routes = [...CORE_ROUTES, ...dynamicRoutes]
-
-        // Dados (IndexedDB) + reforço via fetch que o SW cacheia.
-        await Promise.allSettled([
-          loadPlayerPool(),
-          loadCategories(),
-          ...routes.map((p) => warm(p)),
-        ])
-
-        // CRUCIAL: router.prefetch emite a requisição RSC no MESMO formato que a
-        // navegação client-side usa depois — o que o fetch cru não garantia.
-        // É isto que torna /campeonatos/novo (e detalhes) abríveis offline.
-        for (const p of routes) {
-          try {
-            router.prefetch(p)
-          } catch {
-            /* ignore */
-          }
-        }
-        // Dá tempo das requisições de prefetch completarem e serem cacheadas.
-        await new Promise((r) => setTimeout(r, 2000))
-      } catch {
-        /* best-effort */
-      }
-
-      if (cancelled) return
-      setPhase('done')
-      // Some sozinho após alguns segundos.
-      setTimeout(() => {
-        if (!cancelled) setPhase('idle')
-      }, 4500)
-    })()
+        if (cancelled) return
+        setPhase('done')
+        setTimeout(() => {
+          if (!cancelled) setPhase('idle')
+        }, 4500)
+      })()
+    }, START_DELAY_MS)
 
     return () => {
       cancelled = true
+      clearTimeout(timer)
     }
-    // Executa uma vez por sessão (guard via sessionStorage).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   if (phase === 'idle') return null

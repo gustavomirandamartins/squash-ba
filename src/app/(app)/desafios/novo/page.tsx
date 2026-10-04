@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { ChallengeWizard } from '@/components/desafios/ChallengeWizard'
 
 export const metadata = { title: 'Novo desafio' }
@@ -9,9 +9,7 @@ export default async function NovoDesafioPage({
   searchParams: Promise<{ name?: string }>
 }) {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   if (!user) return null
 

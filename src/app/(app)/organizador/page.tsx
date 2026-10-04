@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { Trophy, Clock, XCircle, CheckCircle, ShieldCheck } from 'lucide-react'
 
 export const metadata = { title: 'Ser professor' }
@@ -56,9 +56,7 @@ function StatusCard({
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default async function OrganizadorPage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/login')
 
   // 1. Verifica se já é professor (role = organizer)

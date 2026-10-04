@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { ChampionshipDetailClient, type Standing } from '@/components/campeonatos/ChampionshipDetailClient'
 
 export const metadata = { title: 'Campeonato' }
@@ -14,9 +14,7 @@ export default async function ChampionshipPage({
   const supabase = await createClient()
 
   // getUser() — nunca getSession() server-side (valida JWT)
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   // ── 1. Campeonato + fases ─────────────────────────────────────────────────
   const { data: champ } = await supabase

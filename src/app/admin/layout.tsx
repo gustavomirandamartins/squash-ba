@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { ArrowLeft, ShieldCheck } from 'lucide-react'
 import { AdminNav } from '@/components/admin/AdminNav'
 
@@ -13,9 +13,7 @@ export default async function AdminLayout({
 }) {
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) notFound()
 
   // Verifica papel admin — se não for admin, retorna 404 sem revelar a rota

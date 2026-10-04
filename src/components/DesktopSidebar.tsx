@@ -12,6 +12,7 @@ import { Logo } from './Logo'
 import { UserAvatarMenu } from './UserAvatarMenu'
 import { NotificationsBell } from './NotificationsBell'
 import { useUnreadCount } from '@/lib/use-unread-count'
+import { useIsDesktop } from '@/lib/use-is-desktop'
 
 interface Item {
   href: string
@@ -39,7 +40,10 @@ interface Props {
 
 export function DesktopSidebar({ name, avatarUrl, isAdmin, canManage, userId }: Props) {
   const pathname = usePathname()
-  const unread = useUnreadCount(userId ?? null)
+  // No celular a sidebar fica só no HTML (escondida por CSS): contador e sino
+  // só rodam em tela grande, para não duplicar os da BottomNav/TopBar.
+  const isDesktop = useIsDesktop() === true
+  const unread = useUnreadCount(isDesktop ? userId ?? null : null)
 
   return (
     <aside className="hidden lg:flex sticky top-0 h-dvh w-[256px] shrink-0 flex-col gap-2 border-r border-white/8 px-4 py-6">
@@ -104,7 +108,7 @@ export function DesktopSidebar({ name, avatarUrl, isAdmin, canManage, userId }: 
             {isAdmin ? 'Administrador' : canManage ? 'Professor' : 'Jogador'}
           </p>
         </div>
-        <NotificationsBell userId={userId ?? null} openUp openRight />
+        {isDesktop && <NotificationsBell userId={userId ?? null} openUp openRight />}
       </div>
     </aside>
   )

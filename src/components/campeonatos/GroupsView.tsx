@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Image from 'next/image'
 import { User, Check, ArrowRight, Layers, GitMerge } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { useChampionshipRealtime } from '@/lib/use-championship-realtime'
 import type { Standing } from './StandingsTable'
 import { useOfflineStandings, type OfflineStandingsInput } from '@/lib/standings/use-offline-standings'
 
@@ -309,28 +310,10 @@ export function GroupsView({
     void refetch()
   }, [refetch])
 
-  useEffect(() => {
-    const channel = supabase
-      .channel(`groups-view-${championshipId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'matches',
-          filter: `championship_id=eq.${championshipId}`,
-        },
-        () => { void refetchRef.current() },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'match_games' },
-        () => { void refetchRef.current() },
-      )
-      .subscribe()
-
-    return () => { void supabase.removeChannel(channel) }
-  }, [supabase, championshipId])
+  // Tempo real só deste campeonato, com recargas agrupadas.
+  useChampionshipRealtime(supabase, championshipId, `groups-view-${championshipId}`, () => {
+    void refetchRef.current()
+  })
 
   // ── Computed ────────────────────────────────────────────────────────────────
 

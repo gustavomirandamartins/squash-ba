@@ -1,5 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { ChatView, type ChatMessage, type ConvMeta } from '@/components/mensagens/ChatView'
 
 export const metadata = { title: 'Chat' }
@@ -11,7 +11,7 @@ export default async function ChatPage({
 }) {
   const { id: convId } = await params
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) redirect('/login')
 
   // Verifica que o user é membro

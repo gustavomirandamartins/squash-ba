@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { TopBar } from '@/components/TopBar'
 import { BottomNav } from '@/components/BottomNav'
 import { DesktopSidebar } from '@/components/DesktopSidebar'
@@ -13,9 +13,7 @@ export default async function AppLayout({
   // Um único client por request — evita inconsistência de sessão entre instâncias.
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   if (!user) redirect('/login')
 

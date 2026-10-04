@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { WelcomeHeader } from '@/components/home/WelcomeHeader'
 import { PwaInstallBanner } from '@/components/home/PwaInstallBanner'
 import { Lembretes, type LembretesData } from '@/components/home/Lembretes'
@@ -19,9 +19,7 @@ type InviteRow = {
 
 export default async function HomePage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   // Layout (app)/layout.tsx já garante autenticação; salvaguarda de tipo.
   if (!user) return null

@@ -1,7 +1,12 @@
 {
-  "count": 167,
-  "lastCommitAt": "202610041947",
+  "count": 168,
+  "lastCommitAt": "202610041954",
   "commits": [
+    {
+      "hash": "0b5ae18",
+      "subject": "fix(ios): status bar na cor do header (#2c364b)",
+      "date": "2026-10-04"
+    },
     {
       "hash": "94ae6ba",
       "subject": "fix(ios): status bar sólida na cor do header em vez do recuo extra",

@@ -1,13 +1,11 @@
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { ChampionshipWizard } from '@/components/campeonatos/ChampionshipWizard'
 
 export const metadata = { title: 'Novo campeonato' }
 
 export default async function NovoCampeonatoPage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   // Papel: só admin/professor pode criar campeonato oficial.
   let canCreateOfficial = false

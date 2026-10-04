@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import {
   ChallengeDetailClient,
   type ChallengeParticipant,
@@ -24,9 +24,7 @@ export default async function DesafioPage({
 }) {
   const { id } = await params
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   // ── 1. Desafio + fase ────────────────────────────────────────────
   const { data: champ } = await supabase

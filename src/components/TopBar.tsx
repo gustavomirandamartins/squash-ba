@@ -6,6 +6,7 @@ import { Logo } from './Logo'
 import { UserAvatarMenu } from './UserAvatarMenu'
 import { SearchDropdown } from './SearchDropdown'
 import { NotificationsBell } from './NotificationsBell'
+import { useIsDesktop } from '@/lib/use-is-desktop'
 
 interface Props {
   name?: string | null
@@ -17,6 +18,8 @@ interface Props {
 
 export function TopBar({ name, avatarUrl, isAdmin, canManage, userId }: Props) {
   const [searchOpen, setSearchOpen] = useState(false)
+  // No desktop o sino fica na DesktopSidebar — não monta um segundo aqui.
+  const isDesktop = useIsDesktop() === true
 
   return (
     <header className="relative z-30 shrink-0">
@@ -73,7 +76,7 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage, userId }: Props) {
             célula do grid permanece p/ não deslocar a busca). */}
         <div>
           <div className="flex items-center gap-2 lg:hidden">
-            <NotificationsBell userId={userId ?? null} />
+            {!isDesktop && <NotificationsBell userId={userId ?? null} />}
             <UserAvatarMenu
               name={name}
               avatarUrl={avatarUrl}

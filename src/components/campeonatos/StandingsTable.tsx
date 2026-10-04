@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Image from 'next/image'
 import { User } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { useChampionshipRealtime } from '@/lib/use-championship-realtime'
 import { getQueuedMatchState } from '@/lib/score-engine/SyncEngine'
 import {
   computeStandings,
@@ -356,31 +357,10 @@ export function StandingsTable({
     }
   }, [])
 
-  // Subscrição Realtime — segue o padrão do spec exatamente
-  useEffect(() => {
-    const channel = supabase
-      .channel(`standings-${championshipId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'matches',
-          filter: `championship_id=eq.${championshipId}`,
-        },
-        () => { void refetchRef.current() },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'match_games' },
-        () => { void refetchRef.current() },
-      )
-      .subscribe()
-
-    return () => {
-      void supabase.removeChannel(channel)
-    }
-  }, [supabase, championshipId]) // refetchRef é estável, não entra nas deps
+  // Tempo real só deste campeonato, com recargas agrupadas.
+  useChampionshipRealtime(supabase, championshipId, `standings-${championshipId}`, () => {
+    void refetchRef.current()
+  })
 
   const isLive = champStatus === 'ativo'
 

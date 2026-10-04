@@ -15,6 +15,8 @@ export function useUnreadCount(userId: string | null) {
   const instanceId = useId()
 
   useEffect(() => {
+    // Sem usuário (ou instância desligada): nada de consulta nem canal.
+    if (!userId) return
     let cancelled = false
     let channel: ReturnType<typeof supabase.channel> | null = null
 
@@ -69,5 +71,5 @@ export function useUnreadCount(userId: string | null) {
     }
   }, [userId, supabase, instanceId])
 
-  return count
+  return userId ? count : 0
 }

@@ -35,8 +35,10 @@ export async function proxy(request: NextRequest) {
     },
   )
 
-  // Valida e renova sessão. SEMPRE getUser() — nunca getSession() server-side.
-  await supabase.auth.getUser()
+  // Valida e renova a sessão. getClaims() renova o token se expirou e verifica
+  // a assinatura do JWT localmente (chaves assimétricas), sem a ida ao servidor
+  // de Auth que o getUser() fazia em TODO request. Nunca getSession() aqui.
+  await supabase.auth.getClaims()
 
   return response
 }

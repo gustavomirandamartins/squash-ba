@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { ScoreScreen } from '@/components/score/ScoreScreen'
 import { reopenMatch, reopenMatchByParticipant, updateMatchSchedule, clearMatchData } from '@/app/(app)/jogos/actions'
 import type { GameScore, ConflictSnapshot } from '@/lib/score-engine/useScoreEngine'
@@ -14,9 +14,7 @@ export default async function DesafioScorePage({
   const { id, matchId } = await params
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   // ── Match + games ─────────────────────────────────────────────────────────
   const { data: matchRaw } = await supabase

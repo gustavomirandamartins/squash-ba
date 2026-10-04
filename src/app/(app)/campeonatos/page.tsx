@@ -1,9 +1,8 @@
 import Link from 'next/link'
 import { Plus, Trophy, Swords } from 'lucide-react'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { CampeonatosListClient } from '@/components/campeonatos/CampeonatosListClient'
 import { PendingList } from '@/components/offline/PendingList'
-import { RouteWarmer } from '@/components/offline/RouteWarmer'
 
 export const metadata = { title: 'Campeonatos' }
 
@@ -17,7 +16,7 @@ type ChampEntry = { id: string; name: string; status: string; format: string }
 
 export default async function CampeonatosPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   // Todos os campeonatos públicos (exceto desafios)
   const { data: championships } = await supabase
@@ -132,13 +131,6 @@ export default async function CampeonatosPage() {
           <CampeonatosListClient championships={list} />
         )}
       </section>
-
-      <RouteWarmer
-        paths={[
-          ...desafios.map((d) => `/desafios/${d.id}`),
-          ...list.map((c) => `/campeonatos/${c.id}`),
-        ]}
-      />
     </div>
   )
 }

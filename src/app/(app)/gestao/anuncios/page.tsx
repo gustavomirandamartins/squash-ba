@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { AdForm } from './AdForm'
 import { AdList } from './AdList'
 
@@ -7,7 +7,7 @@ export const metadata = { title: 'Anúncios' }
 
 export default async function AnunciosPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) notFound()
 
   const { data: roles } = await supabase.from('user_roles').select('role').eq('user_id', user.id)

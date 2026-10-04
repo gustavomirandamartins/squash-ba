@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { MessageSquare, Bug, Lightbulb, AlertTriangle, CheckCircle2, Clock, Eye, Trash2 } from 'lucide-react'
 import { markFeedbackRead, deleteFeedback } from './actions'
 
@@ -36,7 +36,7 @@ function formatDate(iso: string) {
 
 export default async function FeedbacksPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthUser()
   if (!user) notFound()
 
   const { data: roles } = await supabase.from('user_roles').select('role').eq('user_id', user.id)

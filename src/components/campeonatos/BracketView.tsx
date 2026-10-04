@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { User, Check, Medal, Clock, Zap, Shuffle, X } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { useChampionshipRealtime } from '@/lib/use-championship-realtime'
 import { StandingsTable, type Standing } from './StandingsTable'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -520,28 +521,10 @@ export function BracketView({
       })
   }
 
-  useEffect(() => {
-    const channel = supabase
-      .channel(`bracket-${championshipId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'matches',
-          filter: `championship_id=eq.${championshipId}`,
-        },
-        () => { void refetchRef.current() },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'match_games' },
-        () => { void refetchRef.current() },
-      )
-      .subscribe()
-
-    return () => { void supabase.removeChannel(channel) }
-  }, [supabase, championshipId])
+  // Tempo real só deste campeonato, com recargas agrupadas.
+  useChampionshipRealtime(supabase, championshipId, `bracket-${championshipId}`, () => {
+    void refetchRef.current()
+  })
 
   // ── Detecta triangular (N=3) ───────────────────────────────────────────────
   const isBracketMatch = matches.some((m) => (m.bracket_slot ?? 0) > 0)

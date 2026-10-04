@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { EditProfileForm } from './EditProfileForm'
 
 export const metadata: Metadata = {
@@ -12,9 +12,7 @@ type Gender = 'masculino' | 'feminino' | 'outro' | 'nao_informado'
 export default async function PerfilPage() {
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   if (!user) {
     redirect('/login')

@@ -1,14 +1,12 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { OnboardingForm } from './OnboardingForm'
 
 export default async function OnboardingPage() {
   const supabase = await createClient()
 
   // Valida sessão no servidor — getUser() garante JWT válido (nunca getSession())
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getAuthUser()
 
   if (!user) {
     redirect('/login')
