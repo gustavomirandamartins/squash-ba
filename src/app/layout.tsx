@@ -27,7 +27,11 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    // Status bar SÓLIDA (cor = theme-color): o conteúdo começa abaixo dela.
+    // Com "black-translucent" o app desenhava sob o relógio e o desfoque
+    // automático do iOS 26+ invadia o header. Mudança só vale após reinstalar
+    // o web app na tela de início (o iOS grava o estilo na instalação).
+    statusBarStyle: "default",
     title: "SquashBa",
   },
   icons: {
@@ -37,7 +41,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#1d2b45",
+  // = topo do degradê do body (globals.css), para a status bar casar com o header.
+  themeColor: "#2a364d",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -63,18 +68,14 @@ export default function RootLayout({
           comum fica sobre o gradiente liso do body, onde borrar não muda nada
           visualmente e só custa paint a cada frame — por isso não leva blur.
 
-          --top-inset: recuo superior dos headers. No web app instalado no iOS
-          (26+), o sistema aplica um desfoque automático sob a status bar que
-          avança ~3rem sobre o conteúdo e não pode ser desligado por CSS — então
-          o header desce além da safe area. Só iOS (-webkit-touch-callout) em
-          modo standalone; demais plataformas usam a safe area pura.
+          --top-inset: recuo superior dos headers (safe area do topo). Fica
+          centralizado aqui para ajustar todos os headers num ponto só.
         */}
         <style
           dangerouslySetInnerHTML={{
             __html:
               ".glass-overlay{-webkit-backdrop-filter:blur(20px) saturate(140%);backdrop-filter:blur(20px) saturate(140%)}" +
-              ":root{--top-inset:env(safe-area-inset-top,0px)}" +
-              "@supports (-webkit-touch-callout:none){@media (display-mode:standalone){:root{--top-inset:calc(env(safe-area-inset-top,0px) + 3.5rem)}}}",
+              ":root{--top-inset:env(safe-area-inset-top,0px)}",
           }}
         />
         <SerwistProvider swUrl="/serwist/sw.js">{children}</SerwistProvider>

@@ -1,7 +1,17 @@
 {
-  "count": 164,
-  "lastCommitAt": "202610041844",
+  "count": 166,
+  "lastCommitAt": "202610041946",
   "commits": [
+    {
+      "hash": "df9295c",
+      "subject": "chore: atualiza ícones do app para a nova versão",
+      "date": "2026-10-04"
+    },
+    {
+      "hash": "f078382",
+      "subject": "fix(ios): desce o header abaixo do desfoque da status bar no web app",
+      "date": "2026-10-04"
+    },
     {
       "hash": "32628c8",
       "subject": "Remove blur do header",
