@@ -36,7 +36,10 @@
 
 /* ── Base ──────────────────────────────────────────────── */
 html {
-  background-color: #192339; /* tom escuro do degradê — evita flash no carregamento */
+  /* O iOS (web app instalado, status bar "default") pinta a status bar com
+     ESTA cor, ignorando o theme-color — por isso = cor do header. O degradê
+     do body::before cobre o resto da tela. */
+  background-color: #2c364b;
   color-scheme: dark;
 }
 

@@ -1,7 +1,12 @@
 {
-  "count": 166,
-  "lastCommitAt": "202610041946",
+  "count": 167,
+  "lastCommitAt": "202610041947",
   "commits": [
+    {
+      "hash": "94ae6ba",
+      "subject": "fix(ios): status bar sólida na cor do header em vez do recuo extra",
+      "date": "2026-10-04"
+    },
     {
       "hash": "df9295c",
       "subject": "chore: atualiza ícones do app para a nova versão",

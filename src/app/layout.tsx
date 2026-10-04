@@ -41,8 +41,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // = topo do degradê do body (globals.css), para a status bar casar com o header.
-  themeColor: "#2a364d",
+  // = cor do header (e do <html> em globals.css), para a status bar casar com ele.
+  themeColor: "#2c364b",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
