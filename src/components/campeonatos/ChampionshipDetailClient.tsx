@@ -33,6 +33,7 @@ export type Match = {
   result: string | null
   status: string
   is_wo?: boolean
+  is_double_wo?: boolean
   side_a_participant_id: string | null
   side_b_participant_id: string | null
   match_games: GameScore[]
@@ -248,7 +249,9 @@ function MatchCard({
         </div>
         <div className="flex flex-col items-center shrink-0 w-14 text-center">
           {match.status === 'finalizado' && match.is_wo ? (
-            <span className="text-[11px] font-bold text-amber-400/80 uppercase tracking-wider">W.O.</span>
+            <span className="text-[11px] font-bold text-amber-400/80 uppercase tracking-wider">
+              {match.is_double_wo ? 'W.O. duplo' : 'W.O.'}
+            </span>
           ) : headA != null ? (
             <span className={`text-base font-bold tabular-nums tracking-tight ${match.status === 'finalizado' ? 'text-white' : 'text-white/70'}`}>
               {headA}–{headB}
@@ -478,6 +481,8 @@ export function ChampionshipDetailClient({
         groupId: null,
         status: m.status,
         result: m.result,
+        isWo: m.is_wo ?? false,
+        isDoubleWo: m.is_double_wo ?? false,
         sideA: side(m.side_a_participant_id),
         sideB: side(m.side_b_participant_id),
         games: m.match_games,
@@ -508,6 +513,10 @@ export function ChampionshipDetailClient({
         side_a_participant_id: m.side_a_participant_id,
         side_b_participant_id: m.side_b_participant_id,
         match_games: m.match_games,
+        status: m.status,
+        result: m.result,
+        is_wo: m.is_wo ?? false,
+        is_double_wo: m.is_double_wo ?? false,
       })),
       participants: Object.entries(participantInfo).map(([id, info]) => ({
         id,
@@ -541,6 +550,10 @@ export function ChampionshipDetailClient({
           side_a_participant_id: m.side_a_participant_id,
           side_b_participant_id: m.side_b_participant_id,
           match_games: m.match_games,
+          status: m.status,
+          result: m.result,
+          is_wo: m.is_wo ?? false,
+          is_double_wo: m.is_double_wo ?? false,
         })),
     }
   }, [stage, isGruposElim, matches, offlineStandingsData])

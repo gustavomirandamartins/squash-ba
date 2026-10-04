@@ -16,6 +16,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import * as Sync from './SyncEngine'
+import { overlayQueuedState, mergeGames } from '@/lib/standings/compute'
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
 
@@ -43,6 +44,9 @@ export type ScoreEngineState = {
   pendingCount: number
   hasConflict: boolean
   conflictSnapshot: ConflictSnapshot | null
+  // Como a partida foi encerrada (derivado de matches.is_wo / is_double_wo)
+  isWo: boolean
+  isDoubleWo: boolean
 }
 
 export type ScoreEngineActions = {
@@ -53,6 +57,8 @@ export type ScoreEngineActions = {
   finalize: () => Promise<void>
   reset: () => Promise<void>
   resolveConflict: (side: 'local' | 'server') => Promise<void>
+  /** Recarrega do servidor e reaplica a fila local (ex.: após DQ/W.O., que apagam o placar). */
+  refresh: () => Promise<void>
 }
 
 export type ScoreEngine = ScoreEngineState & ScoreEngineActions
@@ -70,6 +76,8 @@ export type ScoreEngineConfig = {
   initialStatus?: string
   initialResult?: string | null
   initialConflictSnapshot?: ConflictSnapshot | null
+  initialIsWo?: boolean
+  initialIsDoubleWo?: boolean
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -83,6 +91,8 @@ export function useScoreEngine(
     initialStatus = 'agendado',
     initialResult = null,
     initialConflictSnapshot = null,
+    initialIsWo = false,
+    initialIsDoubleWo = false,
   } = config
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -93,6 +103,8 @@ export function useScoreEngine(
     if (initialGames.length === 0) return 1
     return initialGames[initialGames.length - 1].game_number
   })
+  const [isWo, setIsWo] = useState(initialIsWo)
+  const [isDoubleWo, setIsDoubleWo] = useState(initialIsDoubleWo)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>()
   const [isOffline, setIsOffline] = useState(false)
@@ -113,12 +125,35 @@ export function useScoreEngine(
     setPendingCount(count)
   }, [matchId])
 
+  // Espelho dos games p/ callbacks assíncronos sem closure stale.
+  const gamesRef = useRef(games)
+  useEffect(() => { gamesRef.current = games }, [games])
+
+  // ── Fila local sobre o estado atual ────────────────────────────────────────
+  // O que já foi feito neste aparelho e ainda não chegou ao servidor (placar,
+  // encerramento, W.O.) tem de continuar visível — inclusive ao reabrir a tela
+  // offline, quando só há o snapshot em cache.
+  const applyQueueOverlay = useCallback(async () => {
+    const q = await Sync.getQueuedMatchState(matchId)
+    if (!q) return
+    const merged = q.clearsGames ? q.games : mergeGames(gamesRef.current, q.games)
+    setGames(merged)
+    if (merged.length > 0) setCurrentGame(merged[merged.length - 1].game_number)
+    const f = q.finalization
+    if (f) {
+      setStatus('finalizado')
+      setResult(f.kind === 'double_wo' ? null : f.result)
+      setIsWo(f.kind === 'wo' || f.kind === 'double_wo')
+      setIsDoubleWo(f.kind === 'double_wo')
+    }
+  }, [matchId])
+
   // ── Fetch do servidor ──────────────────────────────────────────────────────
   const fetchFromServer = useCallback(async () => {
     const { data } = await supabase
       .from('matches')
       .select(
-        'status, result, conflict_server_snapshot, match_games(game_number, score_a, score_b)',
+        'status, result, is_wo, is_double_wo, conflict_server_snapshot, match_games(game_number, score_a, score_b)',
       )
       .eq('id', matchId)
       .single()
@@ -129,15 +164,30 @@ export function useScoreEngine(
       (data.match_games as GameScore[] | null) ?? []
     ).sort((a, b) => a.game_number - b.game_number)
 
-    setGames(serverGames)
-    setStatus(data.status as string)
-    setResult((data.result as string | null) ?? null)
+    // Pendências locais prevalecem sobre o servidor (que ainda não as recebeu).
+    const merged = overlayQueuedState(
+      {
+        games: serverGames,
+        status: data.status as string,
+        result: (data.result as string | null) ?? null,
+        isWo: !!data.is_wo,
+        isDoubleWo: !!data.is_double_wo,
+      },
+      await Sync.getQueuedMatchState(matchId),
+    )
+    const inReview = data.status === 'revisao'
 
-    if (serverGames.length > 0) {
-      setCurrentGame(serverGames[serverGames.length - 1].game_number)
+    setGames(merged.games)
+    setStatus(inReview ? 'revisao' : merged.status)
+    setResult(merged.result)
+    setIsWo(merged.isWo)
+    setIsDoubleWo(merged.isDoubleWo)
+
+    if (merged.games.length > 0) {
+      setCurrentGame(merged.games[merged.games.length - 1].game_number)
     }
 
-    if (data.status === 'revisao') {
+    if (inReview) {
       setHasConflict(true)
       const snap = data.conflict_server_snapshot as ConflictSnapshot | null
       setConflictSnapshot(snap)
@@ -151,6 +201,7 @@ export function useScoreEngine(
   const cleanupSyncRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
+    void applyQueueOverlay() // offline: o fetch abaixo falha, a fila é a verdade local
     void fetchFromServer()
     void refreshPending()
 
@@ -160,6 +211,7 @@ export function useScoreEngine(
     cleanupSyncRef.current = Sync.startAutoSync((_mid, res) => {
       if (_mid !== matchId) return
       void refreshPending()
+      if (res.error) setError(`O servidor recusou uma ação: ${res.error}`)
       if (res.conflict) {
         setHasConflict(true)
         void fetchFromServer() // pega o conflictSnapshot do servidor
@@ -205,9 +257,16 @@ export function useScoreEngine(
           filter: `id=eq.${matchId}`,
         },
         (payload) => {
-          const row = payload.new as { status: string; result: string | null }
+          const row = payload.new as {
+            status: string
+            result: string | null
+            is_wo?: boolean
+            is_double_wo?: boolean
+          }
           setStatus(row.status)
           setResult(row.result)
+          setIsWo(!!row.is_wo)
+          setIsDoubleWo(!!row.is_double_wo)
           if (row.status === 'revisao') {
             setHasConflict(true)
             void fetchFromServer()
@@ -262,6 +321,7 @@ export function useScoreEngine(
     if (navigator.onLine) {
       void Sync.flush(matchId).then((res) => {
         void refreshPending()
+        if (res.error) setError(`O servidor recusou uma ação: ${res.error}`)
         if (res.conflict) {
           setHasConflict(true)
           void fetchFromServer()
@@ -348,9 +408,18 @@ export function useScoreEngine(
     setCurrentGame(1)
     setStatus('agendado')
     setResult(null)
+    setIsWo(false)
+    setIsDoubleWo(false)
     await Sync.clearQueue(matchId)
     setPendingCount(0)
   }, [matchId])
+
+  const refresh = useCallback(async () => {
+    await fetchFromServer()
+    await applyQueueOverlay() // offline: o fetch falha e a fila é o estado local
+    await refreshPending()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchFromServer, applyQueueOverlay])
 
   const resolveConflict = useCallback(
     async (side: 'local' | 'server') => {
@@ -388,6 +457,8 @@ export function useScoreEngine(
     pendingCount,
     hasConflict,
     conflictSnapshot,
+    isWo,
+    isDoubleWo,
     increment,
     decrement,
     advanceGame,
@@ -395,5 +466,6 @@ export function useScoreEngine(
     finalize,
     reset,
     resolveConflict,
+    refresh,
   }
 }

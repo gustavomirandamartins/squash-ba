@@ -19,7 +19,7 @@ import {
 } from '@/lib/offline/local-championship'
 import { takeLocalSynced } from '@/lib/offline/reconcile-liga'
 import { computeStandings, resolveMatch, type StageCfg } from '@/lib/standings/compute'
-import type { Standing } from '@/components/campeonatos/StandingsTable'
+import { StandingsGrid, type Standing } from '@/components/campeonatos/StandingsTable'
 import { LocalScoreScreen } from '@/components/score/LocalScoreScreen'
 import { LocalBracketView } from '@/components/offline/LocalBracketView'
 
@@ -162,26 +162,19 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
       champ.format === 'liga' ? 'Liga' : champ.format === 'eliminatoria' ? 'Eliminatória' : 'Grupos + Elim.'
 
     // ── Helpers de render ──
+    const avatarById = Object.fromEntries(champ.participants.map((p) => [p.id, p.avatarUrl]))
     const renderStandings = (standings: Standing[]) => (
-      <div className="glass glass-card overflow-hidden">
-        <div className="grid grid-cols-[1.5rem_1fr_2.5rem_1.5rem_1.5rem_1.5rem_2.75rem] gap-x-1.5 items-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-white/30 border-b border-white/8">
-          <span>#</span><span>Jogador</span><span className="text-center">Pts</span>
-          <span className="text-center">V</span><span className="text-center">E</span><span className="text-center">D</span>
-          <span className="text-center">Saldo</span>
+      <div className="space-y-2">
+        <div className="glass glass-card overflow-hidden">
+          <StandingsGrid
+            standings={standings}
+            currentUserParticipantId={null}
+            participantAvatars={avatarById}
+          />
         </div>
-        {standings.map((s) => (
-          <div key={s.participant_id} className="grid grid-cols-[1.5rem_1fr_2.5rem_1.5rem_1.5rem_1.5rem_2.75rem] gap-x-1.5 items-center px-3 py-2.5 border-b border-white/[0.04] last:border-0">
-            <span className={`text-xs font-bold ${s.position === 1 ? 'text-yellow-400' : 'text-white/30'}`}>{s.position}</span>
-            <span className="text-sm text-white/85 truncate">{s.display_name ?? '—'}</span>
-            <span className="text-center text-sm font-black tabular-nums text-secondary">{s.pontos}</span>
-            <span className="text-center text-xs text-white/60 tabular-nums">{s.v}</span>
-            <span className="text-center text-xs text-white/45 tabular-nums">{s.e}</span>
-            <span className="text-center text-xs text-white/45 tabular-nums">{s.d}</span>
-            <span className={`text-center text-xs tabular-nums ${s.saldo_pontos > 0 ? 'text-secondary/75' : s.saldo_pontos < 0 ? 'text-red-400/60' : 'text-white/30'}`}>
-              {s.saldo_pontos > 0 ? '+' : ''}{s.saldo_pontos}
-            </span>
-          </div>
-        ))}
+        <p className="px-1 text-[10px] leading-relaxed text-white/18">
+          Pts = pontos · J = partidas · V/E/D = vitória/empate/derrota · SG/SP = sets vencidos/perdidos · PF/PC = pontos a favor/contra · Saldo = PF − PC
+        </p>
       </div>
     )
 

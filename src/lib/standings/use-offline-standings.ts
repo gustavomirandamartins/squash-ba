@@ -5,11 +5,11 @@
 // Quando online, retorna offline=false e o chamador usa sua fonte online (RPC/SSR).
 
 import { useState, useEffect, useCallback } from 'react'
-import { getQueuedGames } from '@/lib/score-engine/SyncEngine'
+import { getQueuedMatchState } from '@/lib/score-engine/SyncEngine'
 import {
   computeStandings,
   resolveMatch,
-  mergeGames,
+  overlayQueuedState,
   type CMatch,
   type StageCfg,
   type ChampCfg,
@@ -23,6 +23,11 @@ export type OfflineStandingsInput = {
     side_a_participant_id: string | null
     side_b_participant_id: string | null
     match_games: Array<{ game_number: number; score_a: number; score_b: number }>
+    /** estado da partida no snapshot (p/ contar encerramento manual, DQ e W.O.) */
+    status?: string
+    result?: string | null
+    is_wo?: boolean
+    is_double_wo?: boolean
   }>
   participants: ParticipantRef[]
   stage: StageCfg
@@ -46,13 +51,25 @@ export function useOfflineStandings(data?: OfflineStandingsInput): OfflineStandi
     const finalized: Record<string, boolean> = {}
     const cmatches: CMatch[] = await Promise.all(
       data.matches.map(async (m) => {
-        const queued = await getQueuedGames(m.id)
-        const games = mergeGames(m.match_games, queued)
-        finalized[m.id] = resolveMatch(games, data.stage).finalized
+        const st = overlayQueuedState(
+          {
+            games: m.match_games,
+            status: m.status ?? 'agendado',
+            result: m.result ?? null,
+            isWo: m.is_wo ?? false,
+            isDoubleWo: m.is_double_wo ?? false,
+          },
+          await getQueuedMatchState(m.id),
+        )
+        finalized[m.id] = st.status === 'finalizado' || resolveMatch(st.games, data.stage).finalized
         return {
           side_a_participant_id: m.side_a_participant_id,
           side_b_participant_id: m.side_b_participant_id,
-          games,
+          games: st.games,
+          status: st.status,
+          result: st.result,
+          is_wo: st.isWo,
+          is_double_wo: st.isDoubleWo,
         }
       }),
     )

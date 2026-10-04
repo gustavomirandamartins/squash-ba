@@ -100,7 +100,7 @@ export default async function DesafioPage({
   const { data: matchesRaw } = await supabase
     .from('matches')
     .select(
-      `id, round, status, result, bracket_slot,
+      `id, round, status, result, bracket_slot, is_wo, is_double_wo,
        side_a_participant_id, side_b_participant_id,
        match_games(game_number, score_a, score_b)`,
     )
@@ -173,6 +173,8 @@ export default async function DesafioPage({
         score_a: s.a,
         score_b: s.b,
         bracket_slot: (m.bracket_slot as number | null) ?? null,
+        is_wo: (m as { is_wo?: boolean }).is_wo ?? false,
+        is_double_wo: (m as { is_double_wo?: boolean }).is_double_wo ?? false,
         match_games: (m.match_games as { game_number: number; score_a: number; score_b: number }[]) ?? [],
       }
     })
@@ -229,6 +231,10 @@ export default async function DesafioPage({
       side_a_participant_id: m.side_a_participant_id ?? null,
       side_b_participant_id: m.side_b_participant_id ?? null,
       match_games: (m.match_games as { game_number: number; score_a: number; score_b: number }[]) ?? [],
+      status: m.status as string,
+      result: (m.result as string | null) ?? null,
+      is_wo: (m as { is_wo?: boolean }).is_wo ?? false,
+      is_double_wo: (m as { is_double_wo?: boolean }).is_double_wo ?? false,
     })),
     participants: confirmed.map((p) => ({ id: p.id, name: p.full_name })),
     stage: stageCfg,
@@ -246,6 +252,8 @@ export default async function DesafioPage({
       side_b_participant_id: m.side_b_participant_id ?? null,
       score_a: s.a,
       score_b: s.b,
+      is_wo: (m as { is_wo?: boolean }).is_wo ?? false,
+      is_double_wo: (m as { is_double_wo?: boolean }).is_double_wo ?? false,
       match_games: (m.match_games as { game_number: number; score_a: number; score_b: number }[]) ?? [],
     }
   })

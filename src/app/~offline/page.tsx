@@ -17,6 +17,7 @@ import { WifiOff } from 'lucide-react'
 import { ChampionshipWizard } from '@/components/campeonatos/ChampionshipWizard'
 import { ProvisionalChampionship } from '@/components/offline/ProvisionalChampionship'
 import { OfflineChampMatches, OfflineScore } from '@/components/offline/OfflineChampionshipView'
+import { OfflineBackButton } from '@/components/offline/OfflineBackButton'
 
 // Mini-header substituto do TopBar (não disponível fora do layout (app)).
 // Lida com safe-area-inset-top p/ o botão Voltar não ficar atrás do relógio.
@@ -55,7 +56,12 @@ function OfflineShell({ children }: { children: React.ReactNode }) {
   )
 }
 
-function OfflineMessage() {
+function OfflineMessage({ path }: { path?: string }) {
+  // Rotas de edição exigem servidor: não há o que "abrir uma vez com internet".
+  const isEdit = !!path && /\/editar\/?$/.test(path)
+  // Sem histórico (app aberto direto aqui) → sobe um nível da rota atual.
+  const fallbackHref = path ? path.replace(/\/[^/]*\/?$/, '') || '/' : '/'
+
   return (
     <div
       className="min-h-dvh grid place-items-center px-6 text-center"
@@ -68,15 +74,19 @@ function OfflineMessage() {
         <div className="mx-auto h-16 w-16 rounded-2xl bg-secondary/12 grid place-items-center ring-1 ring-secondary/25">
           <WifiOff className="h-7 w-7 text-secondary/70" />
         </div>
-        <h1 className="text-lg font-bold text-white">Você está offline</h1>
+        <h1 className="text-lg font-bold text-white">
+          {isEdit ? 'Edição indisponível offline' : 'Você está offline'}
+        </h1>
         <p className="text-sm text-white/55 leading-relaxed">
-          Esta tela ainda não foi carregada offline. Abra-a uma vez com internet
-          para que fique disponível sem conexão.
+          {isEdit
+            ? 'Para editar é preciso estar conectado. Volte e tente de novo quando tiver internet.'
+            : 'Esta tela ainda não foi carregada offline. Abra-a uma vez com internet para que fique disponível sem conexão.'}
         </p>
         <p className="text-xs text-white/35">
           Placares já abertos continuam funcionando e sincronizam quando você
           voltar a ficar online.
         </p>
+        <OfflineBackButton fallbackHref={fallbackHref} className="w-full" />
       </div>
     </div>
   )
@@ -90,7 +100,7 @@ export default function OfflinePage() {
   }, [])
 
   // Primeiro paint = mensagem offline (casa com o HTML precacheado).
-  if (path === null) return <OfflineMessage />
+  if (path === null) return <OfflineMessage />  // sem rota ainda: aviso genérico
 
   // Criar campeonato funciona offline (wizard é client-only).
   if (path === '/campeonatos/novo') {
@@ -135,5 +145,5 @@ export default function OfflinePage() {
     )
   }
 
-  return <OfflineMessage />
+  return <OfflineMessage path={path} />
 }

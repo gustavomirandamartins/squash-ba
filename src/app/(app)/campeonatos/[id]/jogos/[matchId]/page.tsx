@@ -22,7 +22,7 @@ export default async function CampeonatoScorePage({
   const { data: matchRaw } = await supabase
     .from('matches')
     .select(
-      `id, status, result, conflict_server_snapshot, stage_id, scheduled_at, duration_seconds,
+      `id, status, result, is_wo, is_double_wo, bracket_slot, conflict_server_snapshot, stage_id, scheduled_at, duration_seconds,
        side_a_participant_id, side_b_participant_id, championship_id,
        match_games(game_number, score_a, score_b)`,
     )
@@ -179,6 +179,9 @@ export default async function CampeonatoScorePage({
       timeMinutes={stage?.time_minutes ?? null}
       canManage={canManage}
       isOrganizer={isOrganizer}
+      allowDoubleWo={(matchRaw.bracket_slot ?? 0) === 0}
+      initialIsWo={!!matchRaw.is_wo}
+      initialIsDoubleWo={!!matchRaw.is_double_wo}
       onReopenMatch={isOrganizer ? handleReopenMatch : canManage ? handleReopenMatchByParticipant : undefined}
       onClearMatch={canManage ? handleClearMatch : undefined}
       scheduledAt={(matchRaw as { scheduled_at?: string | null }).scheduled_at ?? null}

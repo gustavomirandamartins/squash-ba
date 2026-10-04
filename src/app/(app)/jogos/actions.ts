@@ -31,10 +31,11 @@ export async function reopenMatch(matchId: string): Promise<{ error: string | nu
   })
   if (!canManage) return { error: 'Sem permissão para reabrir esta partida.' }
 
-  // Reabre: volta para em_andamento e limpa o resultado
+  // Reabre: volta para em_andamento e limpa o resultado (e o W.O., se houve —
+  // is_wo=false também zera is_double_wo via trigger)
   const { error } = await supabase
     .from('matches')
-    .update({ status: 'em_andamento', result: null })
+    .update({ status: 'em_andamento', result: null, is_wo: false })
     .eq('id', matchId)
 
   if (error) return { error: error.message }

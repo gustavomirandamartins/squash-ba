@@ -18,10 +18,10 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, CalendarDays, Flag, Square } from 'lucide-react'
+import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, CalendarDays, Flag, Square, UserX } from 'lucide-react'
 import { useScoreEngine, type GameScore, type ConflictSnapshot, type ScoreEngineConfig } from '@/lib/score-engine/useScoreEngine'
 import { CourtTimer } from '@/lib/score-engine/CourtTimer'
-import { clearQueue, flush as flushQueue } from '@/lib/score-engine/SyncEngine'
+import { clearQueue, finalizeMatch, flush as flushQueue, type FinalizeInput } from '@/lib/score-engine/SyncEngine'
 import { createClient } from '@/utils/supabase/client'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -58,11 +58,18 @@ export type ScoreScreenProps = {
    * false → usuário é só participante → usa finalize_match_by_participant; sem W.O.
    */
   isOrganizer?: boolean
+  /**
+   * W.O. duplo (os dois lados faltaram → ninguém pontua). Desligado em partidas de
+   * mata-mata: alguém precisa avançar na chave.
+   */
+  allowDoubleWo?: boolean
   // SSR initial state
   initialGames: GameScore[]
   initialStatus: string
   initialResult: string | null
   initialConflictSnapshot: ConflictSnapshot | null
+  initialIsWo?: boolean
+  initialIsDoubleWo?: boolean
 }
 
 // ─── Avatar helper ────────────────────────────────────────────────────────────
@@ -347,6 +354,9 @@ export function ScoreScreen({
   initialConflictSnapshot,
   initialDuration,
   isOrganizer = false,
+  allowDoubleWo = true,
+  initialIsWo = false,
+  initialIsDoubleWo = false,
 }: ScoreScreenProps) {
   const engineConfig: ScoreEngineConfig = {
     sets_to_play: setsToPlay,
@@ -358,6 +368,8 @@ export function ScoreScreen({
     initialStatus,
     initialResult,
     initialConflictSnapshot,
+    initialIsWo,
+    initialIsDoubleWo,
   }
 
   const engine = useScoreEngine(matchId, engineConfig)
@@ -371,11 +383,14 @@ export function ScoreScreen({
     pendingCount,
     hasConflict,
     conflictSnapshot,
+    isWo,
+    isDoubleWo,
     increment,
     decrement,
     advanceGame,
     reopenGame,
     resolveConflict,
+    refresh,
   } = engine
 
   // Ref para acessar games atuais dentro de callbacks sem closure stale
@@ -386,8 +401,12 @@ export function ScoreScreen({
   // sem esperar o realtime do servidor (que pode demorar 1-2 s).
   const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null)
   const [optimisticResult, setOptimisticResult] = useState<string | null>(null)
+  const [optimisticWo, setOptimisticWo] = useState<'none' | 'wo' | 'double_wo' | null>(null)
   const displayStatus = optimisticStatus ?? status
-  const displayResult = optimisticResult ?? result
+  // optimisticResult só vale com optimisticStatus (W.O. duplo termina com result null)
+  const displayResult = optimisticStatus ? optimisticResult : result
+  const displayIsDoubleWo = optimisticWo ? optimisticWo === 'double_wo' : isDoubleWo
+  const displayIsWo = optimisticWo ? optimisticWo !== 'none' : isWo
 
   const router = useRouter()
 
@@ -444,16 +463,30 @@ export function ScoreScreen({
   // A partida finaliza AUTOMATICAMENTE quando o placar decide (mais sets vence;
   // empate só quando a fase permite e o resultado dá igual). Sem confirmação manual.
 
-  // Volta para a página anterior quando a partida finaliza NESTA sessão.
-  // Delay de 2 s para o usuário ver o resultado antes do redirect.
-  // (Se já estava finalizada ao carregar, não redireciona.)
+  // Volta para a lista. Navegação client-side primeiro; se não concluir (offline,
+  // sinal fraco → o RSC fica pendurado) força navegação completa, que o service
+  // worker atende com o shell offline. Partida encerrada NESTA sessão usa replace:
+  // o "voltar" do aparelho não cai de novo na tela do placar já encerrado.
   const wasFinishedOnMountRef = useRef(initialStatus === 'finalizado')
+  const goBack = useCallback(
+    (replace: boolean) => {
+      if (replace) router.replace(backHref)
+      else router.push(backHref)
+      setTimeout(() => {
+        if (window.location.pathname !== backHref) window.location.assign(backHref)
+      }, 1500)
+    },
+    [router, backHref],
+  )
+
+  // Volta sozinho 2 s após a partida finalizar nesta sessão (tempo p/ ver o resultado).
+  // (Se já estava finalizada ao carregar, não redireciona.)
   useEffect(() => {
     if (isFinished && !wasFinishedOnMountRef.current) {
-      const t = setTimeout(() => router.push(backHref), 2000)
+      const t = setTimeout(() => goBack(true), 2000)
       return () => clearTimeout(t)
     }
-  }, [isFinished, backHref, router])
+  }, [isFinished, goBack])
 
   // Cronômetro iniciado? (gate do placar no modo tempo — #9)
   const [timerStarted, setTimerStarted] = useState(false)
@@ -604,49 +637,22 @@ export function ScoreScreen({
 
   // Aplica o resultado escolhido. Garante que o placar parcial esteja salvo antes.
   // Organizer/admin → finalize_match_manual; participante → finalize_match_by_participant.
+  // Sem rede a ação vai para a fila local e sincroniza ao reconectar.
   const applyFinish = useCallback(
     async (res: 'lado_a' | 'lado_b' | 'empate') => {
       if (finishing) return
       setFinishing(true)
       setFinishError(null)
       try {
-        await flushQueue(matchId) // garante placar parcial no servidor
-
-        let rpcError: any = null
-        let networkFailed = false
-
-        if (navigator.onLine) {
-          try {
-            const rpc = isOrganizer ? 'finalize_match_manual' : 'finalize_match_by_participant'
-            const { error } = await supabase.rpc(rpc, { _match_id: matchId, _result: res })
-            rpcError = error
-          } catch (err: any) {
-            if (err instanceof TypeError && (err.message.includes('Load failed') || err.message.includes('Failed to fetch') || err.message.includes('fetch'))) {
-              networkFailed = true
-            } else {
-              throw err
-            }
-          }
-        } else {
-          networkFailed = true
-        }
-
-        if (networkFailed) {
-          const { enqueue } = await import('@/lib/score-engine/SyncEngine')
-          await enqueue({
-            matchId,
-            type: 'finalize_match',
-            payload: { result: res, isOrganizer }
-          })
-          try { await flushQueue(matchId) } catch {}
-        } else if (rpcError) {
-          setFinishError(rpcError.message)
+        const out = await finalizeMatch(matchId, { kind: 'result', result: res, isOrganizer })
+        if (out.error) {
+          setFinishError(out.error)
           return
         }
-
         // Atualiza estado otimista: exibe vencedor imediatamente sem esperar realtime
         setOptimisticStatus('finalizado')
         setOptimisticResult(res)
+        setOptimisticWo('none')
         setShowFinishModal(false)
         setTieBreak(false)
       } catch (e) {
@@ -655,7 +661,7 @@ export function ScoreScreen({
         setFinishing(false)
       }
     },
-    [supabase, matchId, finishing, isOrganizer],
+    [matchId, finishing, isOrganizer],
   )
 
   // Clique em "Encerrar partida": decide se finaliza direto ou abre o modal.
@@ -690,53 +696,24 @@ export function ScoreScreen({
       setFinishing(true)
       setFinishError(null)
       try {
-        await flushQueue(matchId)
-
-        let rpcError: any = null
-        let networkFailed = false
-
-        if (navigator.onLine) {
-          try {
-            const rpc = isOrganizer ? 'finalize_match_dq' : 'finalize_match_dq_by_participant'
-            const { error } = await supabase.rpc(rpc, { _match_id: matchId, _winner: winner })
-            rpcError = error
-          } catch (err: any) {
-            if (err instanceof TypeError && (err.message.includes('Load failed') || err.message.includes('Failed to fetch') || err.message.includes('fetch'))) {
-              networkFailed = true
-            } else {
-              throw err
-            }
-          }
-        } else {
-          networkFailed = true
-        }
-
-        if (networkFailed) {
-          const { enqueue } = await import('@/lib/score-engine/SyncEngine')
-          await enqueue({
-            matchId,
-            type: 'finalize_match',
-            payload: { result: winner, isOrganizer, isDq: true }
-          })
-          try { await flushQueue(matchId) } catch {}
-        } else if (rpcError) {
-          setFinishError(rpcError.message)
+        const out = await finalizeMatch(matchId, { kind: 'dq', result: winner, isOrganizer })
+        if (out.error) {
+          setFinishError(out.error)
           return
-        } else {
-          await clearQueue(matchId) // limpa apenas se rodou com sucesso online
         }
-
         setOptimisticStatus('finalizado')
         setOptimisticResult(winner)
+        setOptimisticWo('none')
         setShowFinishModal(false)
         setTieBreak(false)
+        void refresh() // o placar parcial foi anulado
       } catch (e) {
         setFinishError(e instanceof Error ? e.message : 'Não foi possível desclassificar.')
       } finally {
         setFinishing(false)
       }
     },
-    [supabase, matchId, finishing, isOrganizer],
+    [matchId, finishing, isOrganizer, refresh],
   )
 
   // Desclassificação: vence automaticamente o outro lado, independente do placar.
@@ -764,50 +741,37 @@ export function ScoreScreen({
 
   // Decreta WO: vencedor leva a vitória; a partida não conta pontos/sets nas estatísticas.
   // Organizer/admin → finalize_match_wo; participante → finalize_match_wo_by_participant.
-  const [woSide, setWoSide] = useState<'a' | 'b' | null>(null)
-  const handleWO = useCallback(async (side: 'a' | 'b') => {
-    if (woSide || !editable) return
-    setWoSide(side)
-    try {
-      const winner = side === 'a' ? 'lado_a' : 'lado_b'
-      let rpcError: any = null
-      let networkFailed = false
-
-      if (navigator.onLine) {
-        try {
-          const rpc = isOrganizer ? 'finalize_match_wo' : 'finalize_match_wo_by_participant'
-          const { error } = await supabase.rpc(rpc, { _match_id: matchId, _winner: winner })
-          rpcError = error
-        } catch (err: any) {
-          if (err instanceof TypeError && (err.message.includes('Load failed') || err.message.includes('Failed to fetch') || err.message.includes('fetch'))) {
-            networkFailed = true
-          } else {
-            throw err
-          }
+  // W.O. duplo (os dois faltaram): sem vencedor e sem pontos para ninguém.
+  const [woBusy, setWoBusy] = useState<'a' | 'b' | 'double' | null>(null)
+  const [woError, setWoError] = useState<string | null>(null)
+  const handleWO = useCallback(
+    async (which: 'a' | 'b' | 'double') => {
+      if (woBusy || !editable) return
+      setWoBusy(which)
+      setWoError(null)
+      try {
+        const winner = which === 'a' ? 'lado_a' : which === 'b' ? 'lado_b' : null
+        const input: FinalizeInput =
+          which === 'double'
+            ? { kind: 'double_wo', isOrganizer }
+            : { kind: 'wo', result: winner, isOrganizer }
+        const out = await finalizeMatch(matchId, input)
+        if (out.error) {
+          setWoError(out.error)
+          setWoBusy(null)
+          return
         }
-      } else {
-        networkFailed = true
+        setOptimisticStatus('finalizado')
+        setOptimisticResult(winner)
+        setOptimisticWo(which === 'double' ? 'double_wo' : 'wo')
+        void refresh() // W.O. apaga o placar parcial
+      } catch (e) {
+        setWoError(e instanceof Error ? e.message : 'Não foi possível decretar o W.O.')
+        setWoBusy(null)
       }
-
-      if (networkFailed) {
-        const { enqueue, flush } = await import('@/lib/score-engine/SyncEngine')
-        await enqueue({
-          matchId,
-          type: 'finalize_match',
-          payload: { result: winner, isOrganizer, isWo: true }
-        })
-        try { await flush(matchId) } catch {}
-      } else if (rpcError) {
-        setWoSide(null)
-        return
-      }
-      
-      setOptimisticStatus('finalizado')
-      setOptimisticResult(winner)
-    } catch {
-      setWoSide(null)
-    }
-  }, [supabase, matchId, woSide, editable, isOrganizer])
+    },
+    [matchId, woBusy, editable, isOrganizer, refresh],
+  )
 
   return (
     <div className="px-5 py-4 space-y-4 max-w-md mx-auto">
@@ -815,6 +779,10 @@ export function ScoreScreen({
       <div className="flex items-center justify-between">
         <Link
           href={backHref}
+          onClick={(e) => {
+            e.preventDefault()
+            goBack(isFinished && !wasFinishedOnMountRef.current)
+          }}
           className="inline-flex items-center gap-1.5 text-sm text-white/50 hover:text-white/80 transition"
         >
           <ChevronLeft className="h-4 w-4" />
@@ -1080,7 +1048,7 @@ export function ScoreScreen({
           <div className="flex gap-2">
             <button
               type="button"
-              disabled={!!woSide}
+              disabled={!!woBusy}
               onClick={() => void handleWO('a')}
               className="flex-1 flex items-center justify-center gap-1.5 rounded-2xl bg-white/[0.05] py-2.5 text-xs font-semibold text-white/60 hover:bg-secondary/15 hover:text-secondary transition active:scale-95 disabled:opacity-40"
             >
@@ -1089,7 +1057,7 @@ export function ScoreScreen({
             </button>
             <button
               type="button"
-              disabled={!!woSide}
+              disabled={!!woBusy}
               onClick={() => void handleWO('b')}
               className="flex-1 flex items-center justify-center gap-1.5 rounded-2xl bg-white/[0.05] py-2.5 text-xs font-semibold text-white/60 hover:bg-secondary/15 hover:text-secondary transition active:scale-95 disabled:opacity-40"
             >
@@ -1097,6 +1065,23 @@ export function ScoreScreen({
               {sideB.name ?? 'Lado B'} vence
             </button>
           </div>
+          {allowDoubleWo && (
+            <button
+              type="button"
+              disabled={!!woBusy}
+              onClick={() => void handleWO('double')}
+              className="w-full flex items-center justify-center gap-1.5 rounded-2xl bg-amber-500/10 py-2.5 text-xs font-semibold text-amber-300/80 hover:bg-amber-500/20 hover:text-amber-300 transition active:scale-95 disabled:opacity-40"
+            >
+              <UserX className="h-3.5 w-3.5" />
+              W.O. duplo — nenhum dos dois compareceu
+            </button>
+          )}
+          {allowDoubleWo && (
+            <p className="text-[10px] text-white/30 text-center leading-snug">
+              No W.O. duplo ninguém pontua: a partida não conta vitória, derrota, sets nem pontos.
+            </p>
+          )}
+          {woError && <p className="text-[11px] text-red-400/80 text-center">{woError}</p>}
         </div>
       )}
 
@@ -1106,13 +1091,20 @@ export function ScoreScreen({
           <p className="text-[10px] font-semibold uppercase tracking-wider text-white/30">
             Resultado final
           </p>
-          <p className="text-base font-black text-secondary">
-            {displayResult === 'empate'
-              ? 'Empate'
-              : displayResult === 'lado_a'
-                ? (sideA.name ?? 'Lado A')
-                : (sideB.name ?? 'Lado B')} venceu
-          </p>
+          {displayIsDoubleWo ? (
+            <>
+              <p className="text-base font-black text-amber-300">W.O. duplo</p>
+              <p className="text-xs text-white/45">Nenhum dos dois compareceu — a partida não pontua.</p>
+            </>
+          ) : (
+            <p className="text-base font-black text-secondary">
+              {displayResult === 'empate'
+                ? 'Empate'
+                : displayResult === 'lado_a'
+                  ? (sideA.name ?? 'Lado A')
+                  : (sideB.name ?? 'Lado B')} venceu{displayIsWo ? ' por W.O.' : ''}
+            </p>
+          )}
         </div>
       )}
 
