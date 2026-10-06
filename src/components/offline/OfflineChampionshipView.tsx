@@ -201,6 +201,10 @@ export function OfflineScore({ champId, matchId }: { champId: string; matchId: s
         // para finalize_match_by_participant, que o servidor recusa p/ quem não joga a partida.
         isOrganizer={champ.canManage}
         allowDoubleWo={(match.bracketSlot ?? 0) === 0}
+        // Reabrir, limpar e mudar a data vão pela fila: também offline.
+        canReopen={champ.canManage}
+        canClear={champ.canManage}
+        canSchedule={champ.canManage}
         initialGames={match.games}
         initialStatus={match.status}
         initialResult={match.result}

@@ -14,7 +14,9 @@
  *   • conflito é detectado comparando games (servidor × última versão que este
  *     aparelho viu do servidor), nunca relógios;
  *   • o que o servidor recusa não some: vai para a lista de falhas
- *     (`sync-failures`), visível em /sincronizacao.
+ *     (`sync-failures`), visível em /sincronizacao;
+ *   • com a RPC `apply_match_ops` no banco (Fase 2), a fila inteira sobe numa
+ *     única chamada e numa transação; sem ela, cai no envio ação por ação.
  */
 
 import { get, set, del, keys, update } from 'idb-keyval'
@@ -23,7 +25,14 @@ import { getDeviceId } from './deviceId'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-export type ActionType = 'upsert_game' | 'delete_game' | 'finalize_match' | 'finish_timer'
+export type ActionType =
+  | 'upsert_game'
+  | 'delete_game'
+  | 'finalize_match'
+  | 'finish_timer'
+  | 'reopen_match'
+  | 'clear_match'
+  | 'set_schedule'
 
 export type QueueAction = {
   id: string
@@ -162,12 +171,19 @@ async function getQueue(matchId: string): Promise<QueueAction[]> {
 // game importa. Nunca compacta por cima de um encerramento: o que veio antes de
 // "encerrar" precisa chegar antes dele.
 
+/** Ações que mudam o estado da partida: placar anterior a elas não se mistura com o posterior. */
+const BARRIERS: ActionType[] = ['finalize_match', 'finish_timer', 'reopen_match', 'clear_match']
+
 export function compactQueue(queue: QueueAction[], item: QueueAction): QueueAction[] {
+  // Data: só a última vale.
+  if (item.type === 'set_schedule') return [...queue.filter((a) => a.type !== 'set_schedule'), item]
+  // Limpar a partida apaga placar e encerramento: o que veio antes não precisa subir.
+  if (item.type === 'clear_match') return [...queue.filter((a) => a.type === 'set_schedule'), item]
   if (item.type !== 'upsert_game') return [...queue, item]
   const game = (item.payload as GameRow).game_number
   let barrier = -1
   queue.forEach((a, i) => {
-    if (a.type === 'finalize_match' || a.type === 'finish_timer') barrier = i
+    if (BARRIERS.includes(a.type)) barrier = i
   })
   const kept = queue.filter(
     (a, i) =>
@@ -375,8 +391,175 @@ function applyAction(supabase: Client, matchId: string, deviceId: string, action
       return outcomeOf(error)
     }
 
+    if (action.type === 'reopen_match') {
+      const { isOrganizer } = action.payload as { isOrganizer: boolean }
+      if (isOrganizer) {
+        // is_wo=false também zera is_double_wo (trigger)
+        const { error } = await supabase
+          .from('matches')
+          .update({ status: 'em_andamento', result: null, is_wo: false })
+          .eq('id', matchId)
+          .eq('status', 'finalizado')
+        return outcomeOf(error)
+      }
+      const { error } = await supabase.rpc('reopen_match_by_participant', { _match_id: matchId })
+      return outcomeOf(error)
+    }
+
+    if (action.type === 'clear_match') {
+      const { error } = await supabase.rpc('reset_match_data', { _match_id: matchId })
+      return outcomeOf(error)
+    }
+
+    if (action.type === 'set_schedule') {
+      const { at } = action.payload as { at: string | null }
+      const { error } = await supabase.from('matches').update({ scheduled_at: at }).eq('id', matchId)
+      return outcomeOf(error)
+    }
+
     return { kind: 'ok' }
   })
+}
+
+// ─── Envio em lote (RPC apply_match_ops) ──────────────────────────────────────
+
+type BatchOp = { type: string; ids: string[] } & Record<string, unknown>
+
+/** Converte a fila em operações do lote. Upserts seguidos viram um só. */
+export function buildBatchOps(queue: QueueAction[]): BatchOp[] {
+  const ops: BatchOp[] = []
+  for (const a of queue) {
+    const last = ops[ops.length - 1]
+    if (a.type === 'upsert_game') {
+      const g = a.payload as GameRow
+      const row = { game_number: g.game_number, score_a: g.score_a, score_b: g.score_b }
+      if (last?.type === 'upsert_games') {
+        const games = (last.games as GameRow[]).filter((x) => x.game_number !== g.game_number)
+        last.games = [...games, row]
+        last.ids.push(a.id)
+      } else {
+        ops.push({ type: 'upsert_games', ids: [a.id], games: [row] })
+      }
+    } else if (a.type === 'delete_game') {
+      ops.push({ type: 'delete_game', ids: [a.id], game_number: (a.payload as { game_number: number }).game_number })
+    } else if (a.type === 'finalize_match') {
+      const p = a.payload as FinalizePayload
+      ops.push({ type: 'finalize', ids: [a.id], kind: kindOf(p), result: p.result })
+    } else if (a.type === 'finish_timer') {
+      const p = a.payload as FinishTimerPayload
+      ops.push({ type: 'finish_timer', ids: [a.id], seconds: p.seconds, score_a: p.score_a, score_b: p.score_b })
+    } else if (a.type === 'reopen_match') {
+      ops.push({ type: 'reopen', ids: [a.id] })
+    } else if (a.type === 'clear_match') {
+      ops.push({ type: 'clear', ids: [a.id] })
+    } else if (a.type === 'set_schedule') {
+      ops.push({ type: 'schedule', ids: [a.id], at: (a.payload as { at: string | null }).at })
+    }
+  }
+  return ops
+}
+
+/** A RPC ainda não existe no banco (migração da Fase 2 não aplicada)? */
+function isMissingRpc(error: { message: string; code?: string }): boolean {
+  return error.code === 'PGRST202' || /could not find the function/i.test(error.message)
+}
+
+/**
+ * Quando o banco ainda não tem a RPC (migração não aplicada), usa o envio ação
+ * a ação e volta a testar a RPC a cada 10 min — passa a usá-la sozinho assim
+ * que a migração for aplicada.
+ */
+let batchRpcMissingAt: number | null = null
+const BATCH_REPROBE_MS = 10 * 60 * 1000
+
+function batchRpcUsable(): boolean {
+  return batchRpcMissingAt === null || Date.now() - batchRpcMissingAt > BATCH_REPROBE_MS
+}
+
+/** Só para testes: esquece o resultado da sondagem da RPC. */
+export function __resetBatchProbe(): void {
+  batchRpcMissingAt = null
+}
+
+type BatchResponse = {
+  status: 'ok' | 'conflict' | 'missing'
+  rejected?: { ids: string[] | null; error: string }[]
+  games?: GameRow[]
+}
+
+/**
+ * Envia a fila inteira numa chamada. Retorna null quando a RPC não existe
+ * (o chamador cai no envio antigo).
+ */
+async function flushBatch(
+  supabase: Client,
+  matchId: string,
+  deviceId: string,
+  queue: QueueAction[],
+): Promise<FlushResult | null> {
+  const base = (await get(baseKey(matchId))) as GameRow[] | undefined
+  const local = queuedGames(queue)
+  let res: { data: unknown; error: { message: string; code?: string } | null }
+  try {
+    res = await supabase.rpc('apply_match_ops', {
+      _match_id: matchId,
+      _ops: buildBatchOps(queue),
+      _base: base ?? null,
+      _local: local.length > 0 ? local : null,
+      _device_id: deviceId,
+    })
+  } catch (err) {
+    if (isNetworkError(err)) return { conflict: false, synced: 0, stalled: true }
+    throw err
+  }
+
+  if (res.error) {
+    if (isMissingRpc(res.error)) {
+      batchRpcMissingAt = Date.now()
+      return null
+    }
+    if (isNetworkError(res.error) || isAuthError(res.error)) return { conflict: false, synced: 0, stalled: true }
+    // Recusa da chamada inteira (ex.: sem permissão nesta partida).
+    await dropFromQueue(matchId, queue, res.error.message)
+    return { conflict: false, synced: queue.length, error: res.error.message }
+  }
+  batchRpcMissingAt = null
+
+  const data = res.data as BatchResponse
+  if (data.status === 'missing') {
+    const reason = 'A partida não existe mais no servidor.'
+    await dropFromQueue(matchId, queue, reason)
+    return { conflict: false, synced: 0, error: reason }
+  }
+  if (data.status === 'conflict') {
+    conflicted.add(matchId)
+    return { conflict: true, synced: 0 }
+  }
+
+  // Tudo do lote foi processado (aplicado ou recusado): sai da fila.
+  const sent = new Set(queue.map((a) => a.id))
+  await update<QueueAction[]>(queueKey(matchId), (old) => (old ?? []).filter((a) => !sent.has(a.id)))
+  const rejected = data.rejected ?? []
+  for (const r of rejected) {
+    const ids = new Set(r.ids ?? [])
+    const actions = queue.filter((a) => ids.has(a.id))
+    await recordFailures(matchId, actions.length > 0 ? actions : [null], r.error)
+  }
+  await set(baseKey(matchId), data.games ?? [])
+  notify()
+  return {
+    conflict: false,
+    synced: queue.length,
+    error: rejected.length > 0 ? rejected[rejected.length - 1].error : undefined,
+  }
+}
+
+/** Tira da fila e manda para as falhas (o servidor não vai aceitar). */
+async function dropFromQueue(matchId: string, items: QueueAction[], reason: string) {
+  const ids = new Set(items.map((a) => a.id))
+  await recordFailures(matchId, items, reason)
+  await update<QueueAction[]>(queueKey(matchId), (old) => (old ?? []).filter((a) => !ids.has(a.id)))
+  notify()
 }
 
 /** Games finais que a fila vai deixar no servidor (último upsert de cada game). */
@@ -408,11 +591,23 @@ async function flushOnce(matchId: string): Promise<FlushResult> {
   const supabase = createClient()
   const deviceId = getDeviceId()
 
+  // Renova o token se venceu enquanto o app estava offline (no-op se válido).
+  try {
+    await supabase.auth.getSession()
+  } catch {
+    return { conflict: false, synced: 0, stalled: true }
+  }
+
+  // Fase 2: uma chamada para a fila inteira.
+  if (batchRpcUsable()) {
+    const r = await flushBatch(supabase, matchId, deviceId, queue)
+    if (r) return r
+  }
+
+  // Envio ação por ação (banco sem apply_match_ops).
   // Estado atual do servidor (status + games) — para conflito e base.
   let server: { status: string; match_games: GameRow[] | null } | null
   try {
-    // Renova o token se venceu enquanto o app estava offline (no-op se válido).
-    await supabase.auth.getSession()
     const { data, error } = await supabase
       .from('matches')
       .select('status, match_games(game_number, score_a, score_b)')
@@ -429,11 +624,7 @@ async function flushOnce(matchId: string): Promise<FlushResult> {
   // Vai inteira para falhas em vez de tentar para sempre.
   if (!server) {
     const reason = 'A partida não existe mais no servidor.'
-    await recordFailures(matchId, queue, reason)
-    await update<QueueAction[]>(queueKey(matchId), (old) =>
-      (old ?? []).filter((a) => !queue.some((q) => q.id === a.id)),
-    )
-    notify()
+    await dropFromQueue(matchId, queue, reason)
     return { conflict: false, synced: 0, error: reason }
   }
 
@@ -499,7 +690,11 @@ async function flushOnce(matchId: string): Promise<FlushResult> {
 
     // Nova base = servidor + o que acabamos de aplicar.
     const done = queue.filter((a) => applied.has(a.id) && !rejected.some((r) => r.action.id === a.id))
-    const clears = done.some((a) => a.type === 'finalize_match' && kindOf(a.payload as FinalizePayload) !== 'result')
+    const clears = done.some(
+      (a) =>
+        a.type === 'clear_match' ||
+        (a.type === 'finalize_match' && kindOf(a.payload as FinalizePayload) !== 'result'),
+    )
     const merged = new Map(serverGames.map((g) => [g.game_number, g]))
     for (const g of queuedGames(done)) merged.set(g.game_number, g)
     await set(baseKey(matchId), clears ? [] : [...merged.values()])
@@ -595,6 +790,25 @@ export async function finishTimer(matchId: string, p: FinishTimerPayload): Promi
   void flush(matchId)
 }
 
+// ─── Reabrir / limpar / data ─────────────────────────────────────────────────
+// Também pela fila: funcionam offline e chegam ao servidor na ordem certa
+// (depois do placar e do encerramento que vieram antes).
+
+export async function reopenMatch(matchId: string, isOrganizer: boolean): Promise<void> {
+  await enqueue({ matchId, type: 'reopen_match', payload: { isOrganizer } })
+  void flush(matchId)
+}
+
+export async function clearMatch(matchId: string): Promise<void> {
+  await enqueue({ matchId, type: 'clear_match', payload: {} })
+  void flush(matchId)
+}
+
+export async function setSchedule(matchId: string, at: string | null): Promise<void> {
+  await enqueue({ matchId, type: 'set_schedule', payload: { at } })
+  void flush(matchId)
+}
+
 // ─── pendingCount helper ──────────────────────────────────────────────────────
 
 export async function getPendingCount(matchId: string): Promise<number> {
@@ -609,9 +823,13 @@ export async function getPendingCount(matchId: string): Promise<number> {
 export type QueuedMatchState = {
   /** games enfileirados (upserts) — sobrepõem os do snapshot */
   games: GameRow[]
-  /** true quando há DQ/W.O. na fila: o servidor apaga os games, então o snapshot não vale */
+  /** true quando há DQ/W.O./limpeza na fila: o servidor apaga os games, então o snapshot não vale */
   clearsGames: boolean
   finalization: { kind: FinalizeKind; result: string | null } | null
+  /** partida reaberta ('em_andamento') ou limpa ('agendado') na fila, sem encerramento depois */
+  statusOverride: 'em_andamento' | 'agendado' | null
+  /** data definida na fila (undefined = não mexeu) */
+  scheduledAt?: string | null
 }
 
 export function queuedStateOf(q: QueueAction[]): QueuedMatchState | null {
@@ -619,6 +837,8 @@ export function queuedStateOf(q: QueueAction[]): QueuedMatchState | null {
   const map = new Map<number, GameRow>()
   let clearsGames = false
   let finalization: QueuedMatchState['finalization'] = null
+  let statusOverride: QueuedMatchState['statusOverride'] = null
+  let scheduledAt: string | null | undefined
   for (const a of q) {
     if (a.type === 'upsert_game') {
       const g = a.payload as GameRow
@@ -629,6 +849,7 @@ export function queuedStateOf(q: QueueAction[]): QueuedMatchState | null {
       const p = a.payload as FinalizePayload
       const kind = kindOf(p)
       finalization = { kind, result: kind === 'double_wo' ? null : p.result }
+      statusOverride = null
       if (kind !== 'result') {
         clearsGames = true
         map.clear()
@@ -637,13 +858,28 @@ export function queuedStateOf(q: QueueAction[]): QueuedMatchState | null {
       const p = a.payload as FinishTimerPayload
       map.set(1, { game_number: 1, score_a: p.score_a, score_b: p.score_b })
       const result = timerResult(p)
-      if (result) finalization = { kind: 'result', result }
+      if (result) {
+        finalization = { kind: 'result', result }
+        statusOverride = null
+      }
+    } else if (a.type === 'reopen_match') {
+      finalization = null
+      statusOverride = 'em_andamento'
+    } else if (a.type === 'clear_match') {
+      map.clear()
+      clearsGames = true
+      finalization = null
+      statusOverride = 'agendado'
+    } else if (a.type === 'set_schedule') {
+      scheduledAt = (a.payload as { at: string | null }).at
     }
   }
   return {
     games: [...map.values()].sort((x, y) => x.game_number - y.game_number),
     clearsGames,
     finalization,
+    statusOverride,
+    scheduledAt,
   }
 }
 

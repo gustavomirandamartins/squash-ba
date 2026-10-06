@@ -148,8 +148,15 @@ export function useScoreEngine(
     if (!q) return
     const merged = q.clearsGames ? q.games : mergeGames(gamesRef.current, q.games)
     commitGames(merged)
-    if (merged.length > 0) commitCurrentGame(merged[merged.length - 1].game_number)
+    commitCurrentGame(merged.length > 0 ? merged[merged.length - 1].game_number : 1)
     const f = q.finalization
+    if (!f && q.statusOverride) {
+      // Reaberta ou limpa neste aparelho (ainda na fila).
+      setStatus(q.statusOverride === 'agendado' && merged.length > 0 ? 'em_andamento' : q.statusOverride)
+      setResult(null)
+      setIsWo(false)
+      setIsDoubleWo(false)
+    }
     if (f) {
       setStatus('finalizado')
       setResult(f.kind === 'double_wo' ? null : f.result)

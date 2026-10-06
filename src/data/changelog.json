@@ -1,7 +1,12 @@
 {
-  "count": 169,
-  "lastCommitAt": "202610042026",
+  "count": 170,
+  "lastCommitAt": "202610061024",
   "commits": [
+    {
+      "hash": "9e7508c",
+      "subject": "fix(offline): Fase 1 — fila de placar confiável e provisório sem bloqueios",
+      "date": "2026-10-06"
+    },
     {
       "hash": "b68f861",
       "subject": "perf: primeiro lote de desempenho (loading, pré-carga, SW, tempo real, auth)",

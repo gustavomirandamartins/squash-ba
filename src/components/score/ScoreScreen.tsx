@@ -21,7 +21,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, CalendarDays, Flag, Square, UserX } from 'lucide-react'
 import { useScoreEngine, type GameScore, type ConflictSnapshot, type ScoreEngineConfig } from '@/lib/score-engine/useScoreEngine'
 import { CourtTimer } from '@/lib/score-engine/CourtTimer'
-import { clearQueue, finalizeMatch, finishTimer, setSyncMeta, type FinalizeInput } from '@/lib/score-engine/SyncEngine'
+import { clearMatch, finalizeMatch, finishTimer, getQueuedMatchState, reopenMatch, setSchedule, setSyncMeta, type FinalizeInput } from '@/lib/score-engine/SyncEngine'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -42,14 +42,17 @@ export type ScoreScreenProps = {
   setDrawEnabled: boolean
   timeMinutes: number | null
   canManage: boolean
-  /** Server Action — reabre partida finalizada (apenas organizers/admins) */
-  onReopenMatch?: () => Promise<{ error: string | null }>
-  /** Server Action — limpa todos os dados da partida (placar + cronômetro) (#5) */
-  onClearMatch?: () => Promise<{ error: string | null }>
+  /**
+   * Pode reabrir a partida finalizada (organizador; ou participante, pela RPC
+   * reopen_match_by_participant). Vai pela fila — funciona offline.
+   */
+  canReopen?: boolean
+  /** Pode limpar todos os dados da partida (placar + cronômetro) (#5). Pela fila. */
+  canClear?: boolean
   /** Data/hora agendada da partida (ISO) ou null */
   scheduledAt?: string | null
-  /** Server Action — atualiza a data do jogo (scheduled_at) */
-  onUpdateSchedule?: (iso: string | null) => Promise<{ error: string | null }>
+  /** Pode mudar a data do jogo (scheduled_at). Pela fila. */
+  canSchedule?: boolean
   /** Segundos já acumulados no cronômetro (modo tempo) — evita reset ao voltar à página */
   initialDuration?: number
   /**
@@ -343,10 +346,10 @@ export function ScoreScreen({
   setDrawEnabled,
   timeMinutes,
   canManage,
-  onReopenMatch,
-  onClearMatch,
+  canReopen = false,
+  canClear = false,
   scheduledAt,
-  onUpdateSchedule,
+  canSchedule = false,
   initialGames,
   initialStatus,
   initialResult,
@@ -495,19 +498,34 @@ export function ScoreScreen({
   const [confirmClear, setConfirmClear] = useState(false)
   const [clearError, setClearError] = useState<string | null>(null)
 
+  // Remonta o cronômetro depois de limpar/reabrir (ele guarda estado próprio).
+  const [timerKey, setTimerKey] = useState(0)
+
+  /** Depois de reabrir/limpar: a tela volta a seguir o motor (fila + servidor). */
+  function resetLocalView() {
+    setOptimisticStatus(null)
+    setOptimisticResult(null)
+    setOptimisticWo(null)
+    setWoBusy(null)
+    wasFinishedOnMountRef.current = false
+    setTimerKey((k) => k + 1)
+  }
+
+  // Limpar e reabrir vão pela fila: funcionam offline, sem recarregar a página,
+  // e chegam ao servidor depois do placar/encerramento que vieram antes.
   async function handleClear() {
-    if (!onClearMatch || clearing) return
+    if (!canClear || clearing) return
     setClearing(true)
     setClearError(null)
     try {
-      const res = await onClearMatch()
-      if (res.error) { setClearError(res.error); setClearing(false); return }
-      // Limpa fila local + estado do cronômetro persistido neste dispositivo.
-      await clearQueue(matchId)
+      await clearMatch(matchId)
       try { localStorage.removeItem(`court-timer-${matchId}`) } catch { /* ignore */ }
-      window.location.reload()
+      resetLocalView()
+      setConfirmClear(false)
+      await refresh()
     } catch {
       setClearError('Não foi possível excluir os dados da partida.')
+    } finally {
       setClearing(false)
     }
   }
@@ -516,24 +534,16 @@ export function ScoreScreen({
   const [reopenError, setReopenError] = useState<string | null>(null)
 
   async function handleReopen() {
-    if (!onReopenMatch || reopening) return
+    if (!canReopen || reopening) return
     setReopening(true)
     setReopenError(null)
     try {
-      const res = await onReopenMatch()
-      if (res.error) {
-        setReopenError(res.error)
-        setReopening(false)
-        return
-      }
-      // Limpa a fila local para que itens antigos não re-finalizem a partida,
-      // e recarrega a página: o motor de placar reinicializa do estado do
-      // servidor (status=em_andamento) — router.refresh() não remonta o
-      // componente, então o status do engine ficava preso em 'finalizado'.
-      await clearQueue(matchId)
-      window.location.reload()
+      await reopenMatch(matchId, isOrganizer)
+      resetLocalView()
+      await refresh()
     } catch {
       setReopenError('Não foi possível reabrir a partida.')
+    } finally {
       setReopening(false)
     }
   }
@@ -556,19 +566,26 @@ export function ScoreScreen({
 
   const saveSchedule = useCallback(
     async (iso: string | null) => {
-      if (!onUpdateSchedule) return
+      if (!canSchedule) return
       setSavingDate(true)
       setScheduledLocal(iso)
       try {
-        await onUpdateSchedule(iso)
-      } catch {
-        // offline ou falha de rede: mantém o valor local (data é informativa)
+        await setSchedule(matchId, iso) // fila: sobe quando houver rede
       } finally {
         setSavingDate(false)
       }
     },
-    [onUpdateSchedule],
+    [canSchedule, matchId],
   )
+
+  // Data já alterada neste aparelho e ainda na fila.
+  useEffect(() => {
+    let cancelled = false
+    void getQueuedMatchState(matchId).then((q) => {
+      if (!cancelled && q?.scheduledAt !== undefined) setScheduledLocal(q.scheduledAt ?? null)
+    })
+    return () => { cancelled = true }
+  }, [matchId])
 
   function handleDateChange(value: string) {
     if (!value) { void saveSchedule(null); return }
@@ -580,14 +597,14 @@ export function ScoreScreen({
   // Define automaticamente a data de hoje ao iniciar o jogo, se ainda não houver.
   useEffect(() => {
     if (autoSetRef.current) return
-    if (!canManage || !onUpdateSchedule) return
+    if (!canManage || !canSchedule) return
     if (scheduledLocal) return
     if (status === 'em_andamento' || status === 'finalizado') {
       autoSetRef.current = true
       const iso = new Date(new Date().setHours(12, 0, 0, 0)).toISOString()
       void saveSchedule(iso)
     }
-  }, [status, canManage, onUpdateSchedule, scheduledLocal, saveSchedule])
+  }, [status, canManage, canSchedule, scheduledLocal, saveSchedule])
 
   // ── Cronômetro (modo tempo) ────────────────────────────────────────────────
   // Pausar NÃO grava no servidor: resolve_match finaliza a partida assim que
@@ -800,7 +817,7 @@ export function ScoreScreen({
       </div>
 
       {/* ── Data do jogo (#2) ── */}
-      {onUpdateSchedule && canManage ? (
+      {canSchedule && canManage ? (
         <div className="glass glass-card px-4 py-2.5 flex items-center gap-2.5">
           <CalendarDays className="h-4 w-4 text-secondary/70 shrink-0" />
           <span className="text-xs font-medium text-white/55 shrink-0">Data do jogo</span>
@@ -842,6 +859,7 @@ export function ScoreScreen({
         <div className="space-y-4">
           <div className="glass glass-card px-4 py-6 flex flex-col items-center gap-4">
             <CourtTimer
+              key={timerKey}
               initialSeconds={initialDuration ?? 0}
               initialStopped={isFinished}
               storageKey={matchId}
@@ -889,7 +907,7 @@ export function ScoreScreen({
           </div>
 
           {/* Excluir dados da partida (#5) — relançar do zero */}
-          {onClearMatch && canManage && (
+          {canClear && canManage && (
             confirmClear ? (
               <div className="glass glass-card px-4 py-3 space-y-2.5">
                 <p className="text-xs text-white/70">
@@ -1100,7 +1118,7 @@ export function ScoreScreen({
       )}
 
       {/* ── Reabrir partida (só para organizadores/admins) ── */}
-      {isFinished && onReopenMatch && (
+      {isFinished && canReopen && (
         <div className="space-y-1.5">
           <button
             type="button"

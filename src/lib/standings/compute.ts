@@ -101,6 +101,16 @@ export function overlayQueuedState(base: MatchState, q: QueuedMatchState | null)
   if (!q) return base
   const games = q.clearsGames ? q.games : mergeGames(base.games, q.games)
   const f = q.finalization
+  // Reaberta ou limpa na fila (sem encerramento depois): volta a ser jogável.
+  if (!f && q.statusOverride) {
+    return {
+      games,
+      status: q.statusOverride === 'agendado' && games.length > 0 ? 'em_andamento' : q.statusOverride,
+      result: null,
+      isWo: false,
+      isDoubleWo: false,
+    }
+  }
   if (!f) return { ...base, games }
   return {
     games,

@@ -15,6 +15,7 @@ import { AlertTriangle, CloudOff, Loader2 } from 'lucide-react'
 import { SYNC_EVENT, getFailures, getPendingMatches } from '@/lib/score-engine/SyncEngine'
 import { getOutbox, updateOutbox, removeFromOutbox, OUTBOX_EVENT } from '@/lib/offline/outbox'
 import { runCreation } from '@/app/(app)/offline/run-creation'
+import { importLocalChampionship } from '@/lib/offline/import-championship'
 import { getLocalChampionship, removeLocalChampionship } from '@/lib/offline/local-championship'
 import {
   reconcileLocalLiga,
@@ -59,15 +60,40 @@ export function OfflineSync() {
       }
 
       // Apenas itens 'pending' são drenados automaticamente.
-      // Itens 'error' SÓ são reprocessados quando o usuário toca em
-      // "Tentar novamente" (que seta status → 'pending'), evitando que uma
-      // falha de rede transiente no reconnect cause criações duplicadas no
-      // servidor (runCreation chamado de novo sem saber se já foi executado).
+      // Campeonato provisório sobe por import_championship, idempotente: falha
+      // de rede volta a 'pending' e tenta sozinho no próximo gatilho. No caminho
+      // antigo (runCreation), itens 'error' SÓ são reprocessados quando o usuário
+      // toca em "Tentar novamente", evitando criações duplicadas no servidor
+      // (runCreation chamado de novo sem saber se já foi executado).
       const queue = all.filter((i) => i.status === 'pending')
       let didCreate = false
       for (const item of queue) {
         await updateOutbox(item.tempId, { status: 'syncing', error: undefined })
         try {
+          // 0. Campeonato provisório: sobe inteiro, com os IDs e placares do
+          //    aparelho (Fase 2). Sem a RPC no banco, segue o caminho antigo.
+          if (!item.createdRealId) {
+            const snapshot = await getLocalChampionship(item.tempId)
+            if (snapshot) {
+              const imp = await importLocalChampionship(item.tempId, item.op, snapshot)
+              if (imp.kind === 'ok') {
+                await markLocalSynced(item.tempId, imp.id)
+                await removeLocalChampionship(item.tempId)
+                await removeFromOutbox(item.tempId)
+                didCreate = true
+                continue
+              }
+              if (imp.kind === 'retry') {
+                await updateOutbox(item.tempId, { status: 'pending' })
+                continue
+              }
+              if (imp.kind === 'error') {
+                await updateOutbox(item.tempId, { status: 'error', error: imp.error })
+                continue
+              }
+            }
+          }
+
           // 1. Cria no servidor (uma única vez — guarda o id real p/ retry seguro).
           let realId = item.createdRealId
           if (!realId) {
