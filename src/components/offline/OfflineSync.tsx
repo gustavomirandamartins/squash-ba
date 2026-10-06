@@ -2,14 +2,17 @@
 
 /**
  * OfflineSync — montado no shell (app). Drena a fila de criações pendentes ao
- * reconectar (ou ao montar online): re-executa cada criação no servidor, remove
- * da fila em caso de sucesso e atualiza a UI (router.refresh). Mostra um chip
- * de status quando offline ou quando há itens na fila.
+ * reconectar, ao voltar para o app ou ao montar online: re-executa cada criação
+ * no servidor, remove da fila em caso de sucesso e atualiza a UI
+ * (router.refresh). Mostra um chip de status (toque → /sincronizacao) quando
+ * offline ou quando há criações, placares ou falhas pendentes.
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { CloudOff, Loader2 } from 'lucide-react'
+import { AlertTriangle, CloudOff, Loader2 } from 'lucide-react'
+import { SYNC_EVENT, getFailures, getPendingMatches } from '@/lib/score-engine/SyncEngine'
 import { getOutbox, updateOutbox, removeFromOutbox, OUTBOX_EVENT } from '@/lib/offline/outbox'
 import { runCreation } from '@/app/(app)/offline/run-creation'
 import { getLocalChampionship, removeLocalChampionship } from '@/lib/offline/local-championship'
@@ -20,16 +23,26 @@ import {
   markLocalSynced,
 } from '@/lib/offline/reconcile-liga'
 
+/** Disparado pela tela de sincronização ("Sincronizar agora"). */
+export const SYNC_NOW_EVENT = 'sb-sync-now'
+
 export function OfflineSync() {
   const router = useRouter()
   const [pending, setPending] = useState(0)
+  const [failed, setFailed] = useState(0)
   const [syncing, setSyncing] = useState(false)
   const [offline, setOffline] = useState(false)
   const draining = useRef(false)
 
+  // Pendências = criações na fila + partidas com placar ainda não enviado.
   const refreshCounts = useCallback(async () => {
-    const all = await getOutbox()
-    setPending(all.length)
+    try {
+      const [all, matches, failures] = await Promise.all([getOutbox(), getPendingMatches(), getFailures()])
+      setPending(all.length + matches.length)
+      setFailed(failures.length + all.filter((i) => i.status === 'error').length)
+    } catch {
+      /* IndexedDB indisponível: sem chip */
+    }
   }, [])
 
   const drain = useCallback(async () => {
@@ -129,6 +142,13 @@ export function OfflineSync() {
       setTimeout(() => { void drain() }, 1500)
     }
     const onOffline = () => setOffline(true)
+    // iOS: o evento `online` falha com frequência — tenta também ao voltar ao app.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      void refreshCounts()
+      if (navigator.onLine) void drain()
+    }
+    const onSyncChange = () => void refreshCounts()
     // Mudança na fila: drena SÓ se houver item 'pending' (ex.: "Tentar
     // novamente"). Itens em 'error' não re-disparam (evita loop de retry).
     const onChange = async () => {
@@ -141,7 +161,13 @@ export function OfflineSync() {
     window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)
     window.addEventListener(OUTBOX_EVENT, onChange)
+    window.addEventListener(SYNC_EVENT, onSyncChange)
+    window.addEventListener(SYNC_NOW_EVENT, onOnline)
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
+      window.removeEventListener(SYNC_EVENT, onSyncChange)
+      window.removeEventListener(SYNC_NOW_EVENT, onOnline)
+      document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
       window.removeEventListener(OUTBOX_EVENT, onChange)
@@ -149,26 +175,33 @@ export function OfflineSync() {
   }, [drain, refreshCounts])
 
   // Nada a mostrar quando online e sem fila.
-  if (!offline && pending === 0) return null
+  if (!offline && pending === 0 && failed === 0) return null
+
+  const label = syncing
+    ? 'Sincronizando…'
+    : failed > 0
+      ? `${failed} com erro`
+      : offline
+        ? pending > 0
+          ? `Offline · ${pending} na fila`
+          : 'Offline'
+        : `${pending} para sincronizar`
 
   return (
     <div className="pointer-events-none fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-4 z-50 landscape-sm:left-20 lg:bottom-5">
-      <div className="glass glass-pill glass-overlay pointer-events-auto flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white/80">
+      <Link
+        href="/sincronizacao"
+        className="glass glass-pill glass-overlay pointer-events-auto flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white/80"
+      >
         {syncing ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin text-secondary" />
+        ) : failed > 0 ? (
+          <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
         ) : (
           <CloudOff className="h-3.5 w-3.5 text-yellow-400/80" />
         )}
-        {syncing
-          ? 'Sincronizando…'
-          : offline
-            ? pending > 0
-              ? `Offline · ${pending} na fila`
-              : 'Offline'
-            : pending > 0
-              ? `${pending} para sincronizar`
-              : ''}
-      </div>
+        {label}
+      </Link>
     </div>
   )
 }

@@ -13,7 +13,7 @@ import {
 import { getOutbox, removeFromOutbox, updateOutbox, OUTBOX_EVENT } from '@/lib/offline/outbox'
 import type { OutboxItem } from '@/lib/offline/types'
 import {
-  getLocalChampionship, removeLocalChampionship, saveLocalChampionship,
+  getLocalChampionship, removeLocalChampionship, mutateLocalChampionship,
   propagateBracketAdvances, maybeGenerateBracketFromGroups,
   type LocalChampionship, type LocalMatch,
 } from '@/lib/offline/local-championship'
@@ -71,17 +71,14 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
   // Fecha o placar: propaga avanços de bracket / gera bracket dos grupos, persiste.
   const closeMatch = useCallback(async () => {
     setOpenMatchId(null)
-    const c = await getLocalChampionship(tempId)
-    if (c) {
-      let changed = false
-      if (c.format === 'eliminatoria' || c.format === 'grupos_elim') {
-        changed = propagateBracketAdvances(c) || changed
-      }
+    // Numa transação: corrige a chave (vencedor trocado/partida reaberta) e
+    // gera/refaz a chave dos grupos.
+    await mutateLocalChampionship(tempId, (c) => {
+      if (c.format === 'eliminatoria' || c.format === 'grupos_elim') propagateBracketAdvances(c)
       if (c.format === 'grupos_elim') {
-        changed = maybeGenerateBracketFromGroups(c) || changed
+        if (maybeGenerateBracketFromGroups(c)) propagateBracketAdvances(c)
       }
-      if (changed) await saveLocalChampionship(c)
-    }
+    })
     await reload()
   }, [tempId, reload])
 

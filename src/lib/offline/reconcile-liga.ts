@@ -8,6 +8,7 @@
 import { set, get, del } from 'idb-keyval'
 import { createClient } from '@/utils/supabase/client'
 import type { LocalChampionship } from './local-championship'
+import type { StageCfg } from '@/lib/standings/compute'
 
 const syncedKey = (tempId: string) => `local-synced:${tempId}`
 
@@ -25,6 +26,27 @@ export async function takeLocalSynced(tempId: string): Promise<string | null> {
 
 function memberKey(userIds: string[]): string {
   return [...userIds].sort().join('|')
+}
+
+/**
+ * Partida por TEMPO encerrada no provisório: o servidor só a finaliza com
+ * `duration_seconds` preenchido (resolve_match). Grava a duração ANTES do placar
+ * — o upsert dos games dispara o trigger que finaliza. O provisório não tem
+ * cronômetro, então a duração fica 0.
+ */
+async function markTempoFinished(
+  supabase: ReturnType<typeof createClient>,
+  realMatchId: string,
+  stage: StageCfg | undefined,
+  local: LocalChampionship['matches'][number],
+): Promise<void> {
+  if (stage?.counting !== 'tempo' || local.status !== 'finalizado') return
+  const { error } = await supabase
+    .from('matches')
+    .update({ duration_seconds: 0 })
+    .eq('id', realMatchId)
+    .is('duration_seconds', null)
+  if (error) throw new Error(`duração: ${error.message}`)
 }
 
 export async function reconcileLocalLiga(
@@ -84,6 +106,7 @@ export async function reconcileLocalLiga(
     if (!real) continue
 
     // Orientação: se o lado A real == lado A local, mantém; senão inverte placar.
+    await markTempoFinished(supabase, real.id, snapshot.stage, lm)
     const swapped = real.aKey !== laKey
     const gameRows = lm.games.map((g) => ({
       match_id: real.id,
@@ -149,6 +172,7 @@ async function upsertByPair(
   localKeyByPart: Map<string, string>,
   reals: RealMatchRow[],
   realKeyByPart: Map<string, string>,
+  stage: StageCfg | undefined,
 ): Promise<number> {
   const realByPair = new Map<string, { id: string; aKey: string }>()
   for (const rm of reals) {
@@ -164,6 +188,7 @@ async function upsertByPair(
     const lbKey = lm.sideB ? localKeyByPart.get(lm.sideB) ?? '' : ''
     const real = realByPair.get(pairKey(laKey, lbKey))
     if (!real) continue
+    await markTempoFinished(supabase, real.id, stage, lm)
     const swapped = real.aKey !== laKey
     const rows = lm.games.map((g) => ({
       match_id: real.id,
@@ -190,6 +215,7 @@ async function reconcileBracket(
   localKeyByPart: Map<string, string>,
   realKeyByPart: Map<string, string>,
   bracketMatches: LocalChampionship['matches'],
+  stage: StageCfg | undefined,
 ): Promise<number> {
   const scored = bracketMatches.filter((m) => m.games.length > 0)
   if (scored.length === 0) return 0
@@ -204,7 +230,7 @@ async function reconcileBracket(
     if (error || !data) throw new Error(error?.message ?? 'partidas (bracket) não encontradas')
     const realsThisRound = (data as RealMatchRow[]).filter((r) => (r.round ?? 0) === round)
     const localsThisRound = scored.filter((m) => m.round === round)
-    total += await upsertByPair(supabase, localsThisRound, localKeyByPart, realsThisRound, realKeyByPart)
+    total += await upsertByPair(supabase, localsThisRound, localKeyByPart, realsThisRound, realKeyByPart, stage)
   }
   return total
 }
@@ -217,7 +243,7 @@ export async function reconcileLocalBracket(
   const realKeyByPart = await loadRealParticipantKeys(supabase, realChampId)
   const localKeyByPart = new Map(snapshot.participants.map((p) => [p.id, memberKey(p.userIds)]))
   const bracket = snapshot.matches.filter((m) => (m.bracketSlot ?? 0) > 0)
-  const matched = await reconcileBracket(supabase, realChampId, localKeyByPart, realKeyByPart, bracket)
+  const matched = await reconcileBracket(supabase, realChampId, localKeyByPart, realKeyByPart, bracket, snapshot.stage)
 
   const hadScores = bracket.some((m) => m.games.length > 0)
   if (hadScores && matched === 0) {
@@ -276,6 +302,7 @@ export async function reconcileLocalGrupos(
       const lm = locals[i]
       const real = reals[i]
       if (!real || lm.games.length === 0) continue
+      await markTempoFinished(supabase, real.id, snapshot.stage, lm)
       const laKey = lm.sideA ? localKeyByPart.get(lm.sideA) ?? '' : ''
       const swapped = real.aKey !== laKey
       const rows = lm.games.map((g) => ({
@@ -301,6 +328,6 @@ export async function reconcileLocalGrupos(
   // do bracket no servidor via trg_auto_generate_bracket). ──
   const bracket = snapshot.matches.filter((m) => (m.bracketSlot ?? 0) > 0)
   if (bracket.some((m) => m.games.length > 0)) {
-    await reconcileBracket(supabase, realChampId, localKeyByPart, realKeyByPart, bracket)
+    await reconcileBracket(supabase, realChampId, localKeyByPart, realKeyByPart, bracket, snapshot.elimStage ?? snapshot.stage)
   }
 }

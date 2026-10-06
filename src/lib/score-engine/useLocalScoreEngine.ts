@@ -5,7 +5,7 @@
 // do motor online: a partida por SETS finaliza automaticamente quando o placar
 // decide (via resolveMatch); por TEMPO, finaliza manualmente.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { resolveMatch, type CGame, type StageCfg } from '@/lib/standings/compute'
 import {
   getLocalChampionship,
@@ -26,6 +26,8 @@ export type LocalEngine = {
   reopenGame: (gameNumber: number) => void
   reopenMatch: () => void
   finalizeTempo: () => void
+  /** Aviso para o organizador (ex.: empate não permitido ao encerrar por tempo). */
+  notice: string | null
 }
 
 function upsertCurrent(
@@ -57,6 +59,13 @@ export function useLocalScoreEngine(
   const [status, setStatus] = useState<string>('agendado')
   const [result, setResult] = useState<string | null>(null)
   const [currentGame, setCurrentGame] = useState(1)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  // Espelhos síncronos: dois toques antes do próximo render não podem partir
+  // do mesmo placar (o segundo ponto se perderia).
+  const gamesRef = useRef<CGame[]>([])
+  const currentGameRef = useRef(1)
+  const statusRef = useRef('agendado')
 
   useEffect(() => {
     let cancelled = false
@@ -65,12 +74,14 @@ export function useLocalScoreEngine(
       const m = champ?.matches.find((x) => x.id === matchId)
       if (cancelled) return
       if (m) {
+        const cg = m.games.length ? Math.max(...m.games.map((g) => g.game_number)) : 1
+        gamesRef.current = m.games
+        currentGameRef.current = cg
+        statusRef.current = m.status
         setGames(m.games)
         setStatus(m.status)
         setResult(m.result)
-        setCurrentGame(
-          m.games.length ? Math.max(...m.games.map((g) => g.game_number)) : 1,
-        )
+        setCurrentGame(cg)
       }
       setLoaded(true)
     })()
@@ -90,6 +101,18 @@ export function useLocalScoreEngine(
     [tempId, matchId],
   )
 
+  const commit = useCallback(
+    (g: CGame[], st: string, res: string | null) => {
+      gamesRef.current = g
+      statusRef.current = st
+      setGames(g)
+      setStatus(st)
+      setResult(res)
+      persist(g, st, res)
+    },
+    [persist],
+  )
+
   // Aplica novo placar e (para sets) finaliza automaticamente se decidido.
   const applyGames = useCallback(
     (next: CGame[]) => {
@@ -102,68 +125,68 @@ export function useLocalScoreEngine(
           res = r.result
         }
       }
-      setGames(next)
-      setStatus(st)
-      setResult(res)
-      persist(next, st, res)
+      setNotice(null)
+      commit(next, st, res)
     },
-    [stage, persist],
+    [stage, commit],
   )
 
   const editable = status !== 'finalizado'
 
   const increment = useCallback(
     (side: 'a' | 'b') => {
-      if (!editable) return
-      applyGames(upsertCurrent(games, currentGame, side, +1))
+      if (statusRef.current === 'finalizado') return
+      applyGames(upsertCurrent(gamesRef.current, currentGameRef.current, side, +1))
     },
-    [editable, games, currentGame, applyGames],
+    [applyGames],
   )
 
   const decrement = useCallback(
     (side: 'a' | 'b') => {
-      if (!editable) return
-      applyGames(upsertCurrent(games, currentGame, side, -1))
+      if (statusRef.current === 'finalizado') return
+      applyGames(upsertCurrent(gamesRef.current, currentGameRef.current, side, -1))
     },
-    [editable, games, currentGame, applyGames],
+    [applyGames],
   )
 
   const advanceGame = useCallback(() => {
-    const next = currentGame + 1
+    const next = currentGameRef.current + 1
+    currentGameRef.current = next
     setCurrentGame(next)
-    if (!games.some((g) => g.game_number === next)) {
-      const g = [...games, { game_number: next, score_a: 0, score_b: 0 }]
-      setGames(g)
-      persist(g, 'em_andamento', null)
+    const gs = gamesRef.current
+    if (!gs.some((g) => g.game_number === next)) {
+      commit([...gs, { game_number: next, score_a: 0, score_b: 0 }], 'em_andamento', null)
     }
-  }, [currentGame, games, persist])
+  }, [commit])
 
   const reopenGame = useCallback((gameNumber: number) => {
+    currentGameRef.current = gameNumber
     setCurrentGame(gameNumber)
   }, [])
 
-  // Reabre a partida finalizada para corrigir o placar (igual ao online).
+  // Reabre a partida finalizada para corrigir o placar (igual ao online). Ao
+  // voltar para a lista, a chave é corrigida (propagateBracketAdvances).
   const reopenMatch = useCallback(() => {
-    setStatus('em_andamento')
-    setResult(null)
-    persist(games, 'em_andamento', null)
-  }, [games, persist])
+    setNotice(null)
+    commit(gamesRef.current, 'em_andamento', null)
+  }, [commit])
 
   // Finalização manual para contagem por TEMPO (placar único do game 1).
   const finalizeTempo = useCallback(() => {
     if (stage.counting !== 'tempo') return
-    const g = games[0] ?? { game_number: 1, score_a: 0, score_b: 0 }
+    const gs = gamesRef.current
+    const g = gs[0] ?? { game_number: 1, score_a: 0, score_b: 0 }
     let res: string | null = null
     if (g.score_a > g.score_b) res = 'lado_a'
     else if (g.score_b > g.score_a) res = 'lado_b'
     else if (stage.set_draw_enabled) res = 'empate'
-    if (!res) return // empate não permitido: não finaliza
-    const next = games.length ? games : [g]
-    setGames(next)
-    setStatus('finalizado')
-    setResult(res)
-    persist(next, 'finalizado', res)
-  }, [stage, games, persist])
+    if (!res) {
+      setNotice('Placar empatado e esta fase não permite empate. Marque o ponto decisivo para encerrar.')
+      return
+    }
+    setNotice(null)
+    commit(gs.length ? gs : [g], 'finalizado', res)
+  }, [stage, commit])
 
   return {
     loaded,
@@ -178,5 +201,6 @@ export function useLocalScoreEngine(
     reopenGame,
     reopenMatch,
     finalizeTempo,
+    notice,
   }
 }

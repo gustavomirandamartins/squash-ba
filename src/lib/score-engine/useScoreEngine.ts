@@ -125,9 +125,19 @@ export function useScoreEngine(
     setPendingCount(count)
   }, [matchId])
 
-  // Espelho dos games p/ callbacks assíncronos sem closure stale.
+  // Espelho síncrono dos games e do game atual. As ações calculam o próximo
+  // placar a partir daqui (não do state do último render): dois toques rápidos
+  // antes de o React renderizar não podem partir do mesmo valor.
   const gamesRef = useRef(games)
-  useEffect(() => { gamesRef.current = games }, [games])
+  const currentGameRef = useRef(currentGame)
+  const commitGames = useCallback((next: GameScore[]) => {
+    gamesRef.current = next
+    setGames(next)
+  }, [])
+  const commitCurrentGame = useCallback((n: number) => {
+    currentGameRef.current = n
+    setCurrentGame(n)
+  }, [])
 
   // ── Fila local sobre o estado atual ────────────────────────────────────────
   // O que já foi feito neste aparelho e ainda não chegou ao servidor (placar,
@@ -137,8 +147,8 @@ export function useScoreEngine(
     const q = await Sync.getQueuedMatchState(matchId)
     if (!q) return
     const merged = q.clearsGames ? q.games : mergeGames(gamesRef.current, q.games)
-    setGames(merged)
-    if (merged.length > 0) setCurrentGame(merged[merged.length - 1].game_number)
+    commitGames(merged)
+    if (merged.length > 0) commitCurrentGame(merged[merged.length - 1].game_number)
     const f = q.finalization
     if (f) {
       setStatus('finalizado')
@@ -146,7 +156,7 @@ export function useScoreEngine(
       setIsWo(f.kind === 'wo' || f.kind === 'double_wo')
       setIsDoubleWo(f.kind === 'double_wo')
     }
-  }, [matchId])
+  }, [matchId, commitGames, commitCurrentGame])
 
   // ── Fetch do servidor ──────────────────────────────────────────────────────
   const fetchFromServer = useCallback(async () => {
@@ -164,6 +174,11 @@ export function useScoreEngine(
       (data.match_games as GameScore[] | null) ?? []
     ).sort((a, b) => a.game_number - b.game_number)
 
+    // Sem pendências, este é o estado do servidor sobre o qual os próximos
+    // toques serão feitos (base para detectar conflito de verdade).
+    const queued = await Sync.getQueuedMatchState(matchId)
+    if (!queued) void Sync.rememberServerGames(matchId, serverGames)
+
     // Pendências locais prevalecem sobre o servidor (que ainda não as recebeu).
     const merged = overlayQueuedState(
       {
@@ -173,18 +188,18 @@ export function useScoreEngine(
         isWo: !!data.is_wo,
         isDoubleWo: !!data.is_double_wo,
       },
-      await Sync.getQueuedMatchState(matchId),
+      queued,
     )
     const inReview = data.status === 'revisao'
 
-    setGames(merged.games)
+    commitGames(merged.games)
     setStatus(inReview ? 'revisao' : merged.status)
     setResult(merged.result)
     setIsWo(merged.isWo)
     setIsDoubleWo(merged.isDoubleWo)
 
     if (merged.games.length > 0) {
-      setCurrentGame(merged.games[merged.games.length - 1].game_number)
+      commitCurrentGame(merged.games[merged.games.length - 1].game_number)
     }
 
     if (inReview) {
@@ -194,8 +209,9 @@ export function useScoreEngine(
     } else {
       setHasConflict(false)
       setConflictSnapshot(null)
+      Sync.clearConflictPause(matchId)
     }
-  }, [supabase, matchId])
+  }, [supabase, matchId, commitGames, commitCurrentGame])
 
   // ── Mount: fetch, track, auto-sync, realtime ───────────────────────────────
   const cleanupSyncRef = useRef<(() => void) | null>(null)
@@ -216,7 +232,6 @@ export function useScoreEngine(
         setHasConflict(true)
         void fetchFromServer() // pega o conflictSnapshot do servidor
       } else if (res.synced > 0) {
-        void refreshPending()
         void fetchFromServer()
       }
     })
@@ -230,7 +245,18 @@ export function useScoreEngine(
     window.addEventListener('online',  onOnline)
     window.addEventListener('offline', onOffline)
 
-    // Realtime: atualiza quando servidor muda (enquanto online)
+    // Realtime: cada game gravado volta como evento (inclusive os nossos). Junta
+    // os eventos de um lote numa única releitura.
+    let refetchTimer: ReturnType<typeof setTimeout> | null = null
+    const scheduleRefetch = () => {
+      if (refetchTimer) clearTimeout(refetchTimer)
+      refetchTimer = setTimeout(() => {
+        void Sync.getPendingCount(matchId).then((count) => {
+          if (count === 0) void fetchFromServer()
+        })
+      }, 600)
+    }
+
     const channel = supabase
       .channel(`score-engine-${matchId}`)
       .on(
@@ -241,12 +267,8 @@ export function useScoreEngine(
           table: 'match_games',
           filter: `match_id=eq.${matchId}`,
         },
-        () => {
-          // Só atualiza a partir do servidor se não há fila pendente local
-          void Sync.getPendingCount(matchId).then((count) => {
-            if (count === 0) void fetchFromServer()
-          })
-        },
+        // Só atualiza a partir do servidor se não há fila pendente local
+        scheduleRefetch,
       )
       .on(
         'postgres_changes',
@@ -279,6 +301,7 @@ export function useScoreEngine(
       .subscribe()
 
     return () => {
+      if (refetchTimer) clearTimeout(refetchTimer)
       Sync.untrackMatch(matchId)
       cleanupSyncRef.current?.()
       void supabase.removeChannel(channel)
@@ -311,23 +334,34 @@ export function useScoreEngine(
     return gs.map((g) => (g.game_number === gameNum ? update(g) : g))
   }
 
-  /** Enqueue + flush best-effort + atualiza pendingCount */
+  /** Grava na fila (sempre) e tenta enviar em seguida (deduplicado no SyncEngine). */
   async function enqueueAndFlush(
     type: Sync.ActionType,
     payload: Record<string, unknown>,
   ): Promise<void> {
     await Sync.enqueue({ matchId, type, payload })
-    setPendingCount((n) => n + 1)
-    if (navigator.onLine) {
-      void Sync.flush(matchId).then((res) => {
-        void refreshPending()
-        if (res.error) setError(`O servidor recusou uma ação: ${res.error}`)
-        if (res.conflict) {
-          setHasConflict(true)
-          void fetchFromServer()
-        }
-      })
+    void refreshPending()
+    if (!navigator.onLine) return
+    const res = await Sync.flush(matchId)
+    void refreshPending()
+    if (res.error) setError(`O servidor recusou uma ação: ${res.error}`)
+    if (res.conflict) {
+      setHasConflict(true)
+      void fetchFromServer()
     }
+  }
+
+  /** Aplica a mudança no game atual: estado na hora, fila em seguida. */
+  function changeCurrent(update: (g: GameScore) => GameScore) {
+    const gameNum = currentGameRef.current
+    const updated = applyOptimistic(gamesRef.current, gameNum, update)
+    commitGames(updated)
+    const g = currentGameScore(updated, gameNum)
+    void enqueueAndFlush('upsert_game', {
+      game_number: g.game_number,
+      score_a: g.score_a,
+      score_b: g.score_b,
+    })
   }
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -335,61 +369,43 @@ export function useScoreEngine(
   const increment = useCallback(
     async (side: MatchSide) => {
       if (status === 'finalizado' || hasConflict) return
-      setGames((prev) => {
-        const updated = applyOptimistic(prev, currentGame, (g) => ({
-          ...g,
-          score_a: side === 'a' ? g.score_a + 1 : g.score_a,
-          score_b: side === 'b' ? g.score_b + 1 : g.score_b,
-        }))
-        const g = currentGameScore(updated, currentGame)
-        void enqueueAndFlush('upsert_game', {
-          game_number: g.game_number,
-          score_a: g.score_a,
-          score_b: g.score_b,
-        })
-        return updated
-      })
+      changeCurrent((g) => ({
+        ...g,
+        score_a: side === 'a' ? g.score_a + 1 : g.score_a,
+        score_b: side === 'b' ? g.score_b + 1 : g.score_b,
+      }))
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [matchId, currentGame, status, hasConflict],
+    [matchId, status, hasConflict],
   )
 
   const decrement = useCallback(
     async (side: MatchSide) => {
       if (status === 'finalizado' || hasConflict) return
-      setGames((prev) => {
-        const updated = applyOptimistic(prev, currentGame, (g) => ({
-          ...g,
-          score_a: side === 'a' ? Math.max(0, g.score_a - 1) : g.score_a,
-          score_b: side === 'b' ? Math.max(0, g.score_b - 1) : g.score_b,
-        }))
-        const g = currentGameScore(updated, currentGame)
-        void enqueueAndFlush('upsert_game', {
-          game_number: g.game_number,
-          score_a: g.score_a,
-          score_b: g.score_b,
-        })
-        return updated
-      })
+      changeCurrent((g) => ({
+        ...g,
+        score_a: side === 'a' ? Math.max(0, g.score_a - 1) : g.score_a,
+        score_b: side === 'b' ? Math.max(0, g.score_b - 1) : g.score_b,
+      }))
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [matchId, currentGame, status, hasConflict],
+    [matchId, status, hasConflict],
   )
 
   const advanceGame = useCallback(async () => {
-    const nextGame = currentGame + 1
-    setCurrentGame(nextGame)
-    setGames((prev) => {
-      if (prev.find((g) => g.game_number === nextGame)) return prev
-      return [...prev, { game_number: nextGame, score_a: 0, score_b: 0 }]
-    })
+    const nextGame = currentGameRef.current + 1
+    commitCurrentGame(nextGame)
+    const prev = gamesRef.current
+    if (!prev.some((g) => g.game_number === nextGame)) {
+      commitGames([...prev, { game_number: nextGame, score_a: 0, score_b: 0 }])
+    }
     await enqueueAndFlush('upsert_game', { game_number: nextGame, score_a: 0, score_b: 0 })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchId, currentGame])
+  }, [matchId])
 
   const reopenGame = useCallback(async (gameNumber: number) => {
-    setCurrentGame(gameNumber)
-  }, [])
+    commitCurrentGame(gameNumber)
+  }, [commitCurrentGame])
 
   const finalize = useCallback(async () => {
     setBusy(true)
@@ -404,15 +420,15 @@ export function useScoreEngine(
   }, [matchId])
 
   const reset = useCallback(async () => {
-    setGames([])
-    setCurrentGame(1)
+    commitGames([])
+    commitCurrentGame(1)
     setStatus('agendado')
     setResult(null)
     setIsWo(false)
     setIsDoubleWo(false)
     await Sync.clearQueue(matchId)
     setPendingCount(0)
-  }, [matchId])
+  }, [matchId, commitGames, commitCurrentGame])
 
   const refresh = useCallback(async () => {
     await fetchFromServer()
@@ -425,17 +441,25 @@ export function useScoreEngine(
     async (side: 'local' | 'server') => {
       setBusy(true)
       try {
-        await supabase.rpc('resolve_match_conflict', {
+        const { error: rpcError } = await supabase.rpc('resolve_match_conflict', {
           _match_id: matchId,
           _chosen_side: side,
         })
+        if (rpcError) throw new Error(rpcError.message)
         if (side === 'server') {
           await Sync.clearQueue(matchId)
           setPendingCount(0)
+        } else {
+          // "Manter o deste aparelho": o servidor só tirou a revisão; o placar
+          // local ainda está na fila. Envia sem checar conflito de novo.
+          await Sync.dropBase(matchId)
+          Sync.clearConflictPause(matchId)
+          await Sync.flush(matchId)
         }
         setHasConflict(false)
         setConflictSnapshot(null)
         await fetchFromServer()
+        await refreshPending()
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Erro ao resolver conflito')
       } finally {

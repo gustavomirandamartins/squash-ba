@@ -1,7 +1,12 @@
 {
-  "count": 168,
-  "lastCommitAt": "202610041954",
+  "count": 169,
+  "lastCommitAt": "202610042026",
   "commits": [
+    {
+      "hash": "b68f861",
+      "subject": "perf: primeiro lote de desempenho (loading, pré-carga, SW, tempo real, auth)",
+      "date": "2026-10-04"
+    },
     {
       "hash": "0b5ae18",
       "subject": "fix(ios): status bar na cor do header (#2c364b)",

@@ -21,7 +21,7 @@ import { useEffect, useState } from 'react'
 import { CheckCircle2, Loader2, X } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { loadPlayerPool, loadCategories } from '@/lib/offline/players-cache'
-import { flushAllPending } from '@/lib/score-engine/SyncEngine'
+import { startBackgroundSync } from '@/lib/score-engine/SyncEngine'
 
 const STAMP_KEY = 'sb-offline-preloaded-at'
 const TTL_MS = 6 * 60 * 60 * 1000
@@ -38,6 +38,7 @@ const CORE_ROUTES = [
   '/campeonatos/novo',
   '/desafios/novo',
   '/perfil',
+  '/sincronizacao',
 ]
 
 type Phase = 'idle' | 'loading' | 'done'
@@ -88,16 +89,15 @@ async function warmAll(paths: string[], limit: number, isCancelled: () => boolea
 export function OfflinePreloader() {
   const [phase, setPhase] = useState<Phase>('idle')
 
-  // Sincroniza filas de placar pendentes sempre que o app fica online,
-  // independentemente da tela atual. Garante que placares offline gravados em
-  // outra sessão (app fechado antes de sincronizar) não se percam.
+  // Envia filas de placar pendentes em qualquer tela: ao abrir, ao voltar para
+  // o app, ao reconectar e, havendo pendência, com espera crescente. Placares
+  // gravados com o app fechado antes de sincronizar não se perdem.
+  useEffect(() => startBackgroundSync(), [])
+
+  // Pede armazenamento persistente: sem isso o navegador pode apagar o
+  // IndexedDB (filas e campeonatos provisórios) quando falta espaço.
   useEffect(() => {
-    const handleOnline = () => { void flushAllPending() }
-    window.addEventListener('online', handleOnline)
-    if (typeof navigator !== 'undefined' && navigator.onLine) {
-      void flushAllPending()
-    }
-    return () => window.removeEventListener('online', handleOnline)
+    void navigator.storage?.persist?.().catch(() => {})
   }, [])
 
   useEffect(() => {

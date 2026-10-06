@@ -2199,8 +2199,9 @@ export function ChampionshipWizard({
         if ('error' in result) throw new Error(result.error)
 
         // Oficial é online-only: abre direto a página do campeonato (inscrições).
+        // Criado sem rede: ainda não existe página real → lista (card pendente).
         if (state.isOfficial) {
-          router.push(`/campeonatos/${result.id}`)
+          router.push(result.queued ? '/campeonatos' : `/campeonatos/${result.id}`)
           return
         }
 

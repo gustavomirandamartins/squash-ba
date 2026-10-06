@@ -39,6 +39,7 @@ export function LocalScoreScreen({
     reopenGame,
     reopenMatch,
     finalizeTempo,
+    notice,
   } = engine
 
   const isTempo = stage.counting === 'tempo'
@@ -180,6 +181,12 @@ export function LocalScoreScreen({
             >
               Encerrar partida
             </button>
+          )}
+
+          {notice && (
+            <p className="rounded-2xl bg-yellow-500/10 px-4 py-3 text-center text-xs text-yellow-300/90">
+              {notice}
+            </p>
           )}
 
           {/* Resultado final */}

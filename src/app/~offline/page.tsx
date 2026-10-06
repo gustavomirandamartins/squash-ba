@@ -18,6 +18,7 @@ import { ChampionshipWizard } from '@/components/campeonatos/ChampionshipWizard'
 import { ProvisionalChampionship } from '@/components/offline/ProvisionalChampionship'
 import { OfflineChampMatches, OfflineScore } from '@/components/offline/OfflineChampionshipView'
 import { OfflineBackButton } from '@/components/offline/OfflineBackButton'
+import { SyncCenter } from '@/components/offline/SyncCenter'
 
 // Mini-header substituto do TopBar (não disponível fora do layout (app)).
 // Lida com safe-area-inset-top p/ o botão Voltar não ficar atrás do relógio.
@@ -107,6 +108,15 @@ export default function OfflinePage() {
     return (
       <OfflineShell>
         <ChampionshipWizard />
+      </OfflineShell>
+    )
+  }
+
+  // Pendências de sincronização (lê só o IndexedDB).
+  if (path === '/sincronizacao') {
+    return (
+      <OfflineShell>
+        <SyncCenter />
       </OfflineShell>
     )
   }

@@ -18,7 +18,7 @@
 // também não geramos o bronze offline. O campo hasThirdPlace fica preservado para
 // compatibilidade futura.
 
-import { get, set, del } from 'idb-keyval'
+import { get, set, del, update } from 'idb-keyval'
 import { computeStandings, type CGame, type StageCfg, type ChampCfg } from '@/lib/standings/compute'
 
 const keyFor = (tempId: string) => `local-champ:${tempId}`
@@ -72,6 +72,7 @@ export type LocalChampionship = {
   numGroups?: number       // grupos_elim
   groups?: LocalGroup[]    // grupos_elim
   bracketGenerated?: boolean // grupos_elim: bracket já criado a partir dos grupos?
+  qualifierIds?: string[]    // grupos_elim: classificados que geraram o bracket atual
   participants: LocalParticipant[]
   matches: LocalMatch[]
   createdAt: number
@@ -312,25 +313,36 @@ export function generateBracketFromQualifiers(qualifierIds: string[]): LocalMatc
   return buildBracketFromFilled(filled)
 }
 
-// Propaga vencedores no bracket: para cada match finalizado com winnerAdvancesTo,
-// coloca o vencedor no lado A (bracket_slot ímpar) ou B (par) do próximo match,
-// se ainda vazio. Idempotente. Espelha propagate_bracket_advances (sem bronze).
-// Retorna true se houve alteração.
+// Propaga vencedores no bracket: cada match com winnerAdvancesTo define o lado A
+// (bracket_slot ímpar) ou B (par) do próximo — o vencedor se finalizado, vazio
+// se não. Idempotente e corrige: se uma partida foi reaberta ou o vencedor
+// mudou, o lado seguinte é trocado e, se a próxima já tinha placar (de outro
+// confronto), ela volta a "agendada". Espelha propagate_bracket_advances (sem
+// bronze). Retorna true se houve alteração.
 export function propagateBracketAdvances(champ: LocalChampionship): boolean {
   const byId = new Map(champ.matches.map((m) => [m.id, m]))
   let changed = false
-  // ordena por rodada asc para propagar em cascata numa passada
-  const finalized = champ.matches
-    .filter((m) => m.status === 'finalizado' && m.winnerAdvancesTo)
+  // rodada asc: a correção desce em cascata numa passada
+  const feeders = champ.matches
+    .filter((m) => m.winnerAdvancesTo)
     .sort((a, b) => a.round - b.round)
-  for (const m of finalized) {
-    const winner = m.result === 'lado_a' ? m.sideA : m.result === 'lado_b' ? m.sideB : null
-    if (!winner || !m.winnerAdvancesTo) continue
-    const next = byId.get(m.winnerAdvancesTo)
+  for (const m of feeders) {
+    const next = byId.get(m.winnerAdvancesTo!)
     if (!next) continue
+    const winner =
+      m.status === 'finalizado'
+        ? m.result === 'lado_a' ? m.sideA : m.result === 'lado_b' ? m.sideB : null
+        : null
     const toA = (m.bracketSlot ?? 0) % 2 === 1
-    if (toA && next.sideA === null) { next.sideA = winner; changed = true }
-    else if (!toA && next.sideB === null) { next.sideB = winner; changed = true }
+    if ((toA ? next.sideA : next.sideB) === winner) continue
+    if (toA) next.sideA = winner
+    else next.sideB = winner
+    if (next.games.length > 0 || next.status !== 'agendado') {
+      next.games = []
+      next.status = 'agendado'
+      next.result = null
+    }
+    changed = true
   }
   return changed
 }
@@ -482,13 +494,48 @@ export function totalQualifiers(groups: { participantIds: string[] }[]): number 
 // gera o bracket no elimStage e anexa as matches. Espelha generate_bracket_from_groups.
 // Retorna true se gerou o bracket agora.
 export function maybeGenerateBracketFromGroups(champ: LocalChampionship): boolean {
-  if (champ.format !== 'grupos_elim' || champ.bracketGenerated || !champ.groups) return false
+  if (champ.format !== 'grupos_elim' || !champ.groups) return false
   const groupMatches = champ.matches.filter((m) => m.phase === 'grupos')
   if (groupMatches.length === 0) return false
   const allDone = groupMatches.every((m) => m.status === 'finalizado')
-  if (!allDone) return false
 
-  // Classificação por grupo (reusa computeStandings sobre o subconjunto do grupo).
+  // Bracket já gerado, mas um jogo de grupo foi reaberto/corrigido depois:
+  // enquanto nenhum jogo da chave foi disputado, refaz a chave com a
+  // classificação atual (senão ficaria com os classificados antigos).
+  let dropped = false
+  if (champ.bracketGenerated) {
+    const elim = champ.matches.filter((m) => m.phase === 'eliminatoria')
+    const started = elim.some((m) => m.games.length > 0 || (m.status === 'finalizado' && m.sideA && m.sideB))
+    if (started) return false
+    if (allDone && sameIds(champ.qualifierIds, computeQualifierIds(champ, groupMatches))) return false
+    champ.matches = champ.matches.filter((m) => m.phase !== 'eliminatoria')
+    champ.bracketGenerated = false
+    champ.qualifierIds = undefined
+    dropped = true
+  }
+  if (!allDone) return dropped
+
+  const qualifierIds = computeQualifierIds(champ, groupMatches)
+  if (qualifierIds.length < 2) return dropped
+
+  // Seeding por posições alternadas (espelha generate_bracket_from_groups), na
+  // ordem cross-group [1ºG1,1ºG2,…,2ºG1,…].
+  const bracket = generateBracketFromQualifiers(qualifierIds)
+  champ.matches = [...champ.matches, ...bracket]
+  champ.bracketGenerated = true
+  champ.qualifierIds = qualifierIds
+  propagateBracketAdvances(champ)
+  return true
+}
+
+function sameIds(a: string[] | undefined, b: string[]): boolean {
+  return !!a && a.length === b.length && a.every((x, i) => x === b[i])
+}
+
+// Classificados na ordem cross-group [1ºG1, 1ºG2, …, 2ºG1, 2ºG2, …].
+function computeQualifierIds(champ: LocalChampionship, groupMatches: LocalMatch[]): string[] {
+  const groups = champ.groups ?? []
+
   const pickFromGroup = (g: LocalGroup, pos: number): string | null => {
     const ids = new Set(g.participantIds)
     const standings = computeStandings(
@@ -502,28 +549,17 @@ export function maybeGenerateBracketFromGroups(champ: LocalChampionship): boolea
     return standings[pos]?.participant_id ?? null
   }
 
-  // Coleta cross-group: [1ºG1, 1ºG2, …, 2ºG1, 2ºG2, …]
-  const maxQ = Math.max(...champ.groups.map((g) => qualifiersPerGroup(g.participantIds.length)))
-  const qualifiers: LocalParticipant[] = []
-  const partById = new Map(champ.participants.map((p) => [p.id, p]))
+  const maxQ = Math.max(0, ...groups.map((g) => qualifiersPerGroup(g.participantIds.length)))
+  const known = new Set(champ.participants.map((p) => p.id))
+  const out: string[] = []
   for (let pos = 0; pos < maxQ; pos++) {
-    for (const g of champ.groups) {
+    for (const g of groups) {
       if (pos >= qualifiersPerGroup(g.participantIds.length)) continue
       const pid = pickFromGroup(g, pos)
-      const p = pid ? partById.get(pid) : null
-      if (p) qualifiers.push(p)
+      if (pid && known.has(pid)) out.push(pid)
     }
   }
-
-  if (qualifiers.length < 2) return false
-
-  // Seeding por posições alternadas (espelha generate_bracket_from_groups), na
-  // ordem cross-group [1ºG1,1ºG2,…,2ºG1,…] coletada acima.
-  const bracket = generateBracketFromQualifiers(qualifiers.map((p) => p.id))
-  champ.matches = [...champ.matches, ...bracket]
-  champ.bracketGenerated = true
-  propagateBracketAdvances(champ)
-  return true
+  return out
 }
 
 // ── CRUD IndexedDB ─────────────────────────────────────────────────────────
@@ -539,16 +575,32 @@ export async function removeLocalChampionship(tempId: string): Promise<void> {
   await del(keyFor(tempId))
 }
 
+/**
+ * Altera o campeonato numa única transação (ler + gravar juntos): toques
+ * rápidos e o fechamento da partida não sobrescrevem um ao outro.
+ */
+export async function mutateLocalChampionship(
+  tempId: string,
+  fn: (champ: LocalChampionship) => void,
+): Promise<LocalChampionship | null> {
+  let result: LocalChampionship | null = null
+  await update<LocalChampionship | undefined>(keyFor(tempId), (old) => {
+    if (!old) return old
+    fn(old)
+    result = old
+    return old
+  })
+  return result
+}
+
 export async function updateLocalMatch(
   tempId: string,
   matchId: string,
   patch: Partial<LocalMatch>,
 ): Promise<LocalChampionship | null> {
-  const champ = await getLocalChampionship(tempId)
-  if (!champ) return null
-  champ.matches = champ.matches.map((m) => (m.id === matchId ? { ...m, ...patch } : m))
-  await saveLocalChampionship(champ)
-  return champ
+  return mutateLocalChampionship(tempId, (champ) => {
+    champ.matches = champ.matches.map((m) => (m.id === matchId ? { ...m, ...patch } : m))
+  })
 }
 
 // ── Adaptador para o cálculo de classificação (computeStandings) ─────────────

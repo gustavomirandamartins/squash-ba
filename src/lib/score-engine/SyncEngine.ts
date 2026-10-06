@@ -1,20 +1,29 @@
 /**
  * SyncEngine — fila offline para ações de placar.
  *
- * Cada jogo aberto registra-se com trackMatch(matchId).
- * Ações são persistidas em IndexedDB via idb-keyval (chave `queue:<matchId>`).
- * flush() sincroniza com o Supabase quando online, detecta conflitos e
- * invoca flag_match_conflict quando necessário.
- * startAutoSync() dispara flush a cada 3 s enquanto online.
+ * Toda ação (ponto, encerramento, W.O., fim do cronômetro) é gravada primeiro
+ * no aparelho (IndexedDB, chave `queue:<matchId>`) e enviada depois.
+ *
+ * Garantias:
+ *   • gravações na fila são atômicas (`update` do idb-keyval = ler+gravar numa
+ *     só transação): um toque feito durante o envio nunca é apagado;
+ *   • um envio por partida por vez — no app inteiro (Web Locks entre abas) e
+ *     dentro da aba (pedidos durante um envio entram numa nova passada);
+ *   • a fila é compactada: só o último placar de cada game é enviado, e games
+ *     seguidos sobem num único upsert;
+ *   • conflito é detectado comparando games (servidor × última versão que este
+ *     aparelho viu do servidor), nunca relógios;
+ *   • o que o servidor recusa não some: vai para a lista de falhas
+ *     (`sync-failures`), visível em /sincronizacao.
  */
 
-import { get, set, keys } from 'idb-keyval'
+import { get, set, del, keys, update } from 'idb-keyval'
 import { createClient } from '@/utils/supabase/client'
 import { getDeviceId } from './deviceId'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-export type ActionType = 'upsert_game' | 'delete_game' | 'finalize_match'
+export type ActionType = 'upsert_game' | 'delete_game' | 'finalize_match' | 'finish_timer'
 
 export type QueueAction = {
   id: string
@@ -28,11 +37,20 @@ export type QueueAction = {
 export type FlushResult = {
   conflict: boolean
   synced: number
-  /** Ação recusada pelo servidor (permissão, regra de negócio…) — descartada da fila. */
+  /** Ação recusada pelo servidor (permissão, regra de negócio…) — movida p/ falhas. */
   error?: string
+  /** Parou por falta de rede: o resto continua na fila. */
+  stalled?: boolean
 }
 
-type GameRow = { game_number: number; score_a: number; score_b: number }
+export type GameRow = { game_number: number; score_a: number; score_b: number }
+
+/** Mudanças na fila/falhas — telas de status escutam este evento. */
+export const SYNC_EVENT = 'sb-sync-changed'
+
+function notify() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SYNC_EVENT))
+}
 
 // ─── Finalização (encerrar / desclassificar / W.O. / W.O. duplo) ──────────────
 
@@ -52,6 +70,15 @@ type FinalizePayload = {
   isDq?: boolean
   isWo?: boolean
   isDoubleWo?: boolean
+}
+
+/** Fim do cronômetro (contagem por tempo): grava a duração e o placar final. */
+type FinishTimerPayload = {
+  seconds: number
+  score_a: number
+  score_b: number
+  /** a fase permite empate? (só p/ mostrar o resultado offline) */
+  drawAllowed: boolean
 }
 
 function toPayload(input: FinalizeInput): FinalizePayload {
@@ -88,14 +115,22 @@ function finalizeRpc(matchId: string, p: FinalizePayload): { name: string; param
   }
 }
 
+/** Resultado de um placar por tempo (null = empate não permitido). */
+function timerResult(p: FinishTimerPayload): string | null {
+  if (p.score_a > p.score_b) return 'lado_a'
+  if (p.score_b > p.score_a) return 'lado_b'
+  return p.drawAllowed ? 'empate' : null
+}
+
 function isOnline(): boolean {
-  return typeof navigator === 'undefined' || navigator.onLine
+  return typeof navigator === 'undefined' || navigator.onLine !== false
 }
 
 /**
  * Falha de rede? O supabase-js NÃO lança em fetch falho — devolve `{ error }` com
  * a mensagem do TypeError ("Failed to fetch", "Load failed"…). Com sinal fraco o
  * `navigator.onLine` segue true, então checar só ele deixa a ação se perder.
+ * "unexpected response" = resposta que não veio do app (portal cativo, proxy).
  */
 export function isNetworkError(err: unknown): boolean {
   const msg =
@@ -104,21 +139,45 @@ export function isNetworkError(err: unknown): boolean {
       : typeof err === 'object' && err !== null && 'message' in err
         ? String((err as { message: unknown }).message)
         : String(err ?? '')
-  return /failed to fetch|load failed|networkerror|network request failed|fetch failed|internet connection/i.test(msg)
+  return /failed to fetch|load failed|networkerror|network request failed|fetch failed|internet connection|unexpected response|network connection was lost/i.test(
+    msg,
+  )
 }
 
-// ─── Helpers de IDB ───────────────────────────────────────────────────────────
+// ─── Chaves no IndexedDB ──────────────────────────────────────────────────────
 
-function queueKey(matchId: string): string {
-  return `queue:${matchId}`
-}
+const queueKey = (matchId: string) => `queue:${matchId}`
+/** Games do servidor que este aparelho viu por último (base p/ detectar conflito). */
+const baseKey = (matchId: string) => `base:${matchId}`
+/** Rótulo e link da partida (p/ a tela de sincronização). */
+const metaKey = (matchId: string) => `sync-meta:${matchId}`
+const FAILURES_KEY = 'sync-failures'
 
 async function getQueue(matchId: string): Promise<QueueAction[]> {
   return ((await get(queueKey(matchId))) as QueueAction[] | undefined) ?? []
 }
 
-async function saveQueue(matchId: string, queue: QueueAction[]): Promise<void> {
-  await set(queueKey(matchId), queue)
+// ─── Compactação ─────────────────────────────────────────────────────────────
+// Placar é absoluto (score_a/score_b do game), então só o último upsert de cada
+// game importa. Nunca compacta por cima de um encerramento: o que veio antes de
+// "encerrar" precisa chegar antes dele.
+
+export function compactQueue(queue: QueueAction[], item: QueueAction): QueueAction[] {
+  if (item.type !== 'upsert_game') return [...queue, item]
+  const game = (item.payload as GameRow).game_number
+  let barrier = -1
+  queue.forEach((a, i) => {
+    if (a.type === 'finalize_match' || a.type === 'finish_timer') barrier = i
+  })
+  const kept = queue.filter(
+    (a, i) =>
+      i <= barrier ||
+      !(
+        (a.type === 'upsert_game' || a.type === 'delete_game') &&
+        (a.payload as { game_number: number }).game_number === game
+      ),
+  )
+  return [...kept, item]
 }
 
 // ─── enqueue ─────────────────────────────────────────────────────────────────
@@ -126,7 +185,6 @@ async function saveQueue(matchId: string, queue: QueueAction[]): Promise<void> {
 export async function enqueue(
   action: Pick<QueueAction, 'matchId' | 'type' | 'payload'>,
 ): Promise<void> {
-  const queue = await getQueue(action.matchId)
   const item: QueueAction = {
     id: crypto.randomUUID(),
     matchId: action.matchId,
@@ -135,39 +193,155 @@ export async function enqueue(
     timestamp: Date.now(),
     deviceId: getDeviceId(),
   }
-  await saveQueue(action.matchId, [...queue, item])
+  await update<QueueAction[]>(queueKey(action.matchId), (old) => compactQueue(old ?? [], item))
+  notify()
 }
 
-// ─── flush ────────────────────────────────────────────────────────────────────
+// ─── Base do servidor (detecção de conflito) ─────────────────────────────────
+
+/**
+ * Registra os games que o servidor tem agora. Só vale com a fila vazia: com
+ * pendências, a base continua sendo o estado sobre o qual elas foram feitas.
+ */
+export async function rememberServerGames(matchId: string, games: GameRow[]): Promise<void> {
+  const q = await getQueue(matchId)
+  if (q.length > 0) return
+  await set(baseKey(matchId), games.map(({ game_number, score_a, score_b }) => ({ game_number, score_a, score_b })))
+}
+
+/** Esquece a base: o próximo envio aplica o placar local sem checar conflito. */
+export async function dropBase(matchId: string): Promise<void> {
+  await del(baseKey(matchId))
+}
+
+const sameGame = (x?: GameRow, y?: GameRow) =>
+  (x?.score_a ?? 0) === (y?.score_a ?? 0) && (x?.score_b ?? 0) === (y?.score_b ?? 0)
+
+/**
+ * Conflito = outro aparelho mudou, no servidor, um game que esta fila também
+ * muda, para um valor diferente do nosso. Games que só um lado tocou se juntam.
+ */
+export function detectConflict(base: GameRow[], server: GameRow[], local: GameRow[]): boolean {
+  const b = new Map(base.map((g) => [g.game_number, g]))
+  const s = new Map(server.map((g) => [g.game_number, g]))
+  for (const l of local) {
+    const sv = s.get(l.game_number)
+    const bv = b.get(l.game_number)
+    if (!sameGame(sv, bv) && !sameGame(sv, l)) return true
+  }
+  return false
+}
+
+// ─── Falhas (ações recusadas pelo servidor) ──────────────────────────────────
+
+export type SyncFailure = {
+  id: string
+  matchId: string
+  action: QueueAction | null
+  error: string
+  at: number
+}
+
+export async function getFailures(): Promise<SyncFailure[]> {
+  return ((await get(FAILURES_KEY)) as SyncFailure[] | undefined) ?? []
+}
+
+async function recordFailures(matchId: string, actions: (QueueAction | null)[], error: string) {
+  const items: SyncFailure[] = actions.map((action) => ({
+    id: crypto.randomUUID(),
+    matchId,
+    action,
+    error,
+    at: Date.now(),
+  }))
+  await update<SyncFailure[]>(FAILURES_KEY, (old) => [...(old ?? []), ...items])
+}
+
+export async function dismissFailure(id: string): Promise<void> {
+  await update<SyncFailure[]>(FAILURES_KEY, (old) => (old ?? []).filter((f) => f.id !== id))
+  notify()
+}
+
+/** Devolve a ação recusada para o fim da fila e tenta enviar de novo. */
+export async function retryFailure(id: string): Promise<void> {
+  const f = (await getFailures()).find((x) => x.id === id)
+  await dismissFailure(id)
+  if (!f?.action) return
+  await enqueue({ matchId: f.matchId, type: f.action.type, payload: f.action.payload })
+  void flush(f.matchId)
+}
+
+// ─── Rótulos (tela de sincronização) ─────────────────────────────────────────
+
+export type SyncMeta = { label: string; href: string }
+
+export async function setSyncMeta(matchId: string, meta: SyncMeta): Promise<void> {
+  try {
+    await set(metaKey(matchId), meta)
+  } catch {
+    /* informativo */
+  }
+}
+
+export async function getSyncMeta(matchId: string): Promise<SyncMeta | null> {
+  return ((await get(metaKey(matchId))) as SyncMeta | undefined) ?? null
+}
+
+// ─── Envio ────────────────────────────────────────────────────────────────────
 
 // ok       → aplicada
 // retry    → falha de rede: mantém na fila e tenta de novo depois
-// rejected → o servidor recusou (permissão/regra): descarta p/ não travar a fila
+// rejected → o servidor recusou (permissão/regra): sai da fila e vai p/ falhas
 type Outcome = { kind: 'ok' } | { kind: 'retry' } | { kind: 'rejected'; error: string }
 
-async function applyAction(
-  supabase: ReturnType<typeof createClient>,
-  matchId: string,
-  deviceId: string,
-  action: QueueAction,
-): Promise<Outcome> {
-  try {
-    if (action.type === 'upsert_game') {
-      const { game_number, score_a, score_b } = action.payload as GameRow
-      const { error } = await supabase.from('match_games').upsert(
-        { match_id: matchId, game_number, score_a, score_b, last_device_id: deviceId },
-        { onConflict: 'match_id,game_number' },
-      )
-      if (error) return isNetworkError(error) ? { kind: 'retry' } : { kind: 'rejected', error: error.message }
-      // Atualiza last_device_id e status do match
-      await supabase
-        .from('matches')
-        .update({ last_device_id: deviceId, status: 'em_andamento' })
-        .eq('id', matchId)
-        .eq('status', 'agendado') // só muda se ainda estava agendado (trigger cuida do resto)
-      return { kind: 'ok' }
-    }
+type Client = ReturnType<typeof createClient>
 
+/**
+ * Sessão vencida (comum ao voltar depois de horas offline, antes do refresh do
+ * token): não é recusa do servidor — tenta de novo depois.
+ */
+function isAuthError(error: { message: string; code?: string }): boolean {
+  return (
+    error.code === 'PGRST301' ||
+    error.code === 'PGRST302' ||
+    /jwt|not authenticated|refresh token/i.test(error.message)
+  )
+}
+
+function outcomeOf(error: { message: string; code?: string } | null): Outcome {
+  if (!error) return { kind: 'ok' }
+  return isNetworkError(error) || isAuthError(error)
+    ? { kind: 'retry' }
+    : { kind: 'rejected', error: error.message }
+}
+
+async function guarded(fn: () => Promise<Outcome>): Promise<Outcome> {
+  try {
+    return await fn()
+  } catch (err) {
+    if (isNetworkError(err)) return { kind: 'retry' }
+    return { kind: 'rejected', error: err instanceof Error ? err.message : 'erro desconhecido' }
+  }
+}
+
+function upsertGames(supabase: Client, matchId: string, deviceId: string, rows: GameRow[]) {
+  return guarded(async () => {
+    const { error } = await supabase.from('match_games').upsert(
+      rows.map((g) => ({
+        match_id: matchId,
+        game_number: g.game_number,
+        score_a: g.score_a,
+        score_b: g.score_b,
+        last_device_id: deviceId,
+      })),
+      { onConflict: 'match_id,game_number' },
+    )
+    return outcomeOf(error)
+  })
+}
+
+function applyAction(supabase: Client, matchId: string, deviceId: string, action: QueueAction) {
+  return guarded(async () => {
     if (action.type === 'delete_game') {
       const { game_number } = action.payload as { game_number: number }
       const { error } = await supabase
@@ -175,79 +349,211 @@ async function applyAction(
         .delete()
         .eq('match_id', matchId)
         .eq('game_number', game_number)
-      if (error) return isNetworkError(error) ? { kind: 'retry' } : { kind: 'rejected', error: error.message }
-      return { kind: 'ok' }
+      return outcomeOf(error)
     }
 
     if (action.type === 'finalize_match') {
       const { name, params } = finalizeRpc(matchId, action.payload as FinalizePayload)
       const { error } = await supabase.rpc(name, params)
-      if (error) return isNetworkError(error) ? { kind: 'retry' } : { kind: 'rejected', error: error.message }
-      return { kind: 'ok' }
+      return outcomeOf(error)
     }
-  } catch (err) {
-    if (isNetworkError(err)) return { kind: 'retry' }
-    return { kind: 'rejected', error: err instanceof Error ? err.message : 'erro desconhecido' }
-  }
-  return { kind: 'ok' }
+
+    if (action.type === 'finish_timer') {
+      // Ordem exigida por resolve_match no modo tempo: primeiro a duração (só
+      // finaliza com duration_seconds preenchido), depois o placar, que dispara
+      // o trigger e finaliza a partida.
+      const p = action.payload as FinishTimerPayload
+      const { error: dErr } = await supabase
+        .from('matches')
+        .update({ duration_seconds: p.seconds })
+        .eq('id', matchId)
+      if (dErr) return outcomeOf(dErr)
+      const { error } = await supabase.from('match_games').upsert(
+        { match_id: matchId, game_number: 1, score_a: p.score_a, score_b: p.score_b, last_device_id: deviceId },
+        { onConflict: 'match_id,game_number' },
+      )
+      return outcomeOf(error)
+    }
+
+    return { kind: 'ok' }
+  })
 }
 
-export async function flush(matchId: string): Promise<FlushResult> {
+/** Games finais que a fila vai deixar no servidor (último upsert de cada game). */
+function queuedGames(queue: QueueAction[]): GameRow[] {
+  const map = new Map<number, GameRow>()
+  for (const a of queue) {
+    if (a.type === 'upsert_game') {
+      const g = a.payload as GameRow
+      map.set(g.game_number, { game_number: g.game_number, score_a: g.score_a, score_b: g.score_b })
+    } else if (a.type === 'finish_timer') {
+      const p = a.payload as FinishTimerPayload
+      map.set(1, { game_number: 1, score_a: p.score_a, score_b: p.score_b })
+    }
+  }
+  return [...map.values()]
+}
+
+/** Partidas em conflito: o envio automático pausa até o organizador resolver. */
+const conflicted = new Set<string>()
+
+export function clearConflictPause(matchId: string): void {
+  conflicted.delete(matchId)
+}
+
+async function flushOnce(matchId: string): Promise<FlushResult> {
   const queue = await getQueue(matchId)
   if (queue.length === 0) return { conflict: false, synced: 0 }
 
   const supabase = createClient()
   const deviceId = getDeviceId()
 
-  // Fetch estado atual do servidor
-  const { data: serverMatch, error } = await supabase
-    .from('matches')
-    .select('updated_at, last_device_id, match_games(game_number, score_a, score_b)')
-    .eq('id', matchId)
-    .single()
+  // Estado atual do servidor (status + games) — para conflito e base.
+  let server: { status: string; match_games: GameRow[] | null } | null
+  try {
+    // Renova o token se venceu enquanto o app estava offline (no-op se válido).
+    await supabase.auth.getSession()
+    const { data, error } = await supabase
+      .from('matches')
+      .select('status, match_games(game_number, score_a, score_b)')
+      .eq('id', matchId)
+      .maybeSingle()
+    // Qualquer falha na leitura: não sabemos o estado do servidor → tenta depois.
+    if (error) return { conflict: false, synced: 0, stalled: true }
+    server = data as typeof server
+  } catch {
+    return { conflict: false, synced: 0, stalled: true }
+  }
 
-  if (error || !serverMatch) return { conflict: false, synced: 0 }
+  // Partida não existe mais (campeonato apagado/refeito): a fila não tem destino.
+  // Vai inteira para falhas em vez de tentar para sempre.
+  if (!server) {
+    const reason = 'A partida não existe mais no servidor.'
+    await recordFailures(matchId, queue, reason)
+    await update<QueueAction[]>(queueKey(matchId), (old) =>
+      (old ?? []).filter((a) => !queue.some((q) => q.id === a.id)),
+    )
+    notify()
+    return { conflict: false, synced: 0, error: reason }
+  }
 
-  // Detecção de conflito: servidor foi atualizado por outro dispositivo
-  // depois do primeiro item da nossa fila local
-  const serverUpdatedAt = new Date(serverMatch.updated_at as string).getTime()
-  const firstLocalTs = queue[0].timestamp
-  const serverDevice = serverMatch.last_device_id as string | null
+  const serverGames = server.match_games ?? []
 
-  if (serverDevice && serverDevice !== deviceId && serverUpdatedAt > firstLocalTs) {
-    // Conflito: grava snapshot do servidor e marca match como 'revisao'
-    const serverGames = (serverMatch.match_games as GameRow[]) ?? []
-    await supabase.rpc('flag_match_conflict', {
-      _match_id: matchId,
-      _server_snapshot: { games: serverGames },
-    })
+  // Já está em revisão no servidor: aplicar agora reabriria a partida (o trigger
+  // recalcula o status). Espera o organizador resolver.
+  if (server.status === 'revisao') {
+    conflicted.add(matchId)
     return { conflict: true, synced: 0 }
   }
 
-  // Aplica a fila em ordem; para no primeiro item que falhar por rede.
-  let synced = 0
-  let rejection: string | undefined
-  for (const action of queue) {
-    const outcome = await applyAction(supabase, matchId, deviceId, action)
-    if (outcome.kind === 'retry') break
-    if (outcome.kind === 'rejected') rejection = outcome.error
-    synced++
+  const base = (await get(baseKey(matchId))) as GameRow[] | undefined
+  if (base && detectConflict(base, serverGames, queuedGames(queue))) {
+    const { error: flagErr } = await supabase.rpc('flag_match_conflict', {
+      _match_id: matchId,
+      _server_snapshot: { games: serverGames },
+    })
+    if (!flagErr) {
+      conflicted.add(matchId)
+      return { conflict: true, synced: 0 }
+    }
+    if (isNetworkError(flagErr)) return { conflict: false, synced: 0, stalled: true }
+    // Sem permissão para abrir revisão (não é organizador): o placar deste
+    // aparelho prevalece — segue aplicando, sem travar a partida.
   }
 
-  // Remove só o que foi aplicado. Relê a fila: itens enfileirados durante o flush
-  // (ex.: novo toque no placar, ou "encerrar partida") não podem ser perdidos.
-  if (synced > 0) {
-    const applied = new Set(queue.slice(0, synced).map((a) => a.id))
-    const latest = await getQueue(matchId)
-    await saveQueue(matchId, latest.filter((a) => !applied.has(a.id)))
+  // Aplica em ordem. Upserts seguidos sobem num único pedido.
+  const applied = new Set<string>()
+  const rejected: { action: QueueAction; error: string }[] = []
+  let stalled = false
+  let i = 0
+  while (i < queue.length) {
+    let j = i + 1
+    let outcome: Outcome
+    if (queue[i].type === 'upsert_game') {
+      while (j < queue.length && queue[j].type === 'upsert_game') j++
+      const rows = new Map<number, GameRow>()
+      for (const a of queue.slice(i, j)) {
+        const g = a.payload as GameRow
+        rows.set(g.game_number, g)
+      }
+      outcome = await upsertGames(supabase, matchId, deviceId, [...rows.values()])
+    } else {
+      outcome = await applyAction(supabase, matchId, deviceId, queue[i])
+    }
+    if (outcome.kind === 'retry') {
+      stalled = true
+      break
+    }
+    for (const a of queue.slice(i, j)) {
+      applied.add(a.id)
+      if (outcome.kind === 'rejected') rejected.push({ action: a, error: outcome.error })
+    }
+    i = j
   }
 
-  return { conflict: false, synced, error: rejection }
+  if (applied.size > 0) {
+    // Remove só o que foi processado, numa transação: itens enfileirados
+    // durante o envio continuam na fila.
+    await update<QueueAction[]>(queueKey(matchId), (old) => (old ?? []).filter((a) => !applied.has(a.id)))
+    for (const r of rejected) await recordFailures(matchId, [r.action], r.error)
+
+    // Nova base = servidor + o que acabamos de aplicar.
+    const done = queue.filter((a) => applied.has(a.id) && !rejected.some((r) => r.action.id === a.id))
+    const clears = done.some((a) => a.type === 'finalize_match' && kindOf(a.payload as FinalizePayload) !== 'result')
+    const merged = new Map(serverGames.map((g) => [g.game_number, g]))
+    for (const g of queuedGames(done)) merged.set(g.game_number, g)
+    await set(baseKey(matchId), clears ? [] : [...merged.values()])
+    notify()
+  }
+
+  return {
+    conflict: false,
+    synced: applied.size,
+    stalled,
+    error: rejected.length > 0 ? rejected[rejected.length - 1].error : undefined,
+  }
+}
+
+// Um envio por partida: entre abas (Web Locks) e dentro da aba (promessa única;
+// pedidos que chegam durante o envio geram mais uma passada no fim).
+const running = new Map<string, Promise<FlushResult>>()
+const again = new Set<string>()
+
+function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+  if (locks?.request) return locks.request(name, () => fn()) as Promise<T>
+  return fn()
+}
+
+export function flush(matchId: string): Promise<FlushResult> {
+  const current = running.get(matchId)
+  if (current) {
+    again.add(matchId)
+    return current
+  }
+  const p = (async () => {
+    let synced = 0
+    let last: FlushResult = { conflict: false, synced: 0 }
+    try {
+      do {
+        again.delete(matchId)
+        last = await withLock(`sb-flush:${matchId}`, () => flushOnce(matchId))
+        synced += last.synced
+      } while (again.has(matchId) && !last.stalled && !last.conflict)
+      return { ...last, synced }
+    } catch {
+      return { conflict: false, synced, stalled: true }
+    } finally {
+      running.delete(matchId)
+      again.delete(matchId)
+    }
+  })()
+  running.set(matchId, p)
+  return p
 }
 
 // ─── finalizeMatch ────────────────────────────────────────────────────────────
-// Encerra a partida online (RPC) ou, sem rede, enfileira a ação p/ o flush.
-// Substitui o bloco que cada botão da tela repetia (encerrar, DQ, W.O., W.O. duplo).
+// Encerra a partida online (RPC) ou enfileira a ação p/ o envio.
 
 export type FinalizeOutcome = { error: string | null; queued: boolean }
 
@@ -255,15 +561,16 @@ export async function finalizeMatch(matchId: string, input: FinalizeInput): Prom
   const payload = toPayload(input)
 
   // Garante o placar parcial no servidor (no-op offline).
-  try { await flush(matchId) } catch { /* fica na fila */ }
+  await flush(matchId)
 
-  if (isOnline()) {
+  // Chamada direta só com a fila vazia: com placar ainda pendente, o encerramento
+  // precisa chegar DEPOIS dele (senão o placar tardio reabriria a partida).
+  if (isOnline() && (await getQueue(matchId)).length === 0) {
     const { name, params } = finalizeRpc(matchId, payload)
     try {
       const { error } = await createClient().rpc(name, params)
       if (!error) {
-        // DQ/W.O. apagam os games no servidor: placar antigo na fila não pode ressuscitá-los.
-        if (input.kind !== 'result') await clearQueue(matchId)
+        if (input.kind !== 'result') await set(baseKey(matchId), [])
         return { error: null, queued: false }
       }
       if (!isNetworkError(error)) return { error: error.message, queued: false }
@@ -274,10 +581,18 @@ export async function finalizeMatch(matchId: string, input: FinalizeInput): Prom
     }
   }
 
-  // Sem rede (ou falha de rede): grava na fila e tenta sincronizar quando der.
   await enqueue({ matchId, type: 'finalize_match', payload })
-  try { await flush(matchId) } catch { /* idem */ }
+  void flush(matchId)
   return { error: null, queued: true }
+}
+
+// ─── finishTimer ──────────────────────────────────────────────────────────────
+// Fim do cronômetro (contagem por tempo). Sempre pela fila: offline a partida
+// aparece encerrada na hora e finaliza no servidor ao sincronizar.
+
+export async function finishTimer(matchId: string, p: FinishTimerPayload): Promise<void> {
+  await enqueue({ matchId, type: 'finish_timer', payload: p })
+  void flush(matchId)
 }
 
 // ─── pendingCount helper ──────────────────────────────────────────────────────
@@ -299,8 +614,7 @@ export type QueuedMatchState = {
   finalization: { kind: FinalizeKind; result: string | null } | null
 }
 
-export async function getQueuedMatchState(matchId: string): Promise<QueuedMatchState | null> {
-  const q = await getQueue(matchId)
+export function queuedStateOf(q: QueueAction[]): QueuedMatchState | null {
   if (q.length === 0) return null
   const map = new Map<number, GameRow>()
   let clearsGames = false
@@ -319,6 +633,11 @@ export async function getQueuedMatchState(matchId: string): Promise<QueuedMatchS
         clearsGames = true
         map.clear()
       }
+    } else if (a.type === 'finish_timer') {
+      const p = a.payload as FinishTimerPayload
+      map.set(1, { game_number: 1, score_a: p.score_a, score_b: p.score_b })
+      const result = timerResult(p)
+      if (result) finalization = { kind: 'result', result }
     }
   }
   return {
@@ -326,6 +645,10 @@ export async function getQueuedMatchState(matchId: string): Promise<QueuedMatchS
     clearsGames,
     finalization,
   }
+}
+
+export async function getQueuedMatchState(matchId: string): Promise<QueuedMatchState | null> {
+  return queuedStateOf(await getQueue(matchId))
 }
 
 // ─── games da fila (para classificação offline) ───────────────────────────────
@@ -338,34 +661,109 @@ export async function getQueuedGames(matchId: string): Promise<GameRow[] | null>
 // ─── clearQueue ───────────────────────────────────────────────────────────────
 
 export async function clearQueue(matchId: string): Promise<void> {
-  await saveQueue(matchId, [])
+  await set(queueKey(matchId), [])
+  await del(baseKey(matchId))
+  clearConflictPause(matchId)
+  notify()
+}
+
+// ─── Visão geral (tela de sincronização) ──────────────────────────────────────
+
+export type PendingMatch = { matchId: string; count: number; meta: SyncMeta | null }
+
+export async function getPendingMatches(): Promise<PendingMatch[]> {
+  const allKeys = (await keys()) as IDBValidKey[]
+  const out: PendingMatch[] = []
+  for (const k of allKeys) {
+    if (typeof k !== 'string' || !k.startsWith('queue:')) continue
+    const matchId = k.slice('queue:'.length)
+    const q = ((await get(k)) as QueueAction[] | undefined) ?? []
+    if (q.length === 0) continue
+    out.push({ matchId, count: q.length, meta: await getSyncMeta(matchId) })
+  }
+  return out
 }
 
 // ─── flushAllPending ──────────────────────────────────────────────────────────
-// Escaneia todo o IDB em busca de filas `queue:*` com itens pendentes e as
-// sincroniza. Chamado no startup do app e ao reconectar, independentemente de
-// qual tela o usuário está — garante que placares offline não se percam mesmo
-// que o app tenha sido fechado antes de sincronizar.
+// Envia todas as filas com pendências, uma partida por vez. Chamado ao abrir o
+// app, ao voltar para ele e ao reconectar — placares gravados com o app fechado
+// não se perdem. Retorna quantas partidas ainda ficaram com pendência.
 
-export async function flushAllPending(): Promise<void> {
-  if (typeof navigator === 'undefined' || !navigator.onLine) return
+export async function flushAllPending(): Promise<{ pending: number; stalled: boolean }> {
+  if (!isOnline()) return { pending: (await getPendingMatches()).length, stalled: true }
+  let pending = 0
+  let stalled = false
   try {
-    const allKeys = (await keys()) as string[]
-    const queueKeys = allKeys.filter((k) => typeof k === 'string' && k.startsWith('queue:'))
-    await Promise.allSettled(
-      queueKeys.map(async (key) => {
-        const matchId = (key as string).slice('queue:'.length)
-        const queue = (await get(key)) as QueueAction[] | undefined
-        if (!queue || queue.length === 0) return
-        await flush(matchId)
-      }),
-    )
+    for (const { matchId } of await getPendingMatches()) {
+      if (conflicted.has(matchId)) {
+        pending++
+        continue
+      }
+      const r = await flush(matchId)
+      if (r.stalled) stalled = true
+      if ((await getPendingCount(matchId)) > 0) pending++
+    }
   } catch {
     /* best-effort: ignora erros de IDB */
   }
+  return { pending, stalled }
 }
 
-// ─── Auto-sync ────────────────────────────────────────────────────────────────
+/**
+ * Sincronização em segundo plano para o app inteiro: ao abrir, ao voltar para
+ * o app (no iOS o evento `online` falha com frequência), ao reconectar e, havendo
+ * pendência, com espera crescente (2 s → 60 s). Retorna o cleanup.
+ */
+export function startBackgroundSync(): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let delay = 2000
+  let stopped = false
+  let busy = false
+
+  const schedule = (ms: number) => {
+    if (timer) clearTimeout(timer)
+    if (!stopped) timer = setTimeout(run, ms)
+  }
+
+  async function run() {
+    if (stopped || busy) return
+    busy = true
+    try {
+      const { pending } = await flushAllPending()
+      if (pending > 0) {
+        schedule(delay)
+        delay = Math.min(delay * 2, 60_000)
+      } else {
+        delay = 2000
+      }
+    } finally {
+      busy = false
+    }
+  }
+
+  const kick = () => {
+    delay = 2000
+    schedule(300)
+  }
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') kick()
+  }
+
+  window.addEventListener('online', kick)
+  window.addEventListener('focus', kick)
+  document.addEventListener('visibilitychange', onVisible)
+  kick()
+
+  return () => {
+    stopped = true
+    if (timer) clearTimeout(timer)
+    window.removeEventListener('online', kick)
+    window.removeEventListener('focus', kick)
+    document.removeEventListener('visibilitychange', onVisible)
+  }
+}
+
+// ─── Auto-sync da tela de placar ──────────────────────────────────────────────
 
 const trackedMatches = new Set<string>()
 
@@ -378,57 +776,28 @@ export function untrackMatch(matchId: string): void {
 }
 
 /**
- * Inicia o loop de sync automático (3 s).
+ * Loop de envio enquanto uma tela de placar está aberta (3 s). Sem pendência,
+ * cada volta só lê o IndexedDB — não toca a rede.
  * Retorna função de cleanup para chamar no useEffect return.
  */
 export function startAutoSync(
   onFlushResult?: (matchId: string, result: FlushResult) => void,
 ): () => void {
-  let intervalId: ReturnType<typeof setInterval> | null = null
-
   const runFlush = () => {
-    if (!navigator.onLine) return
+    if (!isOnline()) return
     for (const id of trackedMatches) {
+      if (conflicted.has(id)) continue
       void flush(id).then((result) => {
-        onFlushResult?.(id, result)
+        if (result.synced > 0 || result.conflict || result.error) onFlushResult?.(id, result)
       })
     }
   }
 
-  const start = () => {
-    if (intervalId) clearInterval(intervalId)
-    intervalId = setInterval(runFlush, 3000)
-  }
-
-  const stop = () => {
-    if (intervalId) {
-      clearInterval(intervalId)
-      intervalId = null
-    }
-  }
-
-  const onOnline = () => {
-    start()
-    // Flush imediato ao reconectar
-    for (const id of trackedMatches) {
-      void flush(id).then((result) => {
-        onFlushResult?.(id, result)
-      })
-    }
-  }
-
-  const onOffline = () => stop()
-
-  if (typeof navigator !== 'undefined' && navigator.onLine) {
-    start()
-  }
-
-  window.addEventListener('online', onOnline)
-  window.addEventListener('offline', onOffline)
+  const intervalId = setInterval(runFlush, 3000)
+  window.addEventListener('online', runFlush)
 
   return () => {
-    stop()
-    window.removeEventListener('online', onOnline)
-    window.removeEventListener('offline', onOffline)
+    clearInterval(intervalId)
+    window.removeEventListener('online', runFlush)
   }
 }

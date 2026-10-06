@@ -21,8 +21,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, CalendarDays, Flag, Square, UserX } from 'lucide-react'
 import { useScoreEngine, type GameScore, type ConflictSnapshot, type ScoreEngineConfig } from '@/lib/score-engine/useScoreEngine'
 import { CourtTimer } from '@/lib/score-engine/CourtTimer'
-import { clearQueue, finalizeMatch, flush as flushQueue, type FinalizeInput } from '@/lib/score-engine/SyncEngine'
-import { createClient } from '@/utils/supabase/client'
+import { clearQueue, finalizeMatch, finishTimer, setSyncMeta, type FinalizeInput } from '@/lib/score-engine/SyncEngine'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -590,41 +589,34 @@ export function ScoreScreen({
     }
   }, [status, canManage, onUpdateSchedule, scheduledLocal, saveSchedule])
 
-  // Supabase client
-  const [supabase] = useState(() => createClient())
-
-  // Salva duration_seconds ao pausar (persiste progresso sem finalizar)
-  const handleTimerPause = useCallback(
-    async (seconds: number) => {
-      await supabase.from('matches').update({ duration_seconds: seconds }).eq('id', matchId)
-    },
-    [supabase, matchId],
-  )
-
-  // Encerra o cronômetro e finaliza a partida.
-  // Sequência necessária para o trigger resolve_match funcionar em modo 'tempo':
-  //   1. Flush da fila offline (garante que o placar atual está no banco)
-  //   2. Salva duration_seconds em matches (resolve_match verifica IS NOT NULL)
-  //   3. Upsert no match_games → dispara trg_match_games_resolve → resolve_match
-  //      que agora vê duration_seconds IS NOT NULL e aplica o resultado.
+  // ── Cronômetro (modo tempo) ────────────────────────────────────────────────
+  // Pausar NÃO grava no servidor: resolve_match finaliza a partida assim que
+  // duration_seconds está preenchido, então gravar na pausa fazia o próximo
+  // ponto encerrar o jogo. O tempo pausado fica no localStorage (CourtTimer).
+  //
+  // Encerrar vai pela fila (funciona offline): grava a duração e o placar final,
+  // nessa ordem, e o trigger finaliza a partida no servidor.
   const handleTimerStop = useCallback(
     async (seconds: number) => {
-      // 1. Sincroniza placar pendente
-      await flushQueue(matchId)
-
-      // 2. Marca o tempo encerrado
-      await supabase.from('matches').update({ duration_seconds: seconds }).eq('id', matchId)
-
-      // 3. Re-upsert do jogo atual (mesmo placar) → dispara trg_match_games_resolve
-      //    que agora vê duration_seconds preenchido e finaliza a partida.
       const g = gamesRef.current.find((x) => x.game_number === 1) ?? { score_a: 0, score_b: 0 }
-      await supabase.from('match_games').upsert(
-        { match_id: matchId, game_number: 1, score_a: g.score_a, score_b: g.score_b },
-        { onConflict: 'match_id,game_number' },
-      )
+      await finishTimer(matchId, {
+        seconds,
+        score_a: g.score_a,
+        score_b: g.score_b,
+        drawAllowed: setDrawEnabled,
+      })
+      await refresh() // mostra o resultado na hora, mesmo offline
     },
-    [supabase, matchId],
+    [matchId, setDrawEnabled, refresh],
   )
+
+  // Rótulo da partida para a tela de sincronização (/sincronizacao).
+  useEffect(() => {
+    void setSyncMeta(matchId, {
+      label: `${sideA.name ?? 'Lado A'} × ${sideB.name ?? 'Lado B'}`,
+      href: typeof window !== 'undefined' ? window.location.pathname : backHref,
+    })
+  }, [matchId, sideA.name, sideB.name, backHref])
 
   // ── Encerrar partida ───────────────────────────────────────────────────────
   // Botão universal (sets e pontos). Se o placar já decide a partida pelas regras,
@@ -854,7 +846,6 @@ export function ScoreScreen({
               initialStopped={isFinished}
               storageKey={matchId}
               timeMinutes={timeMinutes}
-              onPause={handleTimerPause}
               onStop={handleTimerStop}
               onStartedChange={setTimerStarted}
             />
