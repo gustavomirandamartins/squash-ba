@@ -78,7 +78,14 @@ export default function RootLayout({
               ":root{--top-inset:env(safe-area-inset-top,0px)}",
           }}
         />
-        <SerwistProvider swUrl="/serwist/sw.js">{children}</SerwistProvider>
+        {/*
+          reloadOnOnline desligado: o padrão recarregava a página inteira a cada
+          volta da conexão — com sinal oscilando na quadra, no meio do placar.
+          A fila sincroniza sozinha; o shell offline oferece "Atualizar".
+        */}
+        <SerwistProvider swUrl="/serwist/sw.js" reloadOnOnline={false}>
+          {children}
+        </SerwistProvider>
       </body>
     </html>
   );

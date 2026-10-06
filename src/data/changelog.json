@@ -1,7 +1,12 @@
 {
-  "count": 171,
-  "lastCommitAt": "202610061040",
+  "count": 172,
+  "lastCommitAt": "202610061115",
   "commits": [
+    {
+      "hash": "97f8044",
+      "subject": "feat(offline): Fase 3 — campeonatos reais e desafios jogáveis até o fim sem rede",
+      "date": "2026-10-06"
+    },
     {
       "hash": "9d3b912",
       "subject": "feat(offline): Fase 2 — envio em lote, importação de campeonato offline e ações de partida pela fila",

@@ -5,12 +5,13 @@
  * usuário:
  *   • pool de jogadores + categorias + times/elencos (IndexedDB) → criar
  *     campeonato/desafio offline
- *   • páginas principais + campeonatos/desafios EM ABERTO do usuário (em que
- *     joga ou que organiza) → o documento HTML fica no cache do service worker.
+ *   • páginas principais → o documento HTML fica no cache do service worker.
  *     Offline, quando a navegação client-side falha, o Next cai para navegação
  *     de documento e o SW serve essa cópia.
- *   • a ESTRUTURA desses campeonatos (jogos, chave, grupos, lados) no IndexedDB
- *     (refreshChampCache) → lista de jogos, placar e avanço da chave offline.
+ *   • a ESTRUTURA dos campeonatos/desafios EM ABERTO do usuário (em que joga ou
+ *     que organiza) no IndexedDB (refreshChampCache) → o shell offline desenha
+ *     jogos, placar e chave a partir dela (as páginas desses campeonatos não
+ *     são mais guardadas: o estado local é mais novo que uma cópia antiga).
  *     Esta parte roda a cada abertura do app com internet (é leve: 1 consulta
  *     por campeonato), não só a cada 6 h.
  *
@@ -19,7 +20,7 @@
  *     zera a cada reabertura, o que disparava tudo de novo);
  *   • começa só depois que a tela inicial assentou (atraso + tempo ocioso);
  *   • 1 requisição por rota, 2 por vez;
- *   • só campeonatos/desafios ainda não encerrados (até 12).
+ *   • só campeonatos/desafios ainda não encerrados (até 12), um por vez.
  */
 
 import { useEffect, useState } from 'react'
@@ -131,7 +132,6 @@ async function listOpenChampionships(userId: string): Promise<OpenChamp[]> {
   return out
 }
 
-const routeOf = (c: OpenChamp) => (c.format === 'desafio' ? `/desafios/${c.id}` : `/campeonatos/${c.id}`)
 
 export function OfflinePreloader() {
   const [phase, setPhase] = useState<Phase>('idle')
@@ -197,15 +197,8 @@ export function OfflinePreloader() {
           if (cancelled) return
           setPhase('loading')
 
-          const supabase = createClient()
-          const { data: { session } } = await supabase.auth.getSession()
-          const userId = session?.user.id
-
-          // Campeonatos/desafios do usuário ainda em aberto.
-          const dynamicRoutes = userId ? (await listOpenChampionships(userId)).map(routeOf) : []
-
           await Promise.allSettled([loadPlayerPool(), loadCategories(), loadTeamsWithRosters()])
-          await warmAll([...CORE_ROUTES, ...dynamicRoutes], CONCURRENCY, isCancelled)
+          await warmAll(CORE_ROUTES, CONCURRENCY, isCancelled)
           if (cancelled) return
           writeStamp()
         } catch {

@@ -6,7 +6,7 @@
 // tempId por prop — usado em /pendentes/[tempId].
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useAppRouter } from '@/lib/offline/use-app-router'
 import Link from 'next/link'
 import {
   ChevronLeft, CloudOff, Loader2, AlertTriangle, Trash2, User,
@@ -28,7 +28,7 @@ import { LocalBracketView } from '@/components/offline/LocalBracketView'
 type SideInfo = { name: string | null; avatarUrl: string | null }
 
 export function ProvisionalChampionship({ tempId }: { tempId: string }) {
-  const router = useRouter()
+  const router = useAppRouter()
 
   const [item, setItem] = useState<OutboxItem | null>(null)
   const [champ, setChamp] = useState<LocalChampionship | null>(null)

@@ -163,7 +163,120 @@ const metaKey = (matchId: string) => `sync-meta:${matchId}`
 const FAILURES_KEY = 'sync-failures'
 
 async function getQueue(matchId: string): Promise<QueueAction[]> {
+  await recoverJournal()
   return ((await get(queueKey(matchId))) as QueueAction[] | undefined) ?? []
+}
+
+// ─── Diário síncrono (nenhum toque se perde) ─────────────────────────────────
+// A fila mora no IndexedDB, cuja gravação é assíncrona: fechar o app (ou a aba)
+// logo depois de uma sequência de toques podia descartar os últimos pontos.
+// Cada ação entra ANTES num diário no localStorage — gravação síncrona, que
+// sobrevive a fechar o app no mesmo instante — e sai dele assim que o
+// IndexedDB confirma. Ao abrir, o que ficou no diário volta para a fila.
+
+const JOURNAL_KEY = 'sb-queue-journal'
+
+function readJournal(): QueueAction[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(JOURNAL_KEY)
+    return raw ? (JSON.parse(raw) as QueueAction[]) : []
+  } catch {
+    return []
+  }
+}
+
+function writeJournal(items: QueueAction[]): void {
+  try {
+    if (items.length) globalThis.localStorage?.setItem(JOURNAL_KEY, JSON.stringify(items))
+    else globalThis.localStorage?.removeItem(JOURNAL_KEY)
+  } catch {
+    /* sem localStorage (modo privado cheio): fica só o IndexedDB, como antes */
+  }
+}
+
+function journalAdd(item: QueueAction): void {
+  writeJournal([...readJournal(), item])
+}
+
+function journalRemove(ids: Set<string>): void {
+  const j = readJournal()
+  const rest = j.filter((a) => !ids.has(a.id))
+  if (rest.length !== j.length) writeJournal(rest)
+}
+
+/**
+ * Junta à fila as ações do diário que não chegaram ao IndexedDB. Uma ação do
+ * diário só é nova se for mais recente que tudo que a fila já tem (a gravação
+ * é em ordem); o que é mais antigo já foi gravado (ou compactado).
+ */
+async function applyJournal(items: QueueAction[]): Promise<void> {
+  const byMatch = new Map<string, QueueAction[]>()
+  for (const a of items) byMatch.set(a.matchId, [...(byMatch.get(a.matchId) ?? []), a])
+  for (const [matchId, list] of byMatch) {
+    await update<QueueAction[]>(queueKey(matchId), (old) => {
+      const q = old ?? []
+      const have = new Set(q.map((a) => a.id))
+      const newest = q.reduce((m, a) => Math.max(m, a.timestamp), -Infinity)
+      return list
+        .filter((a) => !have.has(a.id) && a.timestamp >= newest)
+        .sort((x, y) => x.timestamp - y.timestamp)
+        .reduce((acc, a) => compactQueue(acc, a), q)
+    })
+  }
+  journalRemove(new Set(items.map((a) => a.id)))
+}
+
+let journalRecovery: Promise<void> | null = null
+
+/** Uma vez por carga do app: recupera o diário antes de qualquer leitura da fila. */
+function recoverJournal(): Promise<void> {
+  if (!journalRecovery) {
+    // Itens deste carregamento (ainda gravando) não são "sobras".
+    const leftovers = readJournal().filter((a) => !buffered.has(a.id))
+    journalRecovery = leftovers.length
+      ? applyJournal(leftovers).then(notify, () => {})
+      : Promise.resolve()
+  }
+  return journalRecovery
+}
+
+/** Testes: simula uma nova carga do app. */
+export function __resetJournalRecovery(): void {
+  journalRecovery = null
+}
+
+// Gravação em lote por partida: toques que chegam enquanto o IndexedDB grava
+// entram juntos na próxima transação (em vez de uma por toque).
+const pendingWrites = new Map<string, QueueAction[]>()
+const writers = new Map<string, Promise<void>>()
+const buffered = new Set<string>()
+
+function writeBuffered(matchId: string): Promise<void> {
+  const running = writers.get(matchId)
+  if (running) return running
+  const w = (async () => {
+    try {
+      await recoverJournal()
+      for (;;) {
+        const batch = pendingWrites.get(matchId) ?? []
+        if (batch.length === 0) break
+        pendingWrites.set(matchId, [])
+        await update<QueueAction[]>(queueKey(matchId), (old) => {
+          const have = new Set((old ?? []).map((a) => a.id))
+          return batch.filter((a) => !have.has(a.id)).reduce((acc, a) => compactQueue(acc, a), old ?? [])
+        })
+        const ids = new Set(batch.map((a) => a.id))
+        ids.forEach((id) => buffered.delete(id))
+        journalRemove(ids)
+        notify()
+      }
+    } finally {
+      // Sem await entre o fim do laço e aqui: um toque novo abre outro lote.
+      writers.delete(matchId)
+    }
+  })()
+  writers.set(matchId, w)
+  return w
 }
 
 // ─── Compactação ─────────────────────────────────────────────────────────────
@@ -209,8 +322,16 @@ export async function enqueue(
     timestamp: Date.now(),
     deviceId: getDeviceId(),
   }
-  await update<QueueAction[]>(queueKey(action.matchId), (old) => compactQueue(old ?? [], item))
-  notify()
+  // 1º o diário (síncrono): a partir daqui o toque não se perde mais.
+  journalAdd(item)
+  buffered.add(item.id)
+  pendingWrites.set(item.matchId, [...(pendingWrites.get(item.matchId) ?? []), item])
+  // Resolve quando a gravação que inclui este item terminar.
+  for (;;) {
+    await writeBuffered(item.matchId)
+    if (!buffered.has(item.id)) return
+    // O lote em andamento começou antes deste item: espera o próximo.
+  }
 }
 
 // ─── Base do servidor (detecção de conflito) ─────────────────────────────────
@@ -909,6 +1030,8 @@ export async function getQueuedGames(matchId: string): Promise<GameRow[] | null>
 // ─── clearQueue ───────────────────────────────────────────────────────────────
 
 export async function clearQueue(matchId: string): Promise<void> {
+  await writers.get(matchId)
+  await recoverJournal()
   await set(queueKey(matchId), [])
   await del(baseKey(matchId))
   clearConflictPause(matchId)
@@ -926,6 +1049,7 @@ export type PendingMatch = {
 }
 
 export async function getPendingMatches(): Promise<PendingMatch[]> {
+  await recoverJournal()
   const allKeys = (await keys()) as IDBValidKey[]
   const out: PendingMatch[] = []
   for (const k of allKeys) {

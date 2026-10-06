@@ -29,7 +29,26 @@ const pageExpiration = () =>
 
 const isSupabase = (url: URL) => url.hostname.endsWith(".supabase.co");
 
+// Campeonato, desafio e jogo: o aparelho tem os dados (cache da estrutura +
+// fila de placares, com a chave andando offline). Sem rede, o shell offline
+// desenha essas telas com o estado local — mais novo que uma cópia antiga da
+// página. Por isso aqui é "só rede, com prazo": falhou → shell (/~offline).
+const LOCAL_FIRST_ROUTE = /^\/(campeonatos|desafios)\/(?!novo\/?$)[^/]+(\/jogos\/[^/]+)?\/?$/;
+const LOCAL_FIRST_TIMEOUT_S = 4;
+const isLocalFirst = (url: URL) => LOCAL_FIRST_ROUTE.test(url.pathname);
+
 const appCaching: RuntimeCaching[] = [
+  {
+    // Documento e payloads RSC (inclusive prefetch) das telas locais. O RSC
+    // falhando, o Next recai para navegação de documento → shell.
+    matcher: ({ request, url, sameOrigin }) =>
+      sameOrigin &&
+      isLocalFirst(url) &&
+      (request.mode === "navigate" ||
+        request.headers.get("RSC") === "1" ||
+        request.headers.get("Accept")?.includes("text/html") === true),
+    handler: new NetworkOnly({ networkTimeoutSeconds: LOCAL_FIRST_TIMEOUT_S }),
+  },
   {
     matcher: ({ url }) => isSupabase(url) && url.pathname.startsWith("/storage/v1/object/public/"),
     handler: new StaleWhileRevalidate({
@@ -79,7 +98,8 @@ const appCaching: RuntimeCaching[] = [
 ];
 
 const serwist = new Serwist({
-  // Precache de TODO o build (chunks JS, CSS, páginas estáticas) + /~offline.
+  // Precache de TODO o build (chunks JS, CSS, páginas estáticas) + /~offline
+  // (o shell offline: a moldura do app com as telas de dados locais).
   // É isto que faltava no SW artesanal: as páginas cacheadas agora têm seus
   // chunks disponíveis offline e hidratam corretamente.
   precacheEntries: self.__SW_MANIFEST,

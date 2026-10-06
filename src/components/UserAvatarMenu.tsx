@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
+import { clearShellProfile } from '@/lib/offline/shell-profile'
 import { LogOut, User, Settings, ShieldCheck, Trophy, LayoutDashboard } from 'lucide-react'
 
 interface Props {
@@ -37,6 +38,7 @@ export function UserAvatarMenu({ name, avatarUrl, isAdmin, canManage, placement 
   async function handleSignOut() {
     const supabase = createClient()
     await supabase.auth.signOut()
+    clearShellProfile()
     router.push('/login')
     router.refresh()
   }

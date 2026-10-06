@@ -17,7 +17,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useAppRouter } from '@/lib/offline/use-app-router'
+import { shellNavigate } from '@/lib/offline/shell-nav'
 import { ChevronLeft, Wifi, WifiOff, AlertTriangle, User, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, CalendarDays, Flag, Square, UserX } from 'lucide-react'
 import { useScoreEngine, type GameScore, type ConflictSnapshot, type ScoreEngineConfig } from '@/lib/score-engine/useScoreEngine'
 import { CourtTimer } from '@/lib/score-engine/CourtTimer'
@@ -291,6 +292,7 @@ export function TapZone({
         type="button"
         disabled={disabled}
         onClick={onIncrement}
+        aria-label={`Ponto para ${name ?? (isLeft ? 'o lado A' : 'o lado B')}`}
         className={[
           'w-full h-32 rounded-2xl grid place-items-center transition-all duration-150',
           'active:scale-[0.96] active:brightness-110',
@@ -315,6 +317,7 @@ export function TapZone({
           type="button"
           disabled={disabled || score <= 0}
           onClick={onDecrement}
+          aria-label={`Tirar ponto de ${name ?? (isLeft ? 'o lado A' : 'o lado B')}`}
           className="h-8 w-8 rounded-full bg-white/[0.06] grid place-items-center text-white/40 hover:text-white/70 transition active:scale-90 disabled:opacity-25"
         >
           <Minus className="h-3.5 w-3.5" />
@@ -323,6 +326,7 @@ export function TapZone({
           type="button"
           disabled={disabled}
           onClick={onIncrement}
+          aria-label={`Somar ponto para ${name ?? (isLeft ? 'o lado A' : 'o lado B')}`}
           className="h-8 w-8 rounded-full bg-secondary/15 grid place-items-center text-secondary transition active:scale-90 disabled:opacity-25"
         >
           <Plus className="h-3.5 w-3.5" />
@@ -410,7 +414,7 @@ export function ScoreScreen({
   const displayIsDoubleWo = optimisticWo ? optimisticWo === 'double_wo' : isDoubleWo
   const displayIsWo = optimisticWo ? optimisticWo !== 'none' : isWo
 
-  const router = useRouter()
+  const router = useAppRouter()
 
   const isTempo   = counting === 'tempo'
   // 'set' (singular) é o valor persistido no banco; aceita também 'sets' para compatibilidade
@@ -472,10 +476,15 @@ export function ScoreScreen({
   const wasFinishedOnMountRef = useRef(initialStatus === 'finalizado')
   const goBack = useCallback(
     (replace: boolean) => {
+      // Shell offline: troca só a URL, na hora (sem servidor nem recarga).
+      if (shellNavigate(backHref, replace)) return
+      const from = window.location.pathname
       if (replace) router.replace(backHref)
       else router.push(backHref)
+      // Só força se a navegação não saiu desta tela — se o usuário já foi para
+      // outro lugar (ex.: abriu o próximo jogo), não o puxa de volta.
       setTimeout(() => {
-        if (window.location.pathname !== backHref) window.location.assign(backHref)
+        if (window.location.pathname === from) window.location.assign(backHref)
       }, 1500)
     },
     [router, backHref],

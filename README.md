@@ -49,6 +49,8 @@ Organizador e participantes de uma partida podem:
 
 O organizador também pode reabrir partidas finalizadas e resolver conflitos de placar. Tudo é protegido por Row-Level Security (RLS). Criar campeonatos e desafios, jogar e lançar placares funcionam 100% offline depois do primeiro acesso online.
 
+Sem sinal, o app continua o mesmo: o service worker serve um shell (`/~offline`) que monta a mesma moldura (barra superior e navegação) com o perfil guardado no aparelho e desenha campeonatos, desafios e jogos a partir dos dados locais — a chave avança e a classificação é recalculada no aparelho. Cada ponto entra primeiro num diário síncrono, então fechar o app logo após marcar não perde nada.
+
 ### Gestão e Painel Admin 🛠
 - **Gestão** (professor/admin): jogadores (troca de categoria), categorias, locais e times.
 - **Painel admin** (`/admin`): usuários (conceder/remover professor, excluir conta), solicitações de professor, anúncios, banners de patrocinadores e feedbacks.
@@ -112,6 +114,13 @@ npm run dev
 
 # (Opcional) Build de produção local
 npm run build
+
+# Testes unitários (fila, chaves, classificação, importação)
+npm test
+
+# Testes ponta a ponta do modo offline (build de produção + Chromium com a
+# rede desligada; não acessam o Supabase). Na 1ª vez: npx playwright install chromium
+npm run test:e2e
 ```
 
 ### Variáveis de Ambiente

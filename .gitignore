@@ -45,3 +45,9 @@ testsprite_tests/tmp/config.json
 # TestSprite (gerado localmente)
 testsprite_tests/
 PRODUCT_SPEC.md
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

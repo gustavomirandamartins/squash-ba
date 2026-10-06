@@ -8,7 +8,7 @@
 //
 // O motor de placar (useScoreEngine) cuida do placar em si (fila + sync).
 
-import { get, set } from 'idb-keyval'
+import { get, keys, set } from 'idb-keyval'
 import { createClient } from '@/utils/supabase/client'
 import type { ChampCfg } from '@/lib/standings/compute'
 
@@ -71,6 +71,35 @@ export async function saveCachedChamp(c: CachedChamp): Promise<void> {
 
 export async function getCachedChamp(id: string): Promise<CachedChamp | null> {
   return ((await get(key(id))) as CachedChamp | undefined) ?? null
+}
+
+export type CachedChampSummary = {
+  id: string
+  name: string
+  format: string
+  matches: number
+  finished: number
+  savedAt: number | null
+}
+
+/** Campeonatos/desafios guardados no aparelho (shell offline), mais recentes primeiro. */
+export async function listCachedChamps(): Promise<CachedChampSummary[]> {
+  const ids = ((await keys()) as IDBValidKey[])
+    .filter((k): k is string => typeof k === 'string' && k.startsWith('champ-cache:'))
+  const out: CachedChampSummary[] = []
+  for (const k of ids) {
+    const c = (await get(k)) as CachedChamp | undefined
+    if (!c) continue
+    out.push({
+      id: c.id,
+      name: c.name,
+      format: c.format,
+      matches: c.matches.length,
+      finished: c.matches.filter((m) => m.status === 'finalizado').length,
+      savedAt: c.savedAt ?? null,
+    })
+  }
+  return out.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0))
 }
 
 export async function getCachedMatch(

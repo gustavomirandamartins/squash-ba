@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useAppRouter } from '@/lib/offline/use-app-router'
 import Image from 'next/image'
 import Link from 'next/link'
 import { loadPlayerPool, loadTeamsWithRosters } from '@/lib/offline/players-cache'
@@ -1034,7 +1034,7 @@ interface Props {
 }
 
 export function ChallengeWizard({ currentUserId, initialName = '', venues = [] }: Props) {
-  const router = useRouter()
+  const router = useAppRouter()
   const [step, setStep] = useState(1)
   const [state, setState] = useState<WizardState>(() =>
     initialName ? { ...DEFAULT, name: initialName } : DEFAULT,

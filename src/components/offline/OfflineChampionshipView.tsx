@@ -1,7 +1,8 @@
 'use client'
 
 // Renderização OFFLINE de um campeonato ou desafio REAL (criado online) a partir
-// do cache (refreshChampCache). Usado pelo shell /~offline.
+// do cache (refreshChampCache). Usado pelo shell offline (OfflineAppShell),
+// dentro da moldura do app.
 //
 //  • OfflineChampMatches: jogos por grupo / rodada / fase da chave, com a
 //    classificação recalculada no aparelho (liga, grupos, desafio).
@@ -28,18 +29,15 @@ export type OfflineBasePath = '/campeonatos' | '/desafios'
 function NotCached({ basePath }: { basePath: OfflineBasePath }) {
   const what = basePath === '/desafios' ? 'Este desafio' : 'Este campeonato'
   return (
-    <div
-      className="min-h-dvh grid place-items-center px-6 text-center"
-      style={{ background: 'radial-gradient(ellipse 80% 60% at 50% 0%, #253652 0%, #16233a 100%)' }}
-    >
-      <div className="max-w-xs space-y-4">
-        <div className="mx-auto h-16 w-16 rounded-2xl bg-secondary/12 grid place-items-center ring-1 ring-secondary/25">
-          <WifiOff className="h-7 w-7 text-secondary/70" />
+    <div className="px-5 py-10">
+      <div className="glass glass-card mx-auto max-w-sm space-y-4 px-5 py-8 text-center">
+        <div className="mx-auto h-14 w-14 rounded-2xl bg-secondary/12 grid place-items-center ring-1 ring-secondary/25">
+          <WifiOff className="h-6 w-6 text-secondary/70" />
         </div>
-        <h1 className="text-lg font-bold text-white">Você está offline</h1>
+        <h1 className="text-base font-bold text-white">Ainda não está no aparelho</h1>
         <p className="text-sm text-white/55 leading-relaxed">
-          {what} ainda não foi carregado offline. Abra-o uma vez com internet
-          para que os jogos fiquem disponíveis sem conexão.
+          {what} ainda não foi guardado para uso offline. Abra-o uma vez com
+          internet e os jogos ficam disponíveis sem conexão.
         </p>
         <OfflineBackButton fallbackHref={basePath} className="w-full" />
       </div>

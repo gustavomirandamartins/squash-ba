@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useTransition, useCallback, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useAppRouter } from '@/lib/offline/use-app-router'
 import Image from 'next/image'
 import Link from 'next/link'
 import { submitCreation } from '@/lib/offline/submit'
@@ -1976,7 +1976,7 @@ export function ChampionshipWizard({
   venues?: VenueOption[]
   canCreateOfficial?: boolean
 } = {}) {
-  const router = useRouter()
+  const router = useAppRouter()
   const [step, setStep] = useState(1)
   const [state, setState] = useState<WizardState>(DEFAULT_STATE)
   const [isPending, startTransition] = useTransition()
