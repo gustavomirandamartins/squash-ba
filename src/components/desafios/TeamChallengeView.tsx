@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Users, User, Trophy, Flag } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { refreshChampCache } from '@/lib/offline/champ-cache'
 import { ManageBar } from '@/components/ManageBar'
 import { getQueuedMatchState } from '@/lib/score-engine/SyncEngine'
 import { computeStandings, resolveMatch, overlayQueuedState, type StageCfg, type ChampCfg } from '@/lib/standings/compute'
@@ -218,6 +219,11 @@ export function TeamChallengeView({
       window.removeEventListener('offline', onOffline)
     }
   }, [matches, general, teamStandings, recompute])
+
+  // Estrutura do desafio no IndexedDB → jogos e placar abrem offline.
+  useEffect(() => {
+    if (challenge.status !== 'rascunho') void refreshChampCache(challenge.id)
+  }, [challenge.id, challenge.status, matches])
 
   const mainMatches = effMatches.filter((m) => m.bracket_slot !== -1)
   const finalMatch = effMatches.find((m) => m.bracket_slot === -1) ?? null

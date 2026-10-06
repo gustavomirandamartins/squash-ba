@@ -10,6 +10,7 @@ import { resolveMatch, overlayQueuedState, type StageCfg, type ChampCfg, type Pa
 import { StandingsTable, type Standing } from '@/components/campeonatos/StandingsTable'
 import { Podium, type PodiumPlace } from '@/components/Podium'
 import { createClient } from '@/utils/supabase/client'
+import { refreshChampCache } from '@/lib/offline/champ-cache'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -537,6 +538,11 @@ export function ChallengeDetailClient({
       window.removeEventListener('offline', onOffline)
     }
   }, [matches, recompute])
+
+  // Estrutura do desafio no IndexedDB → jogos e placar abrem offline.
+  useEffect(() => {
+    if (challenge.status !== 'rascunho') void refreshChampCache(challenge.id)
+  }, [challenge.id, challenge.status, matches])
 
   return (
     <div className="px-5 py-4 space-y-4">

@@ -1,4 +1,4 @@
-// Importação de campeonato criado OFFLINE (Fase 2).
+// Importação de campeonato ou desafio criado OFFLINE (Fases 2 e 3).
 //
 // Em vez de criar o campeonato no servidor (que gera os próprios jogos) e depois
 // tentar casar os placares por heurística, envia o campeonato provisório inteiro
@@ -14,10 +14,10 @@ import type { CreationOp } from './types'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** IDs locais são `lp-<uuid>`, `lm-<uuid>`, `lg-<uuid>`, `local-<uuid>` → o UUID. */
+/** IDs locais são `lp-`, `lm-`, `lg-`, `lt-`, `local-<uuid>` → o UUID. */
 export function toUuid(localId: string | null | undefined): string | null {
   if (!localId) return null
-  const raw = localId.replace(/^(?:lp|lm|lg|local)-/, '')
+  const raw = localId.replace(/^(?:lp|lm|lg|lt|local)-/, '')
   return UUID.test(raw) ? raw.toLowerCase() : null
 }
 
@@ -42,21 +42,31 @@ type StageRow = {
 export type ImportPayload = {
   id: string
   name: string
-  format: 'liga' | 'eliminatoria' | 'grupos_elim'
-  unit: 'player' | 'pair'
+  format: 'liga' | 'eliminatoria' | 'grupos_elim' | 'desafio'
+  unit: 'player' | 'pair' | 'team'
   start_date: string | null
   end_date: string | null
   description: string | null
   venue_id: string | null
   allow_draw: boolean
   has_third_place: boolean
+  has_final: boolean
   points_win: number
   points_draw: number
   points_loss: number
   tiebreakers: string[]
   stages: StageRow[]
   groups: { id: string; stage_id: string; name: string; ordering: number }[]
-  participants: { id: string; kind: 'player' | 'pair'; seed: number | null; group_id: string | null; user_ids: string[] }[]
+  /** desafio por times: os dois lados */
+  teams: { id: string; name: string; team_id: string | null; ordering: number }[]
+  participants: {
+    id: string
+    kind: 'player' | 'pair'
+    seed: number | null
+    group_id: string | null
+    team_id: string | null
+    user_ids: string[]
+  }[]
   matches: {
     id: string
     stage_id: string
@@ -75,8 +85,8 @@ export type ImportPayload = {
 
 /**
  * Monta o payload. Retorna null quando o campeonato não pode ser importado
- * (oficial, desafio, ou ID local fora do formato UUID) — aí vale o caminho
- * antigo (criar no servidor + casar placares).
+ * (oficial, desafio 1v1 — que depende do aceite do convite —, ou ID local fora
+ * do formato UUID) — aí vale o caminho antigo (criar no servidor + casar placares).
  */
 export function buildImportPayload(
   tempId: string,
@@ -85,50 +95,93 @@ export function buildImportPayload(
 ): ImportPayload | null {
   const id = toUuid(tempId)
   if (!id) return null
-  if (op.type !== 'champ_liga' && op.type !== 'champ_elim' && op.type !== 'champ_grupos') return null
-  if (op.cfg.isOfficial) return null
 
   let stages: StageRow[]
-  let common: Pick<ImportPayload, 'format' | 'allow_draw' | 'has_third_place' | 'points_draw'>
   // fase de cada jogo
   let stageFor: (m: LocalMatch) => StageRow
+  let head: Omit<ImportPayload, 'id' | 'unit' | 'stages' | 'groups' | 'teams' | 'participants' | 'matches'>
 
-  if (op.type === 'champ_liga') {
+  if (op.type === 'champ_liga' || op.type === 'champ_elim' || op.type === 'champ_grupos') {
+    if (op.cfg.isOfficial) return null
+    const c0 = op.cfg
+    const base = {
+      name: c0.name.trim(),
+      start_date: c0.startDate || null,
+      end_date: c0.endDate || null,
+      description: c0.description || null,
+      venue_id: c0.venueId || null,
+      points_win: c0.pointsWin,
+      points_loss: c0.pointsLoss,
+      tiebreakers: c0.tiebreakers,
+      has_final: false,
+    }
+
+    if (op.type === 'champ_liga') {
+      const c = op.cfg
+      const st: StageRow = {
+        id: newUuid(), name: 'Liga', ordering: 1, kind: 'liga', counting: c.counting, rounds: c.rounds,
+        sets_to_play: c.setsToPlay, points_per_set: c.pointsPerSet, win_by_two: c.winByTwo,
+        set_draw_enabled: c.setDrawEnabled, time_minutes: c.timeMinutes,
+      }
+      stages = [st]
+      stageFor = () => st
+      head = { ...base, format: 'liga', allow_draw: c.allowDraw, has_third_place: false, points_draw: c.allowDraw ? c.pointsDraw : 0 }
+    } else if (op.type === 'champ_elim') {
+      const c = op.cfg
+      // Eliminatória nunca tem empate (igual à criação online).
+      const st: StageRow = {
+        id: newUuid(), name: 'Eliminatória', ordering: 1, kind: 'eliminatoria', counting: c.counting, rounds: 1,
+        sets_to_play: c.setsToPlay, points_per_set: c.pointsPerSet, win_by_two: c.winByTwo,
+        set_draw_enabled: false, time_minutes: c.timeMinutes,
+      }
+      stages = [st]
+      stageFor = () => st
+      head = { ...base, format: 'eliminatoria', allow_draw: false, has_third_place: c.hasThirdPlace, points_draw: 0 }
+    } else {
+      const c = op.cfg
+      const groupsStage: StageRow = {
+        id: newUuid(), name: 'Grupos', ordering: 1, kind: 'grupos', counting: c.groupsCounting, rounds: c.groupsRounds,
+        sets_to_play: c.groupsSetsToPlay, points_per_set: c.groupsPointsPerSet, win_by_two: c.groupsWinByTwo,
+        set_draw_enabled: c.groupsSetDrawEnabled, time_minutes: c.groupsTimeMinutes,
+      }
+      const elimStage: StageRow = {
+        id: newUuid(), name: 'Eliminatórias', ordering: 2, kind: 'eliminatoria', counting: c.elimCounting, rounds: 1,
+        sets_to_play: c.elimSetsToPlay, points_per_set: c.elimPointsPerSet, win_by_two: c.elimWinByTwo,
+        set_draw_enabled: false, time_minutes: c.elimTimeMinutes,
+      }
+      stages = [groupsStage, elimStage]
+      stageFor = (m) => (m.phase === 'eliminatoria' ? elimStage : groupsStage)
+      head = { ...base, format: 'grupos_elim', allow_draw: c.allowDraw, has_third_place: c.hasThirdPlace, points_draw: c.allowDraw ? c.pointsDraw : 0 }
+    }
+  } else if (op.type === 'desafio_duplas' || op.type === 'desafio_times') {
+    if (local.format !== 'desafio') return null
     const c = op.cfg
+    // Igual a createDesafioDuplas/createDesafioTimes: fase única tipo liga.
+    const allowDraw = c.counting === 'tempo' || c.setDrawEnabled
     const st: StageRow = {
-      id: newUuid(), name: 'Liga', ordering: 1, kind: 'liga', counting: c.counting, rounds: c.rounds,
+      id: newUuid(), name: 'Fase única', ordering: 1, kind: 'liga', counting: c.counting, rounds: c.rounds,
       sets_to_play: c.setsToPlay, points_per_set: c.pointsPerSet, win_by_two: c.winByTwo,
       set_draw_enabled: c.setDrawEnabled, time_minutes: c.timeMinutes,
     }
     stages = [st]
     stageFor = () => st
-    common = { format: 'liga', allow_draw: c.allowDraw, has_third_place: false, points_draw: c.allowDraw ? c.pointsDraw : 0 }
-  } else if (op.type === 'champ_elim') {
-    const c = op.cfg
-    // Eliminatória nunca tem empate (igual à criação online).
-    const st: StageRow = {
-      id: newUuid(), name: 'Eliminatória', ordering: 1, kind: 'eliminatoria', counting: c.counting, rounds: 1,
-      sets_to_play: c.setsToPlay, points_per_set: c.pointsPerSet, win_by_two: c.winByTwo,
-      set_draw_enabled: false, time_minutes: c.timeMinutes,
+    head = {
+      name: c.name.trim(),
+      format: 'desafio',
+      start_date: null,
+      end_date: null,
+      description: null,
+      venue_id: c.venueId || null,
+      allow_draw: allowDraw,
+      has_third_place: false,
+      has_final: op.type === 'desafio_times' ? op.hasFinal : false,
+      points_win: c.pointsWin,
+      points_draw: allowDraw ? c.pointsDraw : 0,
+      points_loss: c.pointsLoss,
+      tiebreakers: c.tiebreakers,
     }
-    stages = [st]
-    stageFor = () => st
-    common = { format: 'eliminatoria', allow_draw: false, has_third_place: c.hasThirdPlace, points_draw: 0 }
   } else {
-    const c = op.cfg
-    const groupsStage: StageRow = {
-      id: newUuid(), name: 'Grupos', ordering: 1, kind: 'grupos', counting: c.groupsCounting, rounds: c.groupsRounds,
-      sets_to_play: c.groupsSetsToPlay, points_per_set: c.groupsPointsPerSet, win_by_two: c.groupsWinByTwo,
-      set_draw_enabled: c.groupsSetDrawEnabled, time_minutes: c.groupsTimeMinutes,
-    }
-    const elimStage: StageRow = {
-      id: newUuid(), name: 'Eliminatórias', ordering: 2, kind: 'eliminatoria', counting: c.elimCounting, rounds: 1,
-      sets_to_play: c.elimSetsToPlay, points_per_set: c.elimPointsPerSet, win_by_two: c.elimWinByTwo,
-      set_draw_enabled: false, time_minutes: c.elimTimeMinutes,
-    }
-    stages = [groupsStage, elimStage]
-    stageFor = (m) => (m.phase === 'eliminatoria' ? elimStage : groupsStage)
-    common = { format: 'grupos_elim', allow_draw: c.allowDraw, has_third_place: c.hasThirdPlace, points_draw: c.allowDraw ? c.pointsDraw : 0 }
+    return null
   }
 
   // IDs locais → UUIDs (todos têm de converter, senão não dá para importar).
@@ -137,6 +190,7 @@ export function buildImportPayload(
     ...local.participants.map((p) => p.id),
     ...local.matches.map((m) => m.id),
     ...(local.groups ?? []).map((g) => g.id),
+    ...(local.teams ?? []).map((t) => t.id),
   ]
   for (const lid of all) {
     const u = toUuid(lid)
@@ -153,26 +207,32 @@ export function buildImportPayload(
     ordering: i + 1,
   }))
 
-  const c = op.cfg
+  // Desafio por times: ordering 0/1 (igual a createDesafioTimes).
+  const teams = (local.teams ?? []).map((t, i) => ({
+    id: map(t.id)!,
+    name: t.name,
+    team_id: t.teamId || null,
+    ordering: i,
+  }))
+  const teamOf = new Map<string, string>()
+  for (const t of local.teams ?? []) for (const pid of t.participantIds) teamOf.set(pid, map(t.id)!)
+
+  // Times: cada participante é um jogador.
+  const kind: 'player' | 'pair' = local.unit === 'pair' ? 'pair' : 'player'
+
   return {
     id,
-    name: c.name.trim(),
     unit: local.unit,
-    start_date: c.startDate || null,
-    end_date: c.endDate || null,
-    description: c.description || null,
-    venue_id: c.venueId || null,
-    points_win: c.pointsWin,
-    points_loss: c.pointsLoss,
-    tiebreakers: c.tiebreakers,
-    ...common,
+    ...head,
     stages,
     groups,
+    teams,
     participants: local.participants.map((p) => ({
       id: map(p.id)!,
-      kind: local.unit,
+      kind,
       seed: p.seed,
       group_id: map(p.groupId),
+      team_id: teamOf.get(p.id) ?? null,
       user_ids: p.userIds,
     })),
     matches: local.matches.map((m) => {

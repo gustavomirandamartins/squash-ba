@@ -3,11 +3,16 @@
 /**
  * OfflinePreloader — pré-carrega para uso offline, sem disputar a rede com o
  * usuário:
- *   • pool de jogadores + categorias (IndexedDB) → criar campeonato/desafio
- *   • páginas principais + campeonatos/desafios EM ABERTO do usuário → o
- *     documento HTML fica no cache do service worker. Offline, quando a
- *     navegação client-side falha, o Next cai para navegação de documento e o
- *     SW serve essa cópia.
+ *   • pool de jogadores + categorias + times/elencos (IndexedDB) → criar
+ *     campeonato/desafio offline
+ *   • páginas principais + campeonatos/desafios EM ABERTO do usuário (em que
+ *     joga ou que organiza) → o documento HTML fica no cache do service worker.
+ *     Offline, quando a navegação client-side falha, o Next cai para navegação
+ *     de documento e o SW serve essa cópia.
+ *   • a ESTRUTURA desses campeonatos (jogos, chave, grupos, lados) no IndexedDB
+ *     (refreshChampCache) → lista de jogos, placar e avanço da chave offline.
+ *     Esta parte roda a cada abertura do app com internet (é leve: 1 consulta
+ *     por campeonato), não só a cada 6 h.
  *
  * Regras para não pesar:
  *   • no máximo a cada 6 h (localStorage — no web app do iOS o sessionStorage
@@ -20,8 +25,9 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Loader2, X } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
-import { loadPlayerPool, loadCategories } from '@/lib/offline/players-cache'
+import { loadPlayerPool, loadCategories, loadTeamsWithRosters } from '@/lib/offline/players-cache'
 import { startBackgroundSync } from '@/lib/score-engine/SyncEngine'
+import { refreshChampCache } from '@/lib/offline/champ-cache'
 
 const STAMP_KEY = 'sb-offline-preloaded-at'
 const TTL_MS = 6 * 60 * 60 * 1000
@@ -86,6 +92,47 @@ async function warmAll(paths: string[], limit: number, isCancelled: () => boolea
   await Promise.all(Array.from({ length: Math.min(limit, paths.length) }, worker))
 }
 
+type OpenChamp = { id: string; format: string }
+
+/** Campeonatos/desafios ainda em aberto em que o usuário joga ou que organiza. */
+async function listOpenChampionships(userId: string): Promise<OpenChamp[]> {
+  const supabase = createClient()
+  const [{ data: playing }, { data: organizing }] = await Promise.all([
+    supabase
+      .from('participant_members')
+      .select('participants!inner(championships!inner(id, format, status))')
+      .eq('user_id', userId)
+      .neq('participants.championships.status', 'encerrado')
+      .limit(40),
+    supabase
+      .from('championships')
+      .select('id, format')
+      .eq('created_by', userId)
+      .neq('status', 'encerrado')
+      .order('created_at', { ascending: false })
+      .limit(MAX_DYNAMIC),
+  ])
+
+  const out: OpenChamp[] = []
+  const seen = new Set<string>()
+  const add = (c: OpenChamp | undefined) => {
+    if (!c || seen.has(c.id) || out.length >= MAX_DYNAMIC) return
+    seen.add(c.id)
+    out.push(c)
+  }
+  // Organizados primeiro: quem marca o placar é o organizador.
+  for (const c of organizing ?? []) add(c as OpenChamp)
+  for (const row of playing ?? []) {
+    const participant = (row as unknown as {
+      participants?: { championships?: OpenChamp | OpenChamp[] }
+    }).participants
+    add(Array.isArray(participant?.championships) ? participant?.championships[0] : participant?.championships)
+  }
+  return out
+}
+
+const routeOf = (c: OpenChamp) => (c.format === 'desafio' ? `/desafios/${c.id}` : `/campeonatos/${c.id}`)
+
 export function OfflinePreloader() {
   const [phase, setPhase] = useState<Phase>('idle')
 
@@ -98,6 +145,40 @@ export function OfflinePreloader() {
   // IndexedDB (filas e campeonatos provisórios) quando falta espaço.
   useEffect(() => {
     void navigator.storage?.persist?.().catch(() => {})
+  }, [])
+
+  // Estrutura dos campeonatos em aberto → IndexedDB, a cada abertura com rede
+  // e ao reconectar (um por vez, depois que a tela assentou).
+  useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const run = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        void (async () => {
+          if (navigator.onLine === false) return
+          try {
+            await whenIdle()
+            const { data: { session } } = await createClient().auth.getSession()
+            const userId = session?.user.id
+            if (!userId || cancelled) return
+            for (const c of await listOpenChampionships(userId)) {
+              if (cancelled) return
+              await refreshChampCache(c.id)
+            }
+          } catch {
+            /* best-effort */
+          }
+        })()
+      }, START_DELAY_MS)
+    }
+    run()
+    window.addEventListener('online', run)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      window.removeEventListener('online', run)
+    }
   }, [])
 
   useEffect(() => {
@@ -121,33 +202,9 @@ export function OfflinePreloader() {
           const userId = session?.user.id
 
           // Campeonatos/desafios do usuário ainda em aberto.
-          const dynamicRoutes: string[] = []
-          if (userId) {
-            const { data } = await supabase
-              .from('participant_members')
-              .select('participants!inner(championships!inner(id, format, status))')
-              .eq('user_id', userId)
-              .neq('participants.championships.status', 'encerrado')
-              .limit(40)
+          const dynamicRoutes = userId ? (await listOpenChampionships(userId)).map(routeOf) : []
 
-            const seen = new Set<string>()
-            for (const row of data ?? []) {
-              const participant = (row as unknown as {
-                participants?: { championships?: { id: string; format: string } | { id: string; format: string }[] }
-              }).participants
-              const champ = Array.isArray(participant?.championships)
-                ? participant?.championships[0]
-                : participant?.championships
-              if (!champ || seen.has(champ.id)) continue
-              seen.add(champ.id)
-              dynamicRoutes.push(
-                champ.format === 'desafio' ? `/desafios/${champ.id}` : `/campeonatos/${champ.id}`,
-              )
-              if (dynamicRoutes.length >= MAX_DYNAMIC) break
-            }
-          }
-
-          await Promise.allSettled([loadPlayerPool(), loadCategories()])
+          await Promise.allSettled([loadPlayerPool(), loadCategories(), loadTeamsWithRosters()])
           await warmAll([...CORE_ROUTES, ...dynamicRoutes], CONCURRENCY, isCancelled)
           if (cancelled) return
           writeStamp()

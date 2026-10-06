@@ -6,8 +6,9 @@
 // real e reconcilia os placares lançados aqui.
 //
 // Formatos suportados offline: Liga (round-robin), Eliminatória (bracket ATP com
-// byes e avanço de vencedores) e Grupos+Elim (round-robin por grupo → bracket
-// gerado a partir dos classificados). Espelha as funções PL/pgSQL do servidor
+// byes e avanço de vencedores), Grupos+Elim (round-robin por grupo → bracket
+// gerado a partir dos classificados) e Desafio de duplas / por times (com a
+// final entre o melhor de cada time). Espelha as funções PL/pgSQL do servidor
 // (generate_liga_matches, generate_bracket_matches, propagate_bracket_advances,
 // generate_grupos_matches, generate_bracket_from_groups) para que a reconciliação
 // case 1:1. Repescagem (classificados ímpares) fica fora do snapshot offline.
@@ -23,7 +24,7 @@ import { computeStandings, type CGame, type StageCfg, type ChampCfg } from '@/li
 
 const keyFor = (tempId: string) => `local-champ:${tempId}`
 
-export type LocalFormat = 'liga' | 'eliminatoria' | 'grupos_elim'
+export type LocalFormat = 'liga' | 'eliminatoria' | 'grupos_elim' | 'desafio'
 
 export type LocalGame = CGame // { game_number, score_a, score_b }
 
@@ -58,10 +59,19 @@ export type LocalGroup = {
   participantIds: string[]
 }
 
+// Desafio por times: os dois lados (cada jogador é um participante do time).
+export type LocalTeam = {
+  id: string            // id local (lt-...)
+  name: string
+  teamId: string        // teams.id (time cadastrado)
+  participantIds: string[]
+}
+
 export type LocalChampionship = {
   tempId: string
   format: LocalFormat
-  unit: 'player' | 'pair'
+  /** 'team' = desafio por times (participantes são jogadores de cada time) */
+  unit: 'player' | 'pair' | 'team'
   name: string
   startDate: string | null
   stage: StageCfg          // Liga/elim: config de placar. grupos_elim: config dos GRUPOS.
@@ -73,6 +83,8 @@ export type LocalChampionship = {
   groups?: LocalGroup[]    // grupos_elim
   bracketGenerated?: boolean // grupos_elim: bracket já criado a partir dos grupos?
   qualifierIds?: string[]    // grupos_elim: classificados que geraram o bracket atual
+  teams?: LocalTeam[]        // desafio por times
+  hasFinal?: boolean         // desafio por times: final entre o melhor de cada time
   participants: LocalParticipant[]
   matches: LocalMatch[]
   createdAt: number
@@ -174,6 +186,176 @@ export function buildLocalLiga(tempId: string, input: BuildLigaInput): LocalCham
     matches: generateLigaMatches(participants, input.rounds),
     createdAt: Date.now(),
   }
+}
+
+// ── Desafios ─────────────────────────────────────────────────────────────────
+
+type SideInput = { userIds: string[]; name: string | null; avatarUrl: string | null }
+
+export type BuildDesafioDuplasInput = {
+  name: string
+  stage: StageCfg
+  rounds: number
+  champ: ChampCfg
+  /** [sua dupla, dupla adversária] */
+  pairs: [SideInput, SideInput]
+}
+
+// Desafio de duplas: 2 duplas, `rounds` jogos entre elas (generate_liga_matches).
+export function buildLocalDesafioDuplas(tempId: string, input: BuildDesafioDuplasInput): LocalChampionship {
+  const participants: LocalParticipant[] = input.pairs.map((p) => ({
+    id: uid('lp'),
+    userIds: p.userIds,
+    name: p.name,
+    avatarUrl: p.avatarUrl,
+    seed: null,
+    groupId: null,
+  }))
+  return {
+    tempId,
+    format: 'desafio',
+    unit: 'pair',
+    name: input.name,
+    startDate: null,
+    stage: input.stage,
+    rounds: input.rounds,
+    champ: input.champ,
+    participants,
+    matches: generateLigaMatches(participants, input.rounds),
+    createdAt: Date.now(),
+  }
+}
+
+export type BuildDesafioTimesInput = {
+  name: string
+  stage: StageCfg
+  rounds: number
+  champ: ChampCfg
+  hasFinal: boolean
+  teams: [
+    { teamId: string; name: string; players: SideInput[] },
+    { teamId: string; name: string; players: SideInput[] },
+  ]
+}
+
+// Desafio por times: cada jogador de A × cada jogador de B, por rodada
+// (espelha generate_team_challenge_matches, na mesma ordem).
+export function buildLocalDesafioTimes(tempId: string, input: BuildDesafioTimesInput): LocalChampionship {
+  const participants: LocalParticipant[] = []
+  const teams: LocalTeam[] = input.teams.map((t) => {
+    const ids = t.players.map((p) => {
+      const lp: LocalParticipant = {
+        id: uid('lp'),
+        userIds: p.userIds,
+        name: p.name,
+        avatarUrl: p.avatarUrl,
+        seed: null,
+        groupId: null,
+      }
+      participants.push(lp)
+      return lp.id
+    })
+    return { id: uid('lt'), name: t.name, teamId: t.teamId, participantIds: ids }
+  })
+
+  const matches: LocalMatch[] = []
+  const [a, b] = teams
+  for (let r = 1; r <= input.rounds; r++) {
+    for (const pa of a.participantIds) {
+      for (const pb of b.participantIds) {
+        matches.push({ id: uid('lm'), round: r, sideA: pa, sideB: pb, status: 'agendado', result: null, games: [] })
+      }
+    }
+  }
+
+  return {
+    tempId,
+    format: 'desafio',
+    unit: 'team',
+    name: input.name,
+    startDate: null,
+    stage: input.stage,
+    rounds: input.rounds,
+    champ: input.champ,
+    teams,
+    hasFinal: input.hasFinal,
+    participants,
+    matches,
+    createdAt: Date.now(),
+  }
+}
+
+/** A final do desafio por times (bracket_slot = -1, como no servidor). */
+export const isTeamFinal = (m: LocalMatch) => m.bracketSlot === -1
+
+/** Classificação individual dos jogos do desafio (sem a final). */
+export function desafioStandings(champ: LocalChampionship) {
+  return computeStandings(
+    champ.matches
+      .filter((m) => !isTeamFinal(m))
+      .map((m) => ({
+        side_a_participant_id: m.sideA,
+        side_b_participant_id: m.sideB,
+        games: m.games,
+        status: m.status,
+        result: m.result,
+      })),
+    champ.participants.map((p) => ({ id: p.id, name: p.name })),
+    champ.stage,
+    champ.champ,
+  )
+}
+
+/**
+ * Final do desafio por times: com todos os jogos encerrados, o melhor de cada
+ * time (sets ganhos, depois pontos a favor — generate_team_challenge_final) faz
+ * a final. Se um jogo for reaberto/corrigido antes da final começar, a final é
+ * refeita (ou retirada). Retorna true se mudou algo.
+ */
+export function syncTeamFinal(champ: LocalChampionship): boolean {
+  if (champ.format !== 'desafio' || !champ.hasFinal || champ.teams?.length !== 2) return false
+  const final = champ.matches.find(isTeamFinal)
+  if (final && (final.games.length > 0 || final.status === 'finalizado')) return false
+
+  const main = champ.matches.filter((m) => !isTeamFinal(m))
+  const allDone = main.length > 0 && main.every((m) => m.status === 'finalizado')
+  if (!allDone) {
+    if (!final) return false
+    champ.matches = main
+    return true
+  }
+
+  const standings = desafioStandings(champ)
+  const order = new Map(champ.participants.map((p, i) => [p.id, i]))
+  const top = (team: LocalTeam): string | null => {
+    const ids = new Set(team.participantIds)
+    return (
+      standings
+        .filter((s) => ids.has(s.participant_id))
+        .sort(
+          (x, y) =>
+            y.sets_ganhos - x.sets_ganhos ||
+            y.pontos_favor - x.pontos_favor ||
+            (order.get(x.participant_id) ?? 0) - (order.get(y.participant_id) ?? 0),
+        )[0]?.participant_id ?? null
+    )
+  }
+  const [ta, tb] = champ.teams
+  const sideA = top(ta)
+  const sideB = top(tb)
+  if (!sideA || !sideB) return false
+
+  if (final) {
+    if (final.sideA === sideA && final.sideB === sideB) return false
+    final.sideA = sideA
+    final.sideB = sideB
+    return true
+  }
+  champ.matches = [
+    ...champ.matches,
+    { id: uid('lm'), round: 999, sideA, sideB, status: 'agendado', result: null, games: [], bracketSlot: -1 },
+  ]
+  return true
 }
 
 // ── Geração de bracket (eliminatória) ────────────────────────────────────────

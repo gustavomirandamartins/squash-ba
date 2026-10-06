@@ -1,7 +1,12 @@
 {
-  "count": 170,
-  "lastCommitAt": "202610061024",
+  "count": 171,
+  "lastCommitAt": "202610061040",
   "commits": [
+    {
+      "hash": "9d3b912",
+      "subject": "feat(offline): Fase 2 — envio em lote, importação de campeonato offline e ações de partida pela fila",
+      "date": "2026-10-06"
+    },
     {
       "hash": "9e7508c",
       "subject": "fix(offline): Fase 1 — fila de placar confiável e provisório sem bloqueios",

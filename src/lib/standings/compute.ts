@@ -97,28 +97,54 @@ export type MatchState = {
 
 // Sobrepõe o que ainda está na fila local (placar + encerramento/DQ/W.O.) ao estado
 // vindo do servidor/cache — é o que o usuário já fez neste aparelho, mesmo sem rede.
-export function overlayQueuedState(base: MatchState, q: QueuedMatchState | null): MatchState {
+// Com `stage`, aplica também a regra do servidor (resolve_match): partida por
+// sets cujo placar na fila já decide aparece encerrada, sem esperar o sync.
+export function overlayQueuedState(
+  base: MatchState,
+  q: QueuedMatchState | null,
+  stage?: StageCfg,
+): MatchState {
   if (!q) return base
   const games = q.clearsGames ? q.games : mergeGames(base.games, q.games)
   const f = q.finalization
-  // Reaberta ou limpa na fila (sem encerramento depois): volta a ser jogável.
-  if (!f && q.statusOverride) {
+  if (f) {
     return {
+      games,
+      status: 'finalizado',
+      result: f.kind === 'double_wo' ? null : f.result,
+      isWo: f.kind === 'wo' || f.kind === 'double_wo',
+      isDoubleWo: f.kind === 'double_wo',
+    }
+  }
+
+  let st: MatchState
+  if (q.statusOverride) {
+    // Reaberta ou limpa na fila (sem encerramento depois): volta a ser jogável.
+    st = {
       games,
       status: q.statusOverride === 'agendado' && games.length > 0 ? 'em_andamento' : q.statusOverride,
       result: null,
       isWo: false,
       isDoubleWo: false,
     }
+  } else {
+    st = { ...base, games }
+    // Placar mudou na fila depois de um encerramento do servidor: o servidor
+    // recalcula (resolve_match) — aqui também.
+    if (base.status === 'finalizado' && !base.isWo && q.games.length > 0) {
+      st = { ...st, status: 'em_andamento', result: null }
+    }
   }
-  if (!f) return { ...base, games }
-  return {
-    games,
-    status: 'finalizado',
-    result: f.kind === 'double_wo' ? null : f.result,
-    isWo: f.kind === 'wo' || f.kind === 'double_wo',
-    isDoubleWo: f.kind === 'double_wo',
+
+  // Reaberta sem mexer no placar: continua aberta (o servidor só recalcula
+  // quando um game muda).
+  const mayResolve = !q.statusOverride || q.gamesChangedAfterOverride
+  if (stage && mayResolve && stage.counting !== 'tempo' && st.status !== 'finalizado' && games.length > 0) {
+    const r = resolveMatch(games, stage)
+    if (r.finalized) return { ...st, status: 'finalizado', result: r.result }
+    if (st.status === 'agendado') st = { ...st, status: 'em_andamento' }
   }
+  return st
 }
 
 // Mescla os games do snapshot (servidor) com os games da fila offline.
@@ -215,4 +241,32 @@ export function computeStandings(
   })
 
   return rows.map((r, i) => ({ position: i + 1, ...r }))
+}
+
+// Desafio por times: soma a classificação individual por time (espelha
+// v_team_standings + a ordenação da tela: vitórias, depois saldo de sets).
+export function aggregateTeamStandings(
+  rows: Standing[],
+  teams: { id: string; name: string }[],
+  teamOf: (participantId: string) => string | null | undefined,
+): Standing[] {
+  const out = teams.map((t) => {
+    const mine = rows.filter((r) => teamOf(r.participant_id) === t.id)
+    const sum = (k: keyof Standing) => mine.reduce((s, r) => s + (Number(r[k]) || 0), 0)
+    return {
+      position: 0,
+      participant_id: t.id,
+      display_name: t.name,
+      pontos: sum('pontos'),
+      v: sum('v'), e: sum('e'), d: sum('d'),
+      sets_ganhos: sum('sets_ganhos'),
+      sets_perdidos: sum('sets_perdidos'),
+      sets_empatados: sum('sets_empatados'),
+      pontos_favor: sum('pontos_favor'),
+      pontos_contra: sum('pontos_contra'),
+      saldo_pontos: sum('saldo_pontos'),
+    }
+  })
+  out.sort((a, b) => b.v - a.v || (b.sets_ganhos - b.sets_perdidos) - (a.sets_ganhos - a.sets_perdidos))
+  return out.map((r, i) => ({ ...r, position: i + 1 }))
 }

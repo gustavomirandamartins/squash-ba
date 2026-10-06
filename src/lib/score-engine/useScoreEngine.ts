@@ -13,10 +13,10 @@
  *  4. Quando offline: ações ficam na fila (IDB) e são sincronizadas ao voltar online
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import * as Sync from './SyncEngine'
-import { overlayQueuedState, mergeGames } from '@/lib/standings/compute'
+import { overlayQueuedState, resolveMatch, type StageCfg } from '@/lib/standings/compute'
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
 
@@ -119,6 +119,29 @@ export function useScoreEngine(
   // Supabase client — stable across renders
   const [supabase] = useState(() => createClient())
 
+  // Regras da fase: a partida por sets encerra sozinha quando o placar decide
+  // (igual ao resolve_match do servidor) — também offline.
+  const { counting, points_per_set, win_by_two, set_draw_enabled, sets_to_play } = config
+  const stage = useMemo<StageCfg | undefined>(
+    () =>
+      counting
+        ? {
+            counting: counting === 'sets' ? 'set' : counting,
+            points_per_set: points_per_set ?? 11,
+            win_by_two: win_by_two ?? true,
+            set_draw_enabled: set_draw_enabled ?? false,
+            sets_to_play: sets_to_play ?? 3,
+          }
+        : undefined,
+    [counting, points_per_set, win_by_two, set_draw_enabled, sets_to_play],
+  )
+
+  // Espelho do estado da partida para callbacks assíncronos.
+  const matchStateRef = useRef({ status, result, isWo, isDoubleWo })
+  useEffect(() => {
+    matchStateRef.current = { status, result, isWo, isDoubleWo }
+  }, [status, result, isWo, isDoubleWo])
+
   // ── Atualiza pendingCount periodicamente ───────────────────────────────────
   const refreshPending = useCallback(async () => {
     const count = await Sync.getPendingCount(matchId)
@@ -146,24 +169,14 @@ export function useScoreEngine(
   const applyQueueOverlay = useCallback(async () => {
     const q = await Sync.getQueuedMatchState(matchId)
     if (!q) return
-    const merged = q.clearsGames ? q.games : mergeGames(gamesRef.current, q.games)
-    commitGames(merged)
-    commitCurrentGame(merged.length > 0 ? merged[merged.length - 1].game_number : 1)
-    const f = q.finalization
-    if (!f && q.statusOverride) {
-      // Reaberta ou limpa neste aparelho (ainda na fila).
-      setStatus(q.statusOverride === 'agendado' && merged.length > 0 ? 'em_andamento' : q.statusOverride)
-      setResult(null)
-      setIsWo(false)
-      setIsDoubleWo(false)
-    }
-    if (f) {
-      setStatus('finalizado')
-      setResult(f.kind === 'double_wo' ? null : f.result)
-      setIsWo(f.kind === 'wo' || f.kind === 'double_wo')
-      setIsDoubleWo(f.kind === 'double_wo')
-    }
-  }, [matchId, commitGames, commitCurrentGame])
+    const st = overlayQueuedState({ games: gamesRef.current, ...matchStateRef.current }, q, stage)
+    commitGames(st.games)
+    commitCurrentGame(st.games.length > 0 ? st.games[st.games.length - 1].game_number : 1)
+    setStatus(st.status)
+    setResult(st.result)
+    setIsWo(st.isWo)
+    setIsDoubleWo(st.isDoubleWo)
+  }, [matchId, commitGames, commitCurrentGame, stage])
 
   // ── Fetch do servidor ──────────────────────────────────────────────────────
   const fetchFromServer = useCallback(async () => {
@@ -196,6 +209,7 @@ export function useScoreEngine(
         isDoubleWo: !!data.is_double_wo,
       },
       queued,
+      stage,
     )
     const inReview = data.status === 'revisao'
 
@@ -218,7 +232,7 @@ export function useScoreEngine(
       setConflictSnapshot(null)
       Sync.clearConflictPause(matchId)
     }
-  }, [supabase, matchId, commitGames, commitCurrentGame])
+  }, [supabase, matchId, commitGames, commitCurrentGame, stage])
 
   // ── Mount: fetch, track, auto-sync, realtime ───────────────────────────────
   const cleanupSyncRef = useRef<(() => void) | null>(null)
@@ -363,6 +377,17 @@ export function useScoreEngine(
     const gameNum = currentGameRef.current
     const updated = applyOptimistic(gamesRef.current, gameNum, update)
     commitGames(updated)
+    // Encerramento pelo placar na hora (offline também); online o servidor
+    // confirma pelo tempo real com a mesma regra.
+    if (stage && stage.counting !== 'tempo') {
+      const r = resolveMatch(updated, stage)
+      if (r.finalized) {
+        setStatus('finalizado')
+        setResult(r.result)
+      } else if (matchStateRef.current.status === 'agendado') {
+        setStatus('em_andamento')
+      }
+    }
     const g = currentGameScore(updated, gameNum)
     void enqueueAndFlush('upsert_game', {
       game_number: g.game_number,

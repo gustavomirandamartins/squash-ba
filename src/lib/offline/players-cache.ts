@@ -73,3 +73,40 @@ export async function loadPlayerPool(): Promise<CachedPlayer[]> {
     return ((await get(PLAYERS_KEY)) as CachedPlayer[] | undefined) ?? []
   }
 }
+
+// ── Times + elencos (desafio por times) ──────────────────────────────────────
+
+export type CachedTeamRoster = {
+  teams: { id: string; name: string }[]
+  roster: { id: string; full_name: string | null; avatar_url: string | null; team_id: string | null }[]
+}
+
+const TEAMS_KEY = 'teams-rosters-cache'
+
+export async function loadTeamsWithRosters(): Promise<CachedTeamRoster> {
+  const cached = async () =>
+    ((await get(TEAMS_KEY)) as CachedTeamRoster | undefined) ?? { teams: [], roster: [] }
+  if (isOfflineNow()) return cached()
+  try {
+    const supabase = createClient()
+    const [teamsRes, rosterRes] = await Promise.all([
+      supabase.from('teams').select('id, name').order('name'),
+      supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url, team_id')
+        .not('team_id', 'is', null)
+        .order('full_name'),
+    ])
+    if (teamsRes.error || rosterRes.error || !teamsRes.data || !rosterRes.data) {
+      throw teamsRes.error ?? rosterRes.error ?? new Error('sem dados')
+    }
+    const out: CachedTeamRoster = {
+      teams: teamsRes.data as CachedTeamRoster['teams'],
+      roster: rosterRes.data as CachedTeamRoster['roster'],
+    }
+    await set(TEAMS_KEY, out)
+    return out
+  } catch {
+    return cached()
+  }
+}

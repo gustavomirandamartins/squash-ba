@@ -828,6 +828,12 @@ export type QueuedMatchState = {
   finalization: { kind: FinalizeKind; result: string | null } | null
   /** partida reaberta ('em_andamento') ou limpa ('agendado') na fila, sem encerramento depois */
   statusOverride: 'em_andamento' | 'agendado' | null
+  /**
+   * Placar alterado depois do reabrir/limpar. O servidor só recalcula o
+   * resultado (resolve_match) quando um game muda: reabrir sem mexer no placar
+   * deixa a partida aberta.
+   */
+  gamesChangedAfterOverride?: boolean
   /** data definida na fila (undefined = não mexeu) */
   scheduledAt?: string | null
 }
@@ -838,13 +844,16 @@ export function queuedStateOf(q: QueueAction[]): QueuedMatchState | null {
   let clearsGames = false
   let finalization: QueuedMatchState['finalization'] = null
   let statusOverride: QueuedMatchState['statusOverride'] = null
+  let gamesChangedAfterOverride = false
   let scheduledAt: string | null | undefined
   for (const a of q) {
     if (a.type === 'upsert_game') {
       const g = a.payload as GameRow
       map.set(g.game_number, { game_number: g.game_number, score_a: g.score_a, score_b: g.score_b })
+      gamesChangedAfterOverride = true
     } else if (a.type === 'delete_game') {
       map.delete((a.payload as { game_number: number }).game_number)
+      gamesChangedAfterOverride = true
     } else if (a.type === 'finalize_match') {
       const p = a.payload as FinalizePayload
       const kind = kindOf(p)
@@ -865,11 +874,13 @@ export function queuedStateOf(q: QueueAction[]): QueuedMatchState | null {
     } else if (a.type === 'reopen_match') {
       finalization = null
       statusOverride = 'em_andamento'
+      gamesChangedAfterOverride = false
     } else if (a.type === 'clear_match') {
       map.clear()
       clearsGames = true
       finalization = null
       statusOverride = 'agendado'
+      gamesChangedAfterOverride = false
     } else if (a.type === 'set_schedule') {
       scheduledAt = (a.payload as { at: string | null }).at
     }
@@ -879,6 +890,7 @@ export function queuedStateOf(q: QueueAction[]): QueuedMatchState | null {
     clearsGames,
     finalization,
     statusOverride,
+    gamesChangedAfterOverride,
     scheduledAt,
   }
 }
@@ -905,7 +917,13 @@ export async function clearQueue(matchId: string): Promise<void> {
 
 // ─── Visão geral (tela de sincronização) ──────────────────────────────────────
 
-export type PendingMatch = { matchId: string; count: number; meta: SyncMeta | null }
+export type PendingMatch = {
+  matchId: string
+  count: number
+  meta: SyncMeta | null
+  /** quando a pendência mais antiga foi lançada */
+  since: number
+}
 
 export async function getPendingMatches(): Promise<PendingMatch[]> {
   const allKeys = (await keys()) as IDBValidKey[]
@@ -915,9 +933,16 @@ export async function getPendingMatches(): Promise<PendingMatch[]> {
     const matchId = k.slice('queue:'.length)
     const q = ((await get(k)) as QueueAction[] | undefined) ?? []
     if (q.length === 0) continue
-    out.push({ matchId, count: q.length, meta: await getSyncMeta(matchId) })
+    out.push({
+      matchId,
+      count: q.length,
+      meta: await getSyncMeta(matchId),
+      since: Math.min(...q.map((a) => a.timestamp)),
+    })
   }
-  return out
+  // Mais antigas primeiro: a partida de uma rodada é enviada antes da seguinte,
+  // então o servidor já avançou o vencedor na chave quando chega a próxima.
+  return out.sort((a, b) => a.since - b.since)
 }
 
 // ─── flushAllPending ──────────────────────────────────────────────────────────

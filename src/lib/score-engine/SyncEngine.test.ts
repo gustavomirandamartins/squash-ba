@@ -381,5 +381,26 @@ describe('estado da fila (telas offline)', () => {
     ])
     expect(st?.finalization).toBeNull()
     expect(st?.statusOverride).toBe('em_andamento')
+    expect(st?.gamesChangedAfterOverride).toBe(false)
+  })
+
+  it('placar mexido depois de reabrir fica marcado', () => {
+    const st = Sync.queuedStateOf([
+      { ...base, id: 'a', type: 'reopen_match', payload: { isOrganizer: true } },
+      { ...base, id: 'b', type: 'upsert_game', payload: { game_number: 2, score_a: 5, score_b: 3 } },
+    ])
+    expect(st?.gamesChangedAfterOverride).toBe(true)
+  })
+
+  it('pendências saem da mais antiga para a mais nova (rodada antes da seguinte)', async () => {
+    const act = (matchId: string, timestamp: number) => ({
+      id: `${matchId}-${timestamp}`, matchId, timestamp, deviceId: 'd',
+      type: 'upsert_game' as const, payload: { game_number: 1, score_a: 1, score_b: 0 },
+    })
+    await set('queue:final', [act('final', 300)])
+    await set('queue:semi2', [act('semi2', 250), act('semi2', 120)])
+    await set('queue:semi1', [act('semi1', 100)])
+    const order = (await Sync.getPendingMatches()).map((p) => p.matchId)
+    expect(order).toEqual(['semi1', 'semi2', 'final'])
   })
 })

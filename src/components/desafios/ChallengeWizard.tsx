@@ -4,8 +4,10 @@ import { useState, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
-import { createClient } from '@/utils/supabase/client'
-import { loadPlayerPool } from '@/lib/offline/players-cache'
+import { loadPlayerPool, loadTeamsWithRosters } from '@/lib/offline/players-cache'
+import {
+  buildLocalDesafioDuplas, buildLocalDesafioTimes, saveLocalChampionship, type LocalChampionship,
+} from '@/lib/offline/local-championship'
 import {
   ChevronLeft,
   ChevronRight,
@@ -51,6 +53,70 @@ interface WizardState extends ChallengeConfig {
 }
 
 type Patch = Partial<WizardState>
+
+// ─── Desafio provisório (criado offline) ─────────────────────────────────────
+
+const firstName = (n: string | null | undefined) => n?.split(' ')[0] ?? '?'
+
+async function buildOfflineDesafio(
+  tempId: string,
+  op: CreationOp,
+  state: WizardState,
+  me: string,
+): Promise<LocalChampionship | null> {
+  const allowDraw = state.counting === 'tempo' || state.setDrawEnabled
+  const common = {
+    name: state.name.trim(),
+    rounds: state.rounds,
+    stage: {
+      counting: state.counting,
+      points_per_set: state.pointsPerSet,
+      win_by_two: state.winByTwo,
+      set_draw_enabled: state.setDrawEnabled,
+      sets_to_play: state.setsToPlay,
+    },
+    champ: {
+      pointsWin: state.pointsWin,
+      pointsDraw: allowDraw ? state.pointsDraw : 0,
+      pointsLoss: state.pointsLoss,
+      tiebreakers: state.tiebreakers,
+    },
+  }
+
+  if (op.type === 'desafio_duplas') {
+    // Você + parceiro × dupla adversária.
+    if (!me || !state.partner || !state.opp1 || !state.opp2) return null
+    const myName = (await loadPlayerPool()).find((p) => p.id === me)?.full_name ?? 'Você'
+    return buildLocalDesafioDuplas(tempId, {
+      ...common,
+      pairs: [
+        { userIds: [me, state.partner.id], name: `${firstName(myName)} / ${firstName(state.partner.full_name)}`, avatarUrl: null },
+        { userIds: [state.opp1.id, state.opp2.id], name: `${firstName(state.opp1.full_name)} / ${firstName(state.opp2.full_name)}`, avatarUrl: null },
+      ],
+    })
+  }
+
+  if (op.type === 'desafio_times') {
+    const { roster } = await loadTeamsWithRosters()
+    const byId = new Map(roster.map((p) => [p.id, p]))
+    const players = (ids: string[]) =>
+      ids.map((id) => ({
+        userIds: [id],
+        name: byId.get(id)?.full_name ?? null,
+        avatarUrl: byId.get(id)?.avatar_url ?? null,
+      }))
+    return buildLocalDesafioTimes(tempId, {
+      ...common,
+      hasFinal: op.hasFinal,
+      teams: [
+        { teamId: op.teamA.teamId, name: op.teamA.name, players: players(op.teamA.playerIds) },
+        { teamId: op.teamB.teamId, name: op.teamB.name, players: players(op.teamB.playerIds) },
+      ],
+    })
+  }
+
+  return null
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -716,24 +782,17 @@ function Step2_Teams({ state, onChange, venues }: { state: WizardState; onChange
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const supabase = createClient()
-      const [teamsRes, rosterRes] = await Promise.all([
-        supabase.from('teams').select('id, name').order('name'),
-        supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, team_id')
-          .not('team_id', 'is', null)
-          .order('full_name'),
-      ])
+      // Online busca e cacheia; offline lê o último snapshot (IndexedDB).
+      const { teams: teamList, roster } = await loadTeamsWithRosters()
       if (cancelled) return
       const rosterMap = new Map<string, RosterProfile[]>()
-      for (const p of (rosterRes.data ?? []) as RosterProfile[]) {
+      for (const p of roster as RosterProfile[]) {
         if (!p.team_id) continue
         const arr = rosterMap.get(p.team_id) ?? []
         arr.push(p)
         rosterMap.set(p.team_id, arr)
       }
-      const teamRows = ((teamsRes.data ?? []) as { id: string; name: string }[]).map((t) => ({
+      const teamRows = teamList.map((t) => ({
         id: t.id,
         name: t.name,
         count: rosterMap.get(t.id)?.length ?? 0,
@@ -1056,8 +1115,20 @@ export function ChallengeWizard({ currentUserId, initialName = '', venues = [] }
           snapshot: { name: state.name, subtitle },
         })
         if ('error' in result) { setError(result.error); return }
-        // Offline → vai para a lista de jogos (card pendente); online → detalhe.
-        router.push(result.queued ? '/desafios' : `/desafios/${result.id}`)
+
+        // Offline: duplas e times já ficam jogáveis (desafio provisório, sobe
+        // inteiro ao reconectar). O 1v1 depende do aceite do convite → card pendente.
+        if (result.queued) {
+          const local = await buildOfflineDesafio(result.id, op, state, currentUserId).catch(() => null)
+          if (local) {
+            await saveLocalChampionship(local)
+            router.push(`/pendentes/${result.id}`)
+            return
+          }
+          router.push('/desafios')
+          return
+        }
+        router.push(`/desafios/${result.id}`)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao criar desafio.')
       }

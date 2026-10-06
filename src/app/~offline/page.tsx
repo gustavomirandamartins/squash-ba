@@ -4,7 +4,7 @@
 //
 // Esta página é PRECACHEADA pelo Serwist, então está SEMPRE disponível offline.
 // Quando uma navegação falha offline, o Serwist serve este conteúdo (mantendo a
-// URL pedida). Como /campeonatos/novo e /pendentes/[tempId] são páginas 100%
+// URL pedida). Como /campeonatos/novo, /desafios/novo e /pendentes/[tempId] são páginas 100%
 // client-side (sem dados do servidor), aqui detectamos a URL pedida e renderizamos
 // o componente certo — fazendo "criar e usar campeonato" funcionar offline mesmo
 // que o cache de rotas falhe.
@@ -19,6 +19,7 @@ import { ProvisionalChampionship } from '@/components/offline/ProvisionalChampio
 import { OfflineChampMatches, OfflineScore } from '@/components/offline/OfflineChampionshipView'
 import { OfflineBackButton } from '@/components/offline/OfflineBackButton'
 import { SyncCenter } from '@/components/offline/SyncCenter'
+import { OfflineChallengeWizard } from '@/components/offline/OfflineChallengeWizard'
 
 // Mini-header substituto do TopBar (não disponível fora do layout (app)).
 // Lida com safe-area-inset-top p/ o botão Voltar não ficar atrás do relógio.
@@ -112,6 +113,15 @@ export default function OfflinePage() {
     )
   }
 
+  // Criar desafio também (duplas e times ficam jogáveis na hora).
+  if (path === '/desafios/novo') {
+    return (
+      <OfflineShell>
+        <OfflineChallengeWizard />
+      </OfflineShell>
+    )
+  }
+
   // Pendências de sincronização (lê só o IndexedDB).
   if (path === '/sincronizacao') {
     return (
@@ -133,24 +143,28 @@ export default function OfflinePage() {
     }
   }
 
-  // Campeonato REAL (criado online): tela de placar e lista de jogos offline,
-  // a partir do cache gravado ao abrir o detalhe com internet.
-  const scoreMatch = path.match(/^\/campeonatos\/([^/]+)\/jogos\/([^/]+)$/)
+  // Campeonato/desafio REAL (criado online): tela de placar e lista de jogos
+  // offline, a partir do cache da estrutura (refreshChampCache).
+  const scoreMatch = path.match(/^\/(campeonatos|desafios)\/([^/]+)\/jogos\/([^/]+)$/)
   if (scoreMatch) {
     return (
       <OfflineShell>
         <OfflineScore
-          champId={decodeURIComponent(scoreMatch[1])}
-          matchId={decodeURIComponent(scoreMatch[2])}
+          basePath={`/${scoreMatch[1]}` as '/campeonatos' | '/desafios'}
+          champId={decodeURIComponent(scoreMatch[2])}
+          matchId={decodeURIComponent(scoreMatch[3])}
         />
       </OfflineShell>
     )
   }
-  const champMatch = path.match(/^\/campeonatos\/([^/]+)$/)
-  if (champMatch) {
+  const champMatch = path.match(/^\/(campeonatos|desafios)\/([^/]+)$/)
+  if (champMatch && champMatch[2] !== 'novo') {
     return (
       <OfflineShell>
-        <OfflineChampMatches champId={decodeURIComponent(champMatch[1])} />
+        <OfflineChampMatches
+          basePath={`/${champMatch[1]}` as '/campeonatos' | '/desafios'}
+          champId={decodeURIComponent(champMatch[2])}
+        />
       </OfflineShell>
     )
   }

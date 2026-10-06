@@ -1,10 +1,11 @@
 'use client'
 
 // Visualizador de campeonato "provisório" (criado offline, ainda não sincronizado).
-// Suporta Liga (round-robin), Eliminatória (bracket / triangular) e Grupos+Elim
-// (grupos → bracket). Recebe o tempId por prop — usado em /pendentes/[tempId].
+// Suporta Liga (round-robin), Eliminatória (bracket / triangular), Grupos+Elim
+// (grupos → bracket) e Desafio de duplas / por times (com final). Recebe o
+// tempId por prop — usado em /pendentes/[tempId].
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -15,10 +16,11 @@ import type { OutboxItem } from '@/lib/offline/types'
 import {
   getLocalChampionship, removeLocalChampionship, mutateLocalChampionship,
   propagateBracketAdvances, maybeGenerateBracketFromGroups,
+  syncTeamFinal, isTeamFinal, desafioStandings,
   type LocalChampionship, type LocalMatch,
 } from '@/lib/offline/local-championship'
 import { takeLocalSynced } from '@/lib/offline/reconcile-liga'
-import { computeStandings, resolveMatch, type StageCfg } from '@/lib/standings/compute'
+import { aggregateTeamStandings, computeStandings, resolveMatch, type StageCfg } from '@/lib/standings/compute'
 import { StandingsGrid, type Standing } from '@/components/campeonatos/StandingsTable'
 import { LocalScoreScreen } from '@/components/score/LocalScoreScreen'
 import { LocalBracketView } from '@/components/offline/LocalBracketView'
@@ -33,14 +35,17 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
   const [loaded, setLoaded] = useState(false)
   const [tab, setTab] = useState<'jogos' | 'classificacao' | 'grupos' | 'chave'>('jogos')
   const [openMatchId, setOpenMatchId] = useState<string | null>(null)
+  // Lembra se é desafio: ao sincronizar, item e snapshot somem antes do redirect.
+  const isDesafioRef = useRef(false)
 
   const reload = useCallback(async () => {
     const [all, c] = await Promise.all([getOutbox(), getLocalChampionship(tempId)])
     const found = all.find((i) => i.tempId === tempId) ?? null
+    if (found?.kind === 'desafio' || c?.format === 'desafio') isDesafioRef.current = true
     if (!found && !c) {
       const realId = await takeLocalSynced(tempId)
       if (realId) {
-        router.replace(`/campeonatos/${realId}`)
+        router.replace(`${isDesafioRef.current ? '/desafios' : '/campeonatos'}/${realId}`)
         return
       }
     }
@@ -56,7 +61,8 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
     return () => window.removeEventListener(OUTBOX_EVENT, onChange)
   }, [reload])
 
-  const backHref = item?.kind === 'desafio' ? '/desafios' : '/campeonatos'
+  const isDesafio = item?.kind === 'desafio' || champ?.format === 'desafio'
+  const backHref = isDesafio ? '/desafios' : '/campeonatos'
 
   async function cancel() {
     await removeFromOutbox(tempId)
@@ -78,6 +84,8 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
       if (c.format === 'grupos_elim') {
         if (maybeGenerateBracketFromGroups(c)) propagateBracketAdvances(c)
       }
+      // Desafio por times: com todos os jogos encerrados, gera (ou refaz) a final.
+      if (c.format === 'desafio') syncTeamFinal(c)
     })
     await reload()
   }, [tempId, reload])
@@ -86,7 +94,7 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
   if (loaded && !item && !champ) {
     return (
       <div className="px-5 py-8 space-y-4">
-        <Link href="/campeonatos" className="inline-flex items-center gap-1.5 text-sm text-white/50 hover:text-white/80">
+        <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm text-white/50 hover:text-white/80">
           <ChevronLeft className="h-4 w-4" />
           Voltar
         </Link>
@@ -136,8 +144,12 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
     const isElimBracket =
       champ.format === 'eliminatoria' && champ.matches.some((m) => (m.bracketSlot ?? 0) > 0)
     const isGrupos = champ.format === 'grupos_elim'
-    // Eliminatória triangular (N=3): sem bracket → exibe como Liga.
-    const isLigaLike = champ.format === 'liga' || (champ.format === 'eliminatoria' && !isElimBracket)
+    // Eliminatória triangular (N=3): sem bracket → exibe como Liga. Desafio também.
+    const isLigaLike =
+      champ.format === 'liga' || champ.format === 'desafio' || (champ.format === 'eliminatoria' && !isElimBracket)
+    const isTeams = champ.format === 'desafio' && champ.unit === 'team'
+    const teamFinal = champ.matches.find(isTeamFinal) ?? null
+    const mainMatches = teamFinal ? champ.matches.filter((m) => !isTeamFinal(m)) : champ.matches
 
     // Tabs por formato
     const tabs: { key: typeof tab; label: string }[] = isGrupos
@@ -156,7 +168,15 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
 
     const unitWord = champ.unit === 'pair' ? 'duplas' : 'jogadores'
     const formatLabel =
-      champ.format === 'liga' ? 'Liga' : champ.format === 'eliminatoria' ? 'Eliminatória' : 'Grupos + Elim.'
+      champ.format === 'liga'
+        ? 'Liga'
+        : champ.format === 'eliminatoria'
+          ? 'Eliminatória'
+          : champ.format === 'desafio'
+            ? isTeams
+              ? `Desafio ${champ.teams?.[0]?.name ?? ''} × ${champ.teams?.[1]?.name ?? ''}`
+              : 'Desafio de duplas'
+            : 'Grupos + Elim.'
 
     // ── Helpers de render ──
     const avatarById = Object.fromEntries(champ.participants.map((p) => [p.id, p.avatarUrl]))
@@ -227,12 +247,34 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
     }
 
     const ligaStandings = () =>
-      computeStandings(
-        champ.matches.map((m) => ({ side_a_participant_id: m.sideA, side_b_participant_id: m.sideB, games: m.games })),
-        champ.participants.map((p) => ({ id: p.id, name: p.name })),
-        champ.stage,
-        champ.champ,
+      champ.format === 'desafio'
+        ? desafioStandings(champ)
+        : computeStandings(
+            champ.matches.map((m) => ({ side_a_participant_id: m.sideA, side_b_participant_id: m.sideB, games: m.games })),
+            champ.participants.map((p) => ({ id: p.id, name: p.name })),
+            champ.stage,
+            champ.champ,
+          )
+
+    // Desafio por times: placar por time + individual
+    const renderTeamStandings = () => {
+      const individual = desafioStandings(champ)
+      const teamOf = new Map<string, string>()
+      for (const t of champ.teams ?? []) for (const pid of t.participantIds) teamOf.set(pid, t.id)
+      const byTeam = aggregateTeamStandings(individual, champ.teams ?? [], (id) => teamOf.get(id))
+      return (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-secondary/70 px-1">Por time</p>
+            {renderStandings(byTeam)}
+          </div>
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-secondary/70 px-1">Jogadores</p>
+            {renderStandings(individual)}
+          </div>
+        </div>
       )
+    }
 
     return (
       <div className="px-5 py-4 space-y-4">
@@ -282,8 +324,24 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
         )}
 
         {/* ── Conteúdo ── */}
-        {isLigaLike && activeTab === 'jogos' && renderJogosByRound(champ.matches)}
-        {isLigaLike && activeTab === 'classificacao' && renderStandings(ligaStandings())}
+        {isLigaLike && activeTab === 'jogos' && (
+          <div className="space-y-4">
+            {renderJogosByRound(mainMatches)}
+            {teamFinal && (
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-secondary/70 px-1">Final</p>
+                {renderMatchRow(teamFinal)}
+              </div>
+            )}
+            {isTeams && champ.hasFinal && !teamFinal && (
+              <p className="px-1 text-[11px] leading-relaxed text-white/35">
+                A final (melhor jogador de cada time) aparece aqui quando todos os jogos terminarem.
+              </p>
+            )}
+          </div>
+        )}
+        {isLigaLike && activeTab === 'classificacao' &&
+          (isTeams ? renderTeamStandings() : renderStandings(ligaStandings()))}
 
         {isElimBracket && (
           <LocalBracketView
@@ -347,7 +405,7 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
           className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-500/30 py-3 text-sm font-semibold text-red-300 transition active:scale-95 hover:bg-red-500/10"
         >
           <Trash2 className="h-4 w-4" />
-          Descartar campeonato
+          {champ.format === 'desafio' ? 'Descartar desafio' : 'Descartar campeonato'}
         </button>
       </div>
     )
