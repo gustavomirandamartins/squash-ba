@@ -123,6 +123,8 @@ npm test
 npm run test:e2e
 ```
 
+O CI (GitHub Actions, `.github/workflows/ci.yml`) roda os dois a cada push no `main` e em todo pull request: tipos + testes unitários e o build de produção com os testes offline.
+
 ### Variáveis de Ambiente
 
 Crie `.env.local` na raiz:

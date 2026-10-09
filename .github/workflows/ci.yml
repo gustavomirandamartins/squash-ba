@@ -1,0 +1,73 @@
+# CI — roda a cada push no main e em todo pull request.
+#
+#   • Tipos e testes unitários: tsc + Vitest (fila, chaves, classificação,
+#     importação, diário, regras de senha).
+#   • Offline ponta a ponta: build de produção + Playwright com a rede
+#     desligada (service worker real).
+#
+# Nenhum job fala com o Supabase de produção: o build usa uma URL/chave
+# fictícias e os testes bloqueiam qualquer requisição para *.supabase.co.
+# O lint fica de fora por enquanto: há erros antigos no projeto.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  unit:
+    name: Tipos e testes unitários
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Tipos (tsc)
+        run: npx tsc --noEmit
+      - name: Testes unitários (Vitest)
+        run: npm test
+
+  e2e:
+    name: Offline ponta a ponta (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Chromium do Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Build de produção
+        run: npm run build
+      - name: Testes offline
+        run: npx playwright test
+        env:
+          E2E_SKIP_BUILD: '1'
+      - name: Rastros dos testes que falharam
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: test-results/
+          retention-days: 7
