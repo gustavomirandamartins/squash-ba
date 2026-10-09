@@ -8,6 +8,10 @@
 # Nenhum job fala com o Supabase de produção: o build usa uma URL/chave
 # fictícias e os testes bloqueiam qualquer requisição para *.supabase.co.
 # O lint fica de fora por enquanto: há erros antigos no projeto.
+#
+# Ubuntu fixo (24.04) em vez de ubuntu-latest: a troca automática para o
+# Ubuntu 26 pode quebrar as dependências do Chromium do Playwright. Atualizar
+# de propósito, quando o Playwright suportar a versão nova.
 
 name: CI
 
@@ -31,7 +35,7 @@ env:
 jobs:
   unit:
     name: Tipos e testes unitários
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
@@ -47,7 +51,7 @@ jobs:
 
   e2e:
     name: Offline ponta a ponta (Playwright)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
