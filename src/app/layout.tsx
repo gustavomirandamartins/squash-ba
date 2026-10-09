@@ -70,12 +70,16 @@ export default function RootLayout({
 
           --top-inset: recuo superior dos headers (safe area do topo). Fica
           centralizado aqui para ajustar todos os headers num ponto só.
+
+          --nav-top: distância do fim da tela até o topo do menu inferior
+          (recuo de baixo + pílula de 70px da BottomNav). Botões fixos do
+          conteúdo se apoiam logo acima dele.
         */}
         <style
           dangerouslySetInnerHTML={{
             __html:
               ".glass-overlay{-webkit-backdrop-filter:blur(20px) saturate(140%);backdrop-filter:blur(20px) saturate(140%)}" +
-              ":root{--top-inset:env(safe-area-inset-top,0px)}",
+              ":root{--top-inset:env(safe-area-inset-top,0px);--nav-top:calc(max(1rem,env(safe-area-inset-bottom,0px)) + 70px)}",
           }}
         />
         {/*

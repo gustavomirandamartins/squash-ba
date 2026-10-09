@@ -8,6 +8,9 @@ import { SearchDropdown } from './SearchDropdown'
 import { NotificationsBell } from './NotificationsBell'
 import { useIsDesktop } from '@/lib/use-is-desktop'
 
+/** Onde o OfflineSync põe o chip de status (Offline / Sincronizando…). */
+export const SYNC_SLOT_ID = 'sync-status-slot'
+
 interface Props {
   name?: string | null
   avatarUrl?: string | null
@@ -86,6 +89,10 @@ export function TopBar({ name, avatarUrl, isAdmin, canManage, userId }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Chip de sincronização logo abaixo do logo (o OfflineSync o coloca
+          aqui). Vazio quando online e sem fila → não ocupa espaço. */}
+      <div id={SYNC_SLOT_ID} className="-mt-1 px-5 pb-2 empty:hidden" />
     </header>
   )
 }

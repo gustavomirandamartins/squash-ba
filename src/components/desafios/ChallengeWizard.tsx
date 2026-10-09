@@ -23,6 +23,7 @@ import {
 import type { ChallengeConfig } from '@/app/(app)/desafios/actions'
 import { submitCreation } from '@/lib/offline/submit'
 import type { CreationOp } from '@/lib/offline/types'
+import { defaultTablePoints, patchWithDefaultPoints } from '@/lib/table-points'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,11 +51,15 @@ interface WizardState extends ChallengeConfig {
   teamBId: string | null
   teamBName: string | null
   teamBPlayerIds: string[]
+  /** o organizador mexeu nos pontos → o padrão não troca mais sozinho */
+  pointsEdited: boolean
 }
 
 type Patch = Partial<WizardState>
 
 // ─── Desafio provisório (criado offline) ─────────────────────────────────────
+
+const drawAllowed = (s: WizardState) => s.counting === 'tempo' || s.setDrawEnabled
 
 const firstName = (n: string | null | undefined) => n?.split(' ')[0] ?? '?'
 
@@ -136,9 +141,9 @@ const DEFAULT: WizardState = {
   winByTwo: true,
   setDrawEnabled: false,
   timeMinutes: null,
-  pointsWin: 3,
-  pointsDraw: 1,
-  pointsLoss: 0,
+  // Padrão começa sem empate (V 1 · D 0); vira V 3 · E 1 · D 0 se o empate for ligado.
+  ...defaultTablePoints(false),
+  pointsEdited: false,
   tiebreakers: ['sets_ganhos', 'pontos_ganhos', 'pontos_sofridos_asc'],
   venueId: null,
   opponent: null,
@@ -1043,7 +1048,7 @@ export function ChallengeWizard({ currentUserId, initialName = '', venues = [] }
   const [error, setError] = useState<string | null>(null)
 
   function onChange(patch: Patch) {
-    setState((prev) => ({ ...prev, ...patch }))
+    setState((prev) => patchWithDefaultPoints(prev, patch, drawAllowed))
     setError(null)
   }
 

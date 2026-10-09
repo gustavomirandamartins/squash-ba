@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, CloudOff, Loader2 } from 'lucide-react'
@@ -23,6 +24,7 @@ import {
   reconcileLocalGrupos,
   markLocalSynced,
 } from '@/lib/offline/reconcile-liga'
+import { SYNC_SLOT_ID } from '@/components/TopBar'
 
 /** Disparado pela tela de sincronização ("Sincronizar agora"). */
 export const SYNC_NOW_EVENT = 'sb-sync-now'
@@ -213,21 +215,30 @@ export function OfflineSync() {
           : 'Offline'
         : `${pending} para sincronizar`
 
+  const chip = (
+    <Link
+      href="/sincronizacao"
+      className="glass glass-pill glass-overlay pointer-events-auto inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white/80"
+    >
+      {syncing ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-secondary" />
+      ) : failed > 0 ? (
+        <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
+      ) : (
+        <CloudOff className="h-3.5 w-3.5 text-yellow-400/80" />
+      )}
+      {label}
+    </Link>
+  )
+
+  // Logo abaixo do logo, no cabeçalho (fora do caminho do menu inferior). O
+  // chip só aparece depois de montar, então ler o DOM aqui não afeta a
+  // hidratação. Sem cabeçalho na tela: canto inferior esquerdo, como antes.
+  const slot = document.getElementById(SYNC_SLOT_ID)
+  if (slot) return createPortal(chip, slot)
   return (
     <div className="pointer-events-none fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-4 z-50 landscape-sm:left-20 lg:bottom-5">
-      <Link
-        href="/sincronizacao"
-        className="glass glass-pill glass-overlay pointer-events-auto flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white/80"
-      >
-        {syncing ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-secondary" />
-        ) : failed > 0 ? (
-          <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
-        ) : (
-          <CloudOff className="h-3.5 w-3.5 text-yellow-400/80" />
-        )}
-        {label}
-      </Link>
+      {chip}
     </div>
   )
 }

@@ -14,6 +14,7 @@ import {
   saveLocalChampionship,
 } from '@/lib/offline/local-championship'
 import type { CreationOp } from '@/lib/offline/types'
+import { defaultTablePoints, patchWithDefaultPoints } from '@/lib/table-points'
 import {
   ChevronLeft,
   ChevronRight,
@@ -93,6 +94,8 @@ interface WizardState {
   pointsWin: number
   pointsDraw: number
   pointsLoss: number
+  /** o organizador mexeu nos pontos → o padrão não troca mais sozinho */
+  pointsEdited: boolean
   tiebreakers: string[]
   // Step 4 — Jogador (unit='player')
   players: PlayerResult[]
@@ -194,9 +197,9 @@ const DEFAULT_STATE: WizardState = {
   groupsWinByTwo: true,
   groupsSetDrawEnabled: false,
   groupsTimeMinutes: '',
-  pointsWin: 3,
-  pointsDraw: 1,
-  pointsLoss: 0,
+  // Padrão começa sem empate (V 1 · D 0); vira V 3 · E 1 · D 0 se o empate for ligado.
+  ...defaultTablePoints(false),
+  pointsEdited: false,
   tiebreakers: ['sets_ganhos', 'pontos_ganhos', 'pontos_sofridos_asc'],
   players: [],
   playerSeeds: {},
@@ -208,6 +211,13 @@ const DEFAULT_STATE: WizardState = {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Empate possível na fase que tem tabela (grupos, no grupos+elim). */
+function drawAllowed(s: WizardState): boolean {
+  return s.format === 'grupos_elim'
+    ? s.groupsCounting === 'tempo' || s.groupsSetDrawEnabled
+    : s.counting === 'tempo' || s.setDrawEnabled
+}
 
 function nextPow2(n: number): number {
   let s = 1
@@ -1981,27 +1991,9 @@ export function ChampionshipWizard({
   const [state, setState] = useState<WizardState>(DEFAULT_STATE)
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
-  // Controla posição do sticky CTA: online tem tab-bar fixa (~8rem), offline/desktop não.
-  const [isOffline, setIsOffline] = useState(false)
-  const [isDesktop, setIsDesktop] = useState(false)
-  useEffect(() => {
-    setIsOffline(!navigator.onLine)
-    const up = () => setIsOffline(false)
-    const down = () => setIsOffline(true)
-    window.addEventListener('online', up)
-    window.addEventListener('offline', down)
-    return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down) }
-  }, [])
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1024px)')
-    setIsDesktop(mq.matches)
-    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
 
   function onChange(patch: Patch) {
-    setState((prev) => ({ ...prev, ...patch }))
+    setState((prev) => patchWithDefaultPoints(prev, patch, drawAllowed))
     setError(null)
   }
 
@@ -2394,11 +2386,6 @@ export function ChampionshipWizard({
     return defaults[step - 1]
   })()
 
-  // Offset do sticky CTA: desktop e offline não têm tab-bar, mobile online tem (~8rem).
-  const ctaBottom = isDesktop || isOffline
-    ? 'max(1rem, env(safe-area-inset-bottom))'
-    : 'max(8rem, calc(7rem + env(safe-area-inset-bottom)))'
-
   return (
     <div>
       {/* Step header — compacto */}
@@ -2467,17 +2454,13 @@ export function ChampionshipWizard({
         )}
       </div>
 
-      {/* CTA sticky — sempre visível acima da tab-bar */}
+      {/* CTA — no celular fica fixo logo acima do menu inferior (que aparece
+          online e offline); em paisagem e no desktop o menu sai do rodapé e o
+          botão gruda no fim da área de conteúdo. */}
       {step < 5 && (
         <div
-          className="sticky z-20 -mx-0 px-5 pt-8 pointer-events-none"
-          style={{
-            bottom: ctaBottom,
-            background: 'linear-gradient(to top, #16233a 55%, #16233a99 78%, transparent)',
-            paddingBottom: isDesktop || isOffline
-              ? 'max(0.75rem, env(safe-area-inset-bottom))'
-              : '0.75rem',
-          }}
+          className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--nav-top)+0.25rem)] z-20 mx-auto w-full max-w-[480px] px-5 pb-2 pt-8 landscape-sm:sticky landscape-sm:bottom-0 landscape-sm:max-w-none landscape-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:sticky lg:bottom-0 lg:max-w-none lg:pb-4"
+          style={{ background: 'linear-gradient(to top, #16233a 55%, #16233a99 78%, transparent)' }}
         >
           <button
             type="button"
