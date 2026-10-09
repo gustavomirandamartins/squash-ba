@@ -9,9 +9,11 @@
 //     pelo servidor do Next);
 //   • imagens de patrocinador (enviadas pelo painel do Supabase) → a cada 10 min.
 //
-// Só no servidor: usa a chave de serviço, porque o cache é compartilhado e não
-// pode depender do cookie de quem pediu. As consultas pegam apenas dados
-// públicos (ex.: só anúncios ativos).
+// Só no servidor. O cache é compartilhado, então não usa o cookie de quem pediu:
+//   • categorias, anúncios e links de banner → chave PÚBLICA: o RLS já libera
+//     esses dados para todos (e só eles — ex.: só anúncios ativos);
+//   • ranking (RPC só para logados) e lista de imagens do Storage → chave de
+//     serviço, que neste projeto não tem leitura direta nas tabelas.
 
 import { unstable_cache } from 'next/cache'
 import { createClient } from '@supabase/supabase-js'
@@ -24,12 +26,13 @@ export const CACHE_TAGS = {
   ads: 'ads',
 } as const
 
-function serviceClient() {
+function makeClient(key: string | undefined) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SECRET_KEY
   if (!url || !key) return null
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 }
+const serviceClient = () => makeClient(process.env.SUPABASE_SECRET_KEY)
+const publicClient = () => makeClient(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)
 
 type RankingRpcRow = Omit<RankRow, 'rank'> & { rank: number | string }
 
@@ -50,12 +53,14 @@ export type SponsorBannerItem = { src: string; href: string | null }
 export const getSponsorBanners = unstable_cache(
   async (): Promise<SponsorBannerItem[]> => {
     const supabase = serviceClient()
-    if (!supabase) return []
+    const pub = publicClient()
+    if (!supabase || !pub) return []
     const [files, links] = await Promise.all([
       supabase.storage.from('sponsors').list('', { limit: 100, sortBy: { column: 'name', order: 'asc' } }),
-      supabase.from('sponsor_banners').select('image_name, link_url'),
+      pub.from('sponsor_banners').select('image_name, link_url'),
     ])
     if (files.error) throw files.error
+    if (links.error) throw links.error
     const linkByName = new Map(
       ((links.data ?? []) as { image_name: string; link_url: string | null }[]).map((r) => [r.image_name, r.link_url]),
     )
@@ -74,7 +79,7 @@ export type CategoryItem = { id: string; name: string }
 
 export const getCategories = unstable_cache(
   async (): Promise<CategoryItem[]> => {
-    const supabase = serviceClient()
+    const supabase = publicClient()
     if (!supabase) return []
     const { data, error } = await supabase.from('categories').select('id, name').order('name')
     if (error) throw error
@@ -95,7 +100,7 @@ export type AdItem = {
 
 export const getActiveAds = unstable_cache(
   async (): Promise<AdItem[]> => {
-    const supabase = serviceClient()
+    const supabase = publicClient()
     if (!supabase) return []
     const { data, error } = await supabase
       .from('ads')
