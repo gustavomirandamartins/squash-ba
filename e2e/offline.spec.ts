@@ -139,3 +139,25 @@ test('a rede volta: oferece atualizar', async ({ context, page }) => {
   await context.setOffline(false)
   await expect(page.getByText('Conexão de volta')).toBeVisible()
 })
+
+test('versão nova descarta as páginas guardadas pela anterior', async ({ page }) => {
+  // Cópia de página "da versão anterior" no cache do service worker.
+  await page.evaluate(async () => {
+    for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister()
+    await (await caches.open('pages')).put('/versao-antiga', new Response('<p>antiga</p>'))
+    await (await caches.open('pages-rsc')).put('/versao-antiga', new Response('antiga'))
+  })
+
+  // Novo service worker instala e assume (como depois de um deploy).
+  await page.reload()
+  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true)
+
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const hits = await Promise.all(['pages', 'pages-rsc'].map(async (n) => (await caches.open(n)).match('/versao-antiga')))
+        return hits.filter(Boolean).length
+      }),
+    )
+    .toBe(0)
+})

@@ -17,7 +17,9 @@
  *
  * Regras para não pesar:
  *   • no máximo a cada 6 h (localStorage — no web app do iOS o sessionStorage
- *     zera a cada reabertura, o que disparava tudo de novo);
+ *     zera a cada reabertura, o que disparava tudo de novo) — ou logo que sai
+ *     versão nova: as páginas guardadas são da versão anterior (o service
+ *     worker novo as descarta) e precisam ser refeitas;
  *   • começa só depois que a tela inicial assentou (atraso + tempo ocioso);
  *   • 1 requisição por rota, 2 por vez;
  *   • só campeonatos/desafios ainda não encerrados (até 12), um por vez.
@@ -50,17 +52,23 @@ const CORE_ROUTES = [
 
 type Phase = 'idle' | 'loading' | 'done'
 
-function readStamp(): number {
+const VERSION_KEY = 'sb-offline-preloaded-version'
+const APP_VERSION = process.env.NEXT_PUBLIC_VERSION ?? '?'
+
+/** Pré-carga em dia: feita nesta versão do app e há menos de 6 h. */
+function preloadIsFresh(): boolean {
   try {
-    return Number(localStorage.getItem(STAMP_KEY) ?? 0)
+    if (localStorage.getItem(VERSION_KEY) !== APP_VERSION) return false
+    return Date.now() - Number(localStorage.getItem(STAMP_KEY) ?? 0) < TTL_MS
   } catch {
-    return 0
+    return false
   }
 }
 
 function writeStamp() {
   try {
     localStorage.setItem(STAMP_KEY, String(Date.now()))
+    localStorage.setItem(VERSION_KEY, APP_VERSION)
   } catch {
     /* ignore */
   }
@@ -184,10 +192,15 @@ export function OfflinePreloader() {
   useEffect(() => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return
     if (!('serviceWorker' in navigator)) return
-    if (Date.now() - readStamp() < TTL_MS) return
+    if (preloadIsFresh()) return
 
     let cancelled = false
     const isCancelled = () => cancelled
+    // Service worker trocado no meio (versão nova assumindo): ele descarta as
+    // páginas guardadas pelo anterior → não marca como feito; refaz na próxima.
+    let swChanged = false
+    const onControllerChange = () => { swChanged = true }
+    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
 
     const timer = setTimeout(() => {
       void (async () => {
@@ -200,7 +213,7 @@ export function OfflinePreloader() {
           await Promise.allSettled([loadPlayerPool(), loadCategories(), loadTeamsWithRosters()])
           await warmAll(CORE_ROUTES, CONCURRENCY, isCancelled)
           if (cancelled) return
-          writeStamp()
+          if (!swChanged) writeStamp()
         } catch {
           /* best-effort */
         }
@@ -216,6 +229,7 @@ export function OfflinePreloader() {
     return () => {
       cancelled = true
       clearTimeout(timer)
+      navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
     }
   }, [])
 

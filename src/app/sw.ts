@@ -123,6 +123,16 @@ const serwist = new Serwist({
 
 serwist.addEventListeners();
 
+// Versão nova no ar → as páginas e payloads RSC guardados são da versão
+// anterior (HTML apontando para o JS antigo). Sem isso, offline o app abria
+// telas com o visual/comportamento de antes do deploy. Descartados aqui, o
+// shell offline (já da versão nova, no precache) cobre as telas até a
+// pré-carga refazer as cópias (OfflinePreloader roda de novo a cada versão).
+const BUILD_PAGE_CACHES = ["pages", "pages-rsc", "pages-rsc-prefetch"];
+self.addEventListener("activate", (event) => {
+  event.waitUntil(Promise.all(BUILD_PAGE_CACHES.map((name) => caches.delete(name))));
+});
+
 // ── Web Push (preservado do SW anterior) ─────────────────────────────────────
 self.addEventListener("push", (event) => {
   if (!event.data) return;
