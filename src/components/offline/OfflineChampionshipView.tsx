@@ -23,6 +23,7 @@ import { SYNC_EVENT, getQueuedMatchState, type QueuedMatchState } from '@/lib/sc
 import { ScoreScreen } from '@/components/score/ScoreScreen'
 import { StandingsGrid, type Standing } from '@/components/campeonatos/StandingsTable'
 import { OfflineBackButton } from '@/components/offline/OfflineBackButton'
+import { groupLabel } from '@/lib/group-label'
 
 export type OfflineBasePath = '/campeonatos' | '/desafios'
 
@@ -103,7 +104,7 @@ function buildSections(champ: CachedChamp, matches: CachedMatch[]): Section[] {
   const groups = champ.groups ?? []
   for (const g of groups) {
     const ms = matches.filter((m) => m.groupId === g.id).sort((a, b) => a.round - b.round)
-    if (ms.length) sections.push({ key: `g-${g.id}`, title: g.name, matches: ms })
+    if (ms.length) sections.push({ key: `g-${g.id}`, title: groupLabel(g.name), matches: ms })
   }
 
   const rest = matches.filter((m) => !m.groupId || !groups.some((g) => g.id === m.groupId))
@@ -165,7 +166,7 @@ function buildStandings(champ: CachedChamp, matches: CachedMatch[]): StandingsBl
     return groups.map((g) => {
       const ms = rr.filter((m) => m.groupId === g.id)
       const ids = [...new Set(ms.flatMap((m) => [m.sideAId, m.sideBId]).filter(Boolean) as string[])]
-      return { key: g.id, title: g.name, rows: computeStandings(ms.map(toCMatch), ref(ids), stage, cfg) }
+      return { key: g.id, title: groupLabel(g.name), rows: computeStandings(ms.map(toCMatch), ref(ids), stage, cfg) }
     })
   }
 

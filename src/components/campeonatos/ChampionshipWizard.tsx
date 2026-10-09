@@ -33,6 +33,7 @@ import {
   Medal,
   GripVertical,
 } from 'lucide-react'
+import { groupLabel } from '@/lib/group-label'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1172,7 +1173,7 @@ function GroupPreview({
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-secondary">
-                Grupo {GROUP_NAMES[gi] ?? String(gi + 1)}
+                {groupLabel(GROUP_NAMES[gi] ?? String(gi + 1))}
               </span>
               <span className="text-[10px] text-white/30">{groups[gi].length}</span>
             </div>

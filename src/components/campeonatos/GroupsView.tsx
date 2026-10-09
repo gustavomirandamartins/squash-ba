@@ -7,6 +7,7 @@ import { createClient } from '@/utils/supabase/client'
 import { useChampionshipRealtime } from '@/lib/use-championship-realtime'
 import type { Standing } from './StandingsTable'
 import { useOfflineStandings, type OfflineStandingsInput } from '@/lib/standings/use-offline-standings'
+import { groupLabel } from '@/lib/group-label'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,7 +81,7 @@ function GroupCard({
       <div className="px-3.5 py-2.5 flex items-center justify-between border-b border-white/8">
         <div className="flex items-center gap-2">
           <Layers className="h-3.5 w-3.5 text-secondary/60 shrink-0" />
-          <span className="text-xs font-bold text-secondary">Grupo {group.name}</span>
+          <span className="text-xs font-bold text-secondary">{groupLabel(group.name)}</span>
         </div>
         {hasPending && (
           <div className="flex items-center gap-1">
