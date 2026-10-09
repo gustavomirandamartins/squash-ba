@@ -79,8 +79,16 @@ export async function activateChampionship(id: string): Promise<{ error: string 
   if (!champ) return { error: 'Campeonato não encontrado.' }
   if (champ.status !== 'rascunho') return { error: 'O campeonato não está em rascunho.' }
 
-  const { error } = await supabase.from('championships').update({ status: 'ativo' }).eq('id', id)
+  // Filtro de status na própria escrita: entre a leitura e o update o campeonato
+  // pode ter mudado — e um "ativo" sobre um encerrado o reabriria.
+  const { data: updated, error } = await supabase
+    .from('championships')
+    .update({ status: 'ativo' })
+    .eq('id', id)
+    .eq('status', 'rascunho')
+    .select('id')
   if (error) return { error: error.message }
+  if (!updated?.length) return { error: 'O campeonato não está em rascunho.' }
 
   revalidatePath(`/campeonatos/${id}`)
   revalidatePath('/campeonatos')

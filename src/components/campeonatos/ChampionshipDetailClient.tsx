@@ -14,6 +14,7 @@ import { Podium, type PodiumPlace } from '@/components/Podium'
 import { ManageBar } from '@/components/ManageBar'
 import { OfficialPanel } from './OfficialPanel'
 import { activateChampionship } from '@/app/(app)/campeonatos/manage-actions'
+import { groupLabel } from '@/lib/group-label'
 
 // ─── Tipos exportados (reutilizados em page.tsx) ──────────────────────────────
 
@@ -403,7 +404,7 @@ export function ChampionshipDetailClient({
         .filter((s) => participantGroups[s.participant_id] === group.id)
         .sort((a, b) => a.position - b.position)
       ordered.forEach((s, idx) => {
-        result[s.participant_id] = `${idx + 1}º Gr. ${group.name}`
+        result[s.participant_id] = `${idx + 1}º ${groupLabel(group.name).replace(/^grupo\b/i, 'Gr.')}`
       })
     }
     return result
@@ -882,7 +883,7 @@ export function ChampionshipDetailClient({
                   <section key={group.id} className="space-y-2">
                     <div className="flex items-center gap-2 px-1">
                       <span className="text-[10px] font-bold text-secondary/70">
-                        Grupo {group.name}
+                        {groupLabel(group.name)}
                       </span>
                       <div className="flex-1 h-px bg-white/6" />
                       <span className="text-[10px] text-white/20">

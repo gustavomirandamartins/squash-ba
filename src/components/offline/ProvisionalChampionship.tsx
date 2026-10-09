@@ -24,6 +24,7 @@ import { aggregateTeamStandings, computeStandings, resolveMatch, type StageCfg }
 import { StandingsGrid, type Standing } from '@/components/campeonatos/StandingsTable'
 import { LocalScoreScreen } from '@/components/score/LocalScoreScreen'
 import { LocalBracketView } from '@/components/offline/LocalBracketView'
+import { groupLabel } from '@/lib/group-label'
 
 type SideInfo = { name: string | null; avatarUrl: string | null }
 
@@ -359,7 +360,7 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
               if (gms.length === 0) return null
               return (
                 <div key={g.id} className="space-y-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-secondary/70 px-1">{g.name}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-secondary/70 px-1">{groupLabel(g.name)}</p>
                   {gms.map(renderMatchRow)}
                 </div>
               )
@@ -381,7 +382,7 @@ export function ProvisionalChampionship({ tempId }: { tempId: string }) {
               )
               return (
                 <div key={g.id} className="space-y-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-secondary/70 px-1">{g.name}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-secondary/70 px-1">{groupLabel(g.name)}</p>
                   {renderStandings(standings)}
                 </div>
               )
