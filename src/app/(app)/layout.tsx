@@ -20,7 +20,7 @@ export default async function AppLayout({
   const [{ data: profile }, { data: rolesData }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('full_name, avatar_url, onboarding_completed')
+      .select('full_name, avatar_url, gender, onboarding_completed')
       .eq('id', user.id)
       .single(),
     supabase
@@ -41,6 +41,7 @@ export default async function AppLayout({
     avatarUrl: profile.avatar_url,
     isAdmin,
     canManage,
+    gender: profile.gender ?? null,
   }
 
   return (

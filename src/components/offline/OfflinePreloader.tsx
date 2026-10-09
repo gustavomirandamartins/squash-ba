@@ -197,9 +197,19 @@ export function OfflinePreloader() {
     let cancelled = false
     const isCancelled = () => cancelled
     // Service worker trocado no meio (versão nova assumindo): ele descarta as
-    // páginas guardadas pelo anterior → não marca como feito; refaz na próxima.
+    // páginas guardadas pelo anterior → refaz as cópias logo em seguida, já
+    // pelo service worker novo.
     let swChanged = false
-    const onControllerChange = () => { swChanged = true }
+    let rewarm: ReturnType<typeof setTimeout> | undefined
+    const onControllerChange = () => {
+      swChanged = true
+      clearTimeout(rewarm)
+      rewarm = setTimeout(() => {
+        void warmAll(CORE_ROUTES, CONCURRENCY, isCancelled).then(() => {
+          if (!cancelled) writeStamp()
+        })
+      }, START_DELAY_MS)
+    }
     navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
 
     const timer = setTimeout(() => {
@@ -229,6 +239,7 @@ export function OfflinePreloader() {
     return () => {
       cancelled = true
       clearTimeout(timer)
+      clearTimeout(rewarm)
       navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
     }
   }, [])

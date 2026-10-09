@@ -17,6 +17,8 @@ export type FrameProfile = {
   avatarUrl: string | null
   isAdmin: boolean
   canManage: boolean
+  /** para a saudação do Início offline (Bem-vindo/Bem-vinda) */
+  gender?: string | null
 }
 
 export function AppFrame({

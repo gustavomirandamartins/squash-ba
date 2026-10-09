@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ChevronRight, CloudOff, Plus, RefreshCw, Swords, Trophy, WifiOff } from 'lucide-react'
+import { RefreshCw, WifiOff } from 'lucide-react'
 import { AppFrame } from '@/components/AppFrame'
 import { ChampionshipWizard } from '@/components/campeonatos/ChampionshipWizard'
 import { ChallengeWizard } from '@/components/desafios/ChallengeWizard'
@@ -28,8 +28,14 @@ import { PendingList } from '@/components/offline/PendingList'
 import { OfflineSync } from '@/components/offline/OfflineSync'
 import { OfflinePreloader } from '@/components/offline/OfflinePreloader'
 import { listCachedChamps, type CachedChampSummary } from '@/lib/offline/champ-cache'
+import { CampeonatosListClient } from '@/components/campeonatos/CampeonatosListClient'
 import {
-  parseShellProfile, readShellProfileRaw, subscribeShellProfile,
+  CampeonatosHeader, ChampionshipsLabel, MyChallengesSection, NoChampionships,
+} from '@/components/campeonatos/CampeonatosPageParts'
+import { WelcomeHeader } from '@/components/home/WelcomeHeader'
+import { OngoingSection } from '@/components/home/OngoingSection'
+import {
+  parseShellProfile, readShellProfileRaw, subscribeShellProfile, type ShellProfile,
 } from '@/lib/offline/shell-profile'
 import { setShellActive, shellNavigate, shellRoute } from '@/lib/offline/shell-nav'
 
@@ -111,17 +117,20 @@ export function OfflineAppShell() {
         </>
       }
     >
-      <ShellScreen path={pathname} userId={profile.userId} />
+      <ShellScreen path={pathname} profile={profile} />
     </AppFrame>
   )
 }
 
-function ShellScreen({ path, userId }: { path: string; userId: string }) {
+function ShellScreen({ path, profile }: { path: string; profile: ShellProfile }) {
+  const { userId } = profile
   const route = shellRoute(path)
   if (!route) return <ShellMessage path={path} />
   switch (route.kind) {
     case 'home':
-      return <OfflineHome filter={route.filter} />
+      return route.filter === 'all'
+        ? <OfflineInicio name={profile.name} gender={profile.gender ?? null} />
+        : <OfflineCampeonatos />
     case 'champ-new':
       return <ChampionshipWizard />
     case 'desafio-new':
@@ -144,18 +153,12 @@ function ShellScreen({ path, userId }: { path: string; userId: string }) {
   }
 }
 
-// ── Início / listas com o que está no aparelho ───────────────────────────────
+// ── Início / Campeonatos com o que está no aparelho ──────────────────────────
+// Mesmas partes das telas online (cabeçalho, filtros, cartões, "Acontecendo
+// agora"): offline o app tem a mesma cara, só com o que está guardado aqui.
 
-const FORMAT_LABEL: Record<string, string> = {
-  liga: 'Liga',
-  eliminatoria: 'Eliminatória',
-  grupos_elim: 'Grupos + Eliminatórias',
-  desafio: 'Desafio',
-}
-
-function OfflineHome({ filter }: { filter: 'all' | 'campeonato' | 'desafio' }) {
+function useCachedChamps(): CachedChampSummary[] | null {
   const [items, setItems] = useState<CachedChampSummary[] | null>(null)
-
   useEffect(() => {
     let cancelled = false
     void listCachedChamps()
@@ -169,85 +172,67 @@ function OfflineHome({ filter }: { filter: 'all' | 'campeonato' | 'desafio' }) {
       cancelled = true
     }
   }, [])
+  return items
+}
 
-  const shown = (items ?? []).filter((c) =>
-    filter === 'all' ? true : filter === 'desafio' ? c.format === 'desafio' : c.format !== 'desafio',
-  )
-  const title = filter === 'desafio' ? 'Desafios' : filter === 'campeonato' ? 'Campeonatos' : 'No aparelho'
+function OfflineCampeonatos() {
+  const items = useCachedChamps()
+  const desafios = (items ?? []).filter((c) => c.format === 'desafio')
+  const champs = (items ?? []).filter((c) => c.format !== 'desafio')
 
   return (
-    <div className="px-5 py-4 space-y-5">
-      <div>
-        <h1 className="font-display text-xl font-extrabold tracking-tight text-white">{title}</h1>
-        <p className="mt-1 flex items-center gap-1.5 text-xs text-white/45">
-          <CloudOff className="h-3.5 w-3.5 text-yellow-400/80" />
-          Sem conexão · mostrando o que está guardado neste aparelho
-        </p>
-      </div>
+    <div className="px-5 py-4 space-y-6">
+      <CampeonatosHeader />
 
-      <div className="grid grid-cols-2 gap-2">
-        {filter !== 'desafio' && (
-          <Link
-            href="/campeonatos/novo"
-            className="glass glass-card flex items-center gap-2 px-4 py-3 text-sm font-semibold text-white/85 transition active:scale-[0.985]"
-          >
-            <Plus className="h-4 w-4 text-secondary" />
-            Novo campeonato
-          </Link>
-        )}
-        {filter !== 'campeonato' && (
-          <Link
-            href="/desafios/novo"
-            className="glass glass-card flex items-center gap-2 px-4 py-3 text-sm font-semibold text-white/85 transition active:scale-[0.985]"
-          >
-            <Plus className="h-4 w-4 text-secondary" />
-            Novo desafio
-          </Link>
-        )}
-      </div>
-
-      {filter !== 'desafio' && <PendingList kind="campeonato" />}
-      {filter !== 'campeonato' && <PendingList kind="desafio" />}
+      <PendingList kind="campeonato" />
+      <PendingList kind="desafio" />
 
       {items !== null && (
-        <div className="space-y-2">
-          {shown.length === 0 ? (
-            <div className="glass glass-card px-4 py-8 text-center">
-              <p className="text-sm text-white/60">Nada guardado ainda.</p>
-              <p className="mt-1 text-xs text-white/35">
-                Campeonatos e desafios que você abre com internet ficam disponíveis aqui.
-              </p>
-            </div>
-          ) : (
-            shown.map((c) => {
-              const Icon = c.format === 'desafio' ? Swords : Trophy
-              const href = `${c.format === 'desafio' ? '/desafios' : '/campeonatos'}/${c.id}`
-              return (
-                <Link
-                  key={c.id}
-                  href={href}
-                  className="glass glass-card flex items-center gap-3 px-4 py-3 transition active:scale-[0.985]"
-                >
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-secondary/12">
-                    <Icon className="h-4 w-4 text-secondary" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-white/90">{c.name}</p>
-                    <p className="text-[11px] text-white/40">
-                      {FORMAT_LABEL[c.format] ?? c.format} · {c.finished}/{c.matches} jogos encerrados
-                    </p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
-                </Link>
-              )
-            })
-          )}
-        </div>
+        <>
+          <MyChallengesSection desafios={desafios} />
+          <section className="space-y-2">
+            <ChampionshipsLabel show={desafios.length > 0} />
+            {champs.length === 0 ? (
+              <NoChampionships text="Nenhum campeonato guardado neste aparelho." />
+            ) : (
+              <CampeonatosListClient
+                championships={champs.map((c) => ({
+                  id: c.id, name: c.name, format: c.format, status: c.status, is_official: c.isOfficial,
+                }))}
+              />
+            )}
+          </section>
+        </>
       )}
+    </div>
+  )
+}
 
-      <Link href="/sincronizacao" className="block text-center text-xs font-semibold text-secondary/80">
-        Ver pendências de sincronização
-      </Link>
+function OfflineInicio({ name, gender }: { name: string | null; gender: string | null }) {
+  const items = useCachedChamps()
+  const firstName = (name ?? 'Jogador').trim().split(/\s+/)[0]
+  const href = (c: CachedChampSummary) => `${c.format === 'desafio' ? '/desafios' : '/campeonatos'}/${c.id}`
+  const open = (items ?? []).filter((c) => c.status !== 'encerrado')
+
+  return (
+    <div className="flex flex-col gap-6 pt-2">
+      <WelcomeHeader firstName={firstName} gender={gender} />
+      <div className="space-y-3 px-5 empty:hidden">
+        <PendingList kind="campeonato" />
+        <PendingList kind="desafio" />
+      </div>
+      <OngoingSection
+        liveMatches={open.flatMap((c) =>
+          c.live.map((m) => ({
+            id: m.id,
+            href: `${href(c)}/jogos/${m.id}`,
+            a: m.a ?? 'A definir',
+            b: m.b ?? 'A definir',
+            champName: c.name,
+          })),
+        )}
+        active={open.map((c) => ({ id: c.id, name: c.name, isChallenge: c.format === 'desafio', href: href(c) }))}
+      />
     </div>
   )
 }

@@ -102,17 +102,36 @@ test('campeonato provisório: joga e classifica sem rede', async ({ context, pag
   expect(saved?.matches.filter((m) => m.status === 'finalizado')).toHaveLength(1)
 })
 
-test('início offline lista o que está no aparelho e abre sem recarregar', async ({ context, page }) => {
+test('início offline: mesma tela do online, com o que está no aparelho', async ({ context, page }) => {
   await seed(page, { profile: PROFILE, idb: { [`champ-cache:${CHAMP_ID}`]: cachedElim() } })
   await context.setOffline(true)
 
   await page.goto('/')
-  await expect(page.getByText('No aparelho')).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Bem-vindo, Organizador!/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Acontecendo agora' })).toBeVisible()
   await markPage(page)
   await page.getByRole('link', { name: /Copa Offline/ }).click()
   await expect(page).toHaveURL(new RegExp(`/campeonatos/${CHAMP_ID}$`))
   await expect(page.getByRole('heading', { name: 'Copa Offline' })).toBeVisible()
   expect(await pageWasNotReloaded(page)).toBe(true)
+})
+
+test('campeonatos offline: mesma lista do online (filtros e status)', async ({ context, page }) => {
+  await seed(page, {
+    profile: PROFILE,
+    idb: { [`champ-cache:${CHAMP_ID}`]: { ...cachedElim(), status: 'encerrado' } },
+  })
+  await context.setOffline(true)
+
+  await page.goto('/campeonatos')
+  await expect(page.getByRole('heading', { name: 'Campeonatos' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Criar' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Todos' })).toBeVisible()
+  const card = page.getByRole('link', { name: /Copa Offline/ })
+  await expect(card).toContainText('Eliminatórias')
+  await expect(card).toContainText('Encerrado')
+  await page.getByRole('button', { name: 'Liga' }).click()
+  await expect(page.getByText('Nenhum campeonato neste formato.')).toBeVisible()
 })
 
 test('campeonato ainda não guardado: aviso dentro do app', async ({ context, page }) => {

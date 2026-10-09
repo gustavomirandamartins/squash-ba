@@ -39,7 +39,8 @@ export function saveShellProfile(p: FrameProfile): void {
       prev.name === p.name &&
       prev.avatarUrl === p.avatarUrl &&
       prev.isAdmin === p.isAdmin &&
-      prev.canManage === p.canManage
+      prev.canManage === p.canManage &&
+      (prev.gender ?? null) === (p.gender ?? null)
     if (same) return
     localStorage.setItem(KEY, JSON.stringify({ ...p, savedAt: Date.now() }))
     window.dispatchEvent(new Event(SHELL_PROFILE_EVENT))

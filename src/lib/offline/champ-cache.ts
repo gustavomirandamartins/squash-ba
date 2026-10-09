@@ -60,6 +60,9 @@ export type CachedChamp = {
   /** desafio por times: time de cada participante */
   teams?: { id: string; name: string }[]
   teamOf?: Record<string, string>
+  // ── v3 ── (listas offline iguais às online)
+  status?: string
+  isOfficial?: boolean
   savedAt?: number
 }
 
@@ -77,8 +80,13 @@ export type CachedChampSummary = {
   id: string
   name: string
   format: string
+  /** do servidor; caches antigos: deduzido dos jogos */
+  status: string
+  isOfficial: boolean
   matches: number
   finished: number
+  /** jogos em andamento, com os nomes dos lados */
+  live: { id: string; a: string | null; b: string | null }[]
   savedAt: number | null
 }
 
@@ -90,12 +98,18 @@ export async function listCachedChamps(): Promise<CachedChampSummary[]> {
   for (const k of ids) {
     const c = (await get(k)) as CachedChamp | undefined
     if (!c) continue
+    const finished = c.matches.filter((m) => m.status === 'finalizado').length
     out.push({
       id: c.id,
       name: c.name,
       format: c.format,
+      status: c.status ?? (c.matches.length > 0 && finished === c.matches.length ? 'encerrado' : 'ativo'),
+      isOfficial: !!c.isOfficial,
       matches: c.matches.length,
-      finished: c.matches.filter((m) => m.status === 'finalizado').length,
+      finished,
+      live: c.matches
+        .filter((m) => m.status === 'em_andamento')
+        .map((m) => ({ id: m.id, a: m.sideA.name, b: m.sideB.name })),
       savedAt: c.savedAt ?? null,
     })
   }
@@ -132,6 +146,8 @@ type ChampRow = {
   name: string
   format: string
   unit: string
+  status: string
+  is_official: boolean | null
   points_win: number
   points_draw: number
   points_loss: number
@@ -184,7 +200,7 @@ export async function refreshChampCache(
       supabase
         .from('championships')
         .select(
-          `id, name, format, unit, points_win, points_draw, points_loss, tiebreakers,
+          `id, name, format, unit, status, is_official, points_win, points_draw, points_loss, tiebreakers,
            championship_teams(id, name, ordering),
            championship_stages(id, ordering, counting, sets_to_play, points_per_set, win_by_two, set_draw_enabled, time_minutes, groups(id, name, ordering)),
            participants(id, championship_team_id, participant_members(user_id)),
@@ -233,6 +249,8 @@ export async function refreshChampCache(
       name: c.name,
       format: c.format,
       unit: c.unit,
+      status: c.status,
+      isOfficial: !!c.is_official,
       canManage: !!canManage,
       myParticipantIds: mine,
       sides,
