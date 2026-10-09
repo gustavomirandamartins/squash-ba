@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Lock, Eye, EyeOff, Check, ArrowRight } from 'lucide-react'
 import { updatePasswordAction } from './actions'
+import { PASSWORD_HINT, isPasswordLongEnough } from '@/lib/auth/password'
 
 export function UpdatePasswordClient() {
   const router = useRouter()
@@ -13,7 +14,7 @@ export function UpdatePasswordClient() {
   const [status, setStatus] = useState<'idle' | 'saving' | 'done' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
-  const valid = password.length >= 6 && password === confirm
+  const valid = isPasswordLongEnough(password) && password === confirm
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -103,7 +104,7 @@ export function UpdatePasswordClient() {
         {confirm.length > 0 && password !== confirm && (
           <p className="px-1 text-[11px] text-red-400">As senhas não coincidem.</p>
         )}
-        <p className="px-1 text-[11px] text-white/35">Mínimo de 6 caracteres.</p>
+        <p className="px-1 text-[11px] text-white/35">{PASSWORD_HINT}</p>
 
         {status === 'error' && errorMsg && (
           <p className="rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-400">{errorMsg}</p>

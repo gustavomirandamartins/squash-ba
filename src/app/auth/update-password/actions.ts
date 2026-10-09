@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/utils/supabase/server'
+import { MIN_PASSWORD_LENGTH, isPasswordLongEnough, translatePasswordError } from '@/lib/auth/password'
 
 /**
  * Atualiza a senha do usuário autenticado (sessão de recovery).
@@ -10,8 +11,8 @@ import { createClient } from '@/utils/supabase/server'
 export async function updatePasswordAction(
   password: string,
 ): Promise<{ error: string | null }> {
-  if (!password || password.length < 6) {
-    return { error: 'A senha precisa de pelo menos 6 caracteres.' }
+  if (!password || !isPasswordLongEnough(password)) {
+    return { error: `A senha precisa de pelo menos ${MIN_PASSWORD_LENGTH} caracteres.` }
   }
 
   const supabase = await createClient()
@@ -26,7 +27,7 @@ export async function updatePasswordAction(
   }
 
   const { error } = await supabase.auth.updateUser({ password })
-  if (error) return { error: error.message }
+  if (error) return { error: translatePasswordError(error.message) ?? error.message }
 
   return { error: null }
 }

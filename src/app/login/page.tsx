@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
+import { PASSWORD_HINT, isPasswordLongEnough, translatePasswordError } from '@/lib/auth/password'
 import { Logo } from '@/components/Logo'
 import { Mail, Lock, Eye, EyeOff, ArrowRight, CheckCircle, Sparkles } from 'lucide-react'
 
@@ -19,6 +20,8 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const emailOk = email.trim().length > 3 && email.includes('@')
+  // Criar conta: mínimo novo. Entrar: só não vazia (contas antigas têm senha de 6+).
+  const passwordOk = mode === 'signup' ? isPasswordLongEnough(password) : password.length > 0
 
   function fail(msg: string) {
     setErrorMsg(msg)
@@ -28,7 +31,7 @@ export default function LoginPage() {
   // ── Entrar / criar conta com SENHA ──────────────────────────────────────────
   async function handlePasswordSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!emailOk || password.length < 6 || status === 'loading') return
+    if (!emailOk || !passwordOk || status === 'loading') return
     setStatus('loading')
     setErrorMsg(null)
     const supabase = createClient()
@@ -233,7 +236,7 @@ export default function LoginPage() {
                   </div>
 
                   {mode === 'signup' ? (
-                    <p className="px-1 text-[11px] text-white/35">Mínimo de 6 caracteres.</p>
+                    <p className="px-1 text-[11px] text-white/35">{PASSWORD_HINT}</p>
                   ) : (
                     /* Link "Esqueci a senha" — só no login */
                     <div className="flex justify-end">
@@ -254,7 +257,7 @@ export default function LoginPage() {
                   {/* Botão senha */}
                   <button
                     type="submit"
-                    disabled={status === 'loading' || !emailOk || password.length < 6}
+                    disabled={status === 'loading' || !emailOk || !passwordOk}
                     className="flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 font-display text-sm font-bold text-primary transition active:scale-95 disabled:opacity-50"
                     style={{ background: '#cdfd51' }}
                   >
@@ -370,7 +373,8 @@ function traduzErro(msg: string): string {
   if (m.includes('invalid login credentials')) return 'E-mail ou senha incorretos. Se você costuma entrar por link mágico, defina uma senha no seu perfil.'
   if (m.includes('email not confirmed')) return 'Confirme seu e-mail antes de entrar.'
   if (m.includes('user already registered')) return 'Este e-mail já tem conta. Use "Entrar".'
-  if (m.includes('password should be at least')) return 'A senha precisa de pelo menos 6 caracteres.'
+  const senha = translatePasswordError(msg)
+  if (senha) return senha
   if (m.includes('rate limit') || m.includes('too many')) return 'Muitas tentativas. Aguarde um instante.'
   return 'Algo deu errado. Tente novamente.'
 }

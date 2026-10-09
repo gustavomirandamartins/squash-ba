@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Lock, Eye, EyeOff, Check } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { PASSWORD_HINT, isPasswordLongEnough, translatePasswordError } from '@/lib/auth/password'
 
 /**
  * Define/atualiza a senha da conta — permite que usuários de link mágico passem
@@ -15,7 +16,7 @@ export function PasswordSection() {
   const [status, setStatus] = useState<'idle' | 'saving' | 'done' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
 
-  const valid = password.length >= 6 && password === confirm
+  const valid = isPasswordLongEnough(password) && password === confirm
 
   async function save() {
     if (!valid || status === 'saving') return
@@ -24,7 +25,7 @@ export function PasswordSection() {
     const supabase = createClient()
     const { error } = await supabase.auth.updateUser({ password })
     if (error) {
-      setError('Não foi possível salvar a senha. Tente novamente.')
+      setError(translatePasswordError(error.message) ?? 'Não foi possível salvar a senha. Tente novamente.')
       setStatus('error')
       return
     }
@@ -72,6 +73,8 @@ export function PasswordSection() {
           autoComplete="new-password"
           className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 px-4 text-sm text-white placeholder-white/30 outline-none transition focus:border-secondary/50 focus:bg-white/8"
         />
+
+        <p className="px-1 text-[11px] text-white/35">{PASSWORD_HINT}</p>
 
         {confirm.length > 0 && password !== confirm && (
           <p className="px-1 text-[11px] text-red-400">As senhas não coincidem.</p>
