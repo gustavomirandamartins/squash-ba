@@ -13,28 +13,62 @@ export default async function ChampionshipPage({
   // Um único client por request — crítico para consistência de sessão
   const supabase = await createClient()
 
-  // getUser() — nunca getSession() server-side (valida JWT)
-  const user = await getAuthUser()
-
-  // ── 1. Campeonato + fases ─────────────────────────────────────────────────
-  const { data: champ } = await supabase
-    .from('championships')
-    .select(
-      `id, name, format, unit, status, start_date, end_date, allow_draw, has_third_place,
-       is_official, description, venue_id,
-       points_win, points_draw, points_loss, tiebreakers, created_at, created_by,
-       venues(name),
-       championship_stages(
-         id, name, kind, counting, rounds,
-         sets_to_play, points_per_set, win_by_two, set_draw_enabled, time_minutes
-       )`,
-    )
-    .eq('id', id)
-    .single()
+  // ── 1ª rodada, em paralelo: tudo que só depende do id ──────────────────────
+  // (antes eram ~10 consultas em fila, cada uma esperando a anterior)
+  const [
+    user,
+    { data: champ },
+    { data: matchesRaw },
+    { data: participantsAll },
+    { data: standingsRaw },
+    { data: convRow },
+    { data: canManageRaw, error: canManageError },
+  ] = await Promise.all([
+    getAuthUser(),
+    supabase
+      .from('championships')
+      .select(
+        `id, name, format, unit, status, start_date, end_date, allow_draw, has_third_place,
+         is_official, description, venue_id,
+         points_win, points_draw, points_loss, tiebreakers, created_at, created_by,
+         venues(name),
+         championship_stages(
+           id, name, kind, counting, rounds,
+           sets_to_play, points_per_set, win_by_two, set_draw_enabled, time_minutes,
+           groups(id, name, ordering)
+         )`,
+      )
+      .eq('id', id)
+      .single(),
+    supabase
+      .from('matches')
+      .select(
+        `id, stage_id, round, bracket_slot, result, status, is_wo, is_double_wo,
+         side_a_participant_id, side_b_participant_id,
+         match_games(game_number, score_a, score_b)`,
+      )
+      .eq('championship_id', id)
+      .order('round', { ascending: true })
+      .order('created_at', { ascending: true }),
+    // Confirmados e pendentes (inscrições do oficial) numa consulta só.
+    supabase
+      .from('participants')
+      .select(`id, group_id, enrollment_status, participant_members(user_id)`)
+      .eq('championship_id', id)
+      .in('enrollment_status', ['confirmado', 'pendente']),
+    supabase.rpc('get_standings', { _championship_id: id }),
+    supabase
+      .from('conversations')
+      .select('id')
+      .eq('championship_id', id)
+      .eq('kind', 'group')
+      .maybeSingle(),
+    supabase.rpc('can_manage_championship', { _championship_id: id }),
+  ])
 
   if (!champ) notFound()
 
-  const stages = (champ.championship_stages ?? []) as Array<{
+  type StageRow = {
     id: string
     name: string
     kind: string
@@ -45,7 +79,9 @@ export default async function ChampionshipPage({
     win_by_two: boolean
     set_draw_enabled: boolean
     time_minutes: number | null
-  }>
+    groups?: { id: string; name: string; ordering: number }[] | null
+  }
+  const stages = (champ.championship_stages ?? []) as StageRow[]
 
   // Identifica fases por kind
   const gruposStageRaw   = stages.find((s) => s.kind === 'grupos')   ?? null
@@ -58,167 +94,103 @@ export default async function ChampionshipPage({
       ? gruposStageRaw
       : ligaStageRaw ?? elimStageRaw ?? stages[0] ?? null
 
-  // ── 2. Jogos + sets do campeonato (com stage_id) ──────────────────────────
-  const { data: matchesRaw } = await supabase
-    .from('matches')
-    .select(
-      `id, stage_id, round, bracket_slot, result, status, is_wo, is_double_wo,
-       side_a_participant_id, side_b_participant_id,
-       match_games(game_number, score_a, score_b)`,
-    )
-    .eq('championship_id', id)
-    .order('round', { ascending: true })
-    .order('created_at', { ascending: true })
-
-  // ── 3. Participantes confirmados + membros + group_id ─────────────────────
-  const { data: participantsRaw } = await supabase
-    .from('participants')
-    .select(`id, group_id, participant_members(user_id)`)
-    .eq('championship_id', id)
-    .eq('enrollment_status', 'confirmado')
-
-  // ── 4. Perfis dos usuários (batch) ────────────────────────────────────────
-  const allUserIds = (participantsRaw ?? []).flatMap((p) =>
-    (p.participant_members ?? []).map((m: { user_id: string }) => m.user_id),
+  type ParticipantRow = {
+    id: string
+    group_id: string | null
+    enrollment_status: string
+    participant_members: { user_id: string }[] | null
+  }
+  const participantsRaw = ((participantsAll ?? []) as ParticipantRow[]).filter(
+    (p) => p.enrollment_status === 'confirmado',
   )
-  const { data: profiles } = allUserIds.length
-    ? await supabase
-        .from('profiles')
-        .select('id, full_name, avatar_url')
-        .in('id', allUserIds)
-    : { data: [] }
+  const isOfficial = (champ as { is_official?: boolean }).is_official ?? false
+  const pendingRaw = isOfficial
+    ? ((participantsAll ?? []) as ParticipantRow[]).filter((p) => p.enrollment_status === 'pendente')
+    : []
+
+  const memberIds = (rows: ParticipantRow[]) =>
+    rows.flatMap((p) => (p.participant_members ?? []).map((m) => m.user_id))
+  const allUserIds = memberIds(participantsRaw)
+  const profileIds = [...new Set([...allUserIds, ...memberIds(pendingRaw)])]
+
+  // ── 2ª rodada, em paralelo: o que depende da primeira ──────────────────────
+  const [{ data: profiles }, groupStandingsRes] = await Promise.all([
+    profileIds.length
+      ? supabase.from('profiles').select('id, full_name, avatar_url').in('id', profileIds)
+      : Promise.resolve({ data: [] as { id: string; full_name: string | null; avatar_url: string | null }[] }),
+    champ.format === 'grupos_elim'
+      ? supabase.rpc('get_group_standings', { _championship_id: id })
+      : Promise.resolve(null),
+  ])
 
   const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]))
 
   // Monta mapa participantId → {full_name, avatar_url}
   const participantInfo: Record<string, { full_name: string | null; avatar_url: string | null }> = {}
-  for (const p of participantsRaw ?? []) {
-    const memberIds = (p.participant_members ?? []).map((m: { user_id: string }) => m.user_id)
-    const names = memberIds
-      .map((uid: string) => profileMap.get(uid)?.full_name)
-      .filter(Boolean) as string[]
-    const avatarUrl =
-      memberIds.length === 1 ? (profileMap.get(memberIds[0])?.avatar_url ?? null) : null
+  for (const p of participantsRaw) {
+    const ids = (p.participant_members ?? []).map((m) => m.user_id)
+    const names = ids.map((uid) => profileMap.get(uid)?.full_name).filter(Boolean) as string[]
+    const avatarUrl = ids.length === 1 ? (profileMap.get(ids[0])?.avatar_url ?? null) : null
     participantInfo[p.id] = {
       full_name: names.length ? names.join(' / ') : null,
       avatar_url: avatarUrl,
     }
   }
 
-  // ── 5. participantGroups (apenas grupos_elim) ─────────────────────────────
+  // ── participantGroups e grupos (apenas grupos_elim) ─────────────────────────
   const participantGroups: Record<string, string> = {}
-  if (champ.format === 'grupos_elim') {
-    for (const p of participantsRaw ?? []) {
-      const gid = (p as { group_id?: string | null }).group_id
-      if (gid) participantGroups[p.id] = gid
-    }
-  }
-
-  // ── 6. Grupos (apenas grupos_elim) ────────────────────────────────────────
   type GroupRow = { id: string; name: string }
   let groups: GroupRow[] = []
-
-  if (champ.format === 'grupos_elim' && gruposStageRaw) {
-    const { data: groupsRaw } = await supabase
-      .from('groups')
-      .select('id, name, ordering')
-      .eq('stage_id', gruposStageRaw.id)
-      .order('ordering', { ascending: true })
-    groups = (groupsRaw ?? []).map((g) => ({ id: g.id, name: g.name }))
-  }
-
-  // ── 7. ID do participante do usuário logado ────────────────────────────────
-  const currentUserParticipantId =
-    user && participantsRaw
-      ? (participantsRaw.find((p) =>
-          (p.participant_members ?? []).some(
-            (m: { user_id: string }) => m.user_id === user.id,
-          ),
-        )?.id ?? null)
-      : null
-
-  // ── 7b. Oficial: inscrições pendentes + status do usuário logado ──────────
-  const isOfficial = (champ as { is_official?: boolean }).is_official ?? false
-  type PendingEnroll = { participantId: string; name: string | null; avatarUrl: string | null; userId: string }
-  let pendingEnrollments: PendingEnroll[] = []
-  let myEnrollmentStatus: 'none' | 'pending' | 'confirmed' = 'none'
-
-  if (isOfficial) {
-    const { data: pendingRaw } = await supabase
-      .from('participants')
-      .select('id, participant_members(user_id)')
-      .eq('championship_id', id)
-      .eq('enrollment_status', 'pendente')
-
-    const pendUserIds = (pendingRaw ?? []).flatMap((p) =>
-      (p.participant_members ?? []).map((m: { user_id: string }) => m.user_id),
-    )
-    const { data: pendProfiles } = pendUserIds.length
-      ? await supabase.from('profiles').select('id, full_name, avatar_url').in('id', pendUserIds)
-      : { data: [] }
-    const pendMap = new Map((pendProfiles ?? []).map((p) => [p.id, p]))
-
-    pendingEnrollments = (pendingRaw ?? []).map((p) => {
-      const uid = (p.participant_members ?? [])[0]?.user_id ?? ''
-      const prof = pendMap.get(uid)
-      return {
-        participantId: p.id as string,
-        userId: uid,
-        name: prof?.full_name ?? null,
-        avatarUrl: prof?.avatar_url ?? null,
-      }
-    })
-
-    if (user) {
-      if (currentUserParticipantId) {
-        myEnrollmentStatus = 'confirmed'
-      } else if (pendingEnrollments.some((p) => p.userId === user.id)) {
-        myEnrollmentStatus = 'pending'
-      }
-    }
-  }
-
-  const confirmedCount = (participantsRaw ?? []).length
-
-  // ── 8. Classificação inicial via RPC (SSR) ────────────────────────────────
-  const { data: standingsRaw } = await supabase.rpc('get_standings', {
-    _championship_id: id,
-  })
-  const initialStandings = (standingsRaw ?? []) as Standing[]
-
-  // Classificação da fase de GRUPOS (escopada — não soma a eliminatória, fix #13).
-  let initialGroupStandings: Standing[] = initialStandings
   if (champ.format === 'grupos_elim') {
-    const { data: groupStandingsRaw } = await supabase.rpc('get_group_standings', {
-      _championship_id: id,
-    })
-    initialGroupStandings = (groupStandingsRaw ?? []) as Standing[]
-  }
-
-  // ── 9. Conversa de grupo do campeonato ───────────────────────────────────
-  let groupConversationId: string | null = null
-  if (champ.status === 'ativo') {
-    const { data: convRow } = await supabase
-      .from('conversations')
-      .select('id')
-      .eq('championship_id', id)
-      .eq('kind', 'group')
-      .single()
-    groupConversationId = convRow?.id ?? null
-  }
-
-  // ── 11. Permissão de gestão ───────────────────────────────────────────────
-  let canManage = false
-  if (user) {
-    try {
-      const { data: ok } = await supabase.rpc('can_manage_championship', {
-        _championship_id: id,
-      })
-      canManage = (ok as boolean) ?? false
-    } catch {
-      canManage = user.id === (champ.created_by ?? '')
+    for (const p of participantsRaw) {
+      if (p.group_id) participantGroups[p.id] = p.group_id
     }
+    groups = [...(gruposStageRaw?.groups ?? [])]
+      .sort((a, b) => a.ordering - b.ordering)
+      .map((g) => ({ id: g.id, name: g.name }))
   }
+
+  // ── ID do participante do usuário logado ────────────────────────────────────
+  const currentUserParticipantId = user
+    ? (participantsRaw.find((p) => (p.participant_members ?? []).some((m) => m.user_id === user.id))?.id ?? null)
+    : null
+
+  // ── Oficial: inscrições pendentes + status do usuário logado ────────────────
+  type PendingEnroll = { participantId: string; name: string | null; avatarUrl: string | null; userId: string }
+  const pendingEnrollments: PendingEnroll[] = pendingRaw.map((p) => {
+    const uid = (p.participant_members ?? [])[0]?.user_id ?? ''
+    const prof = profileMap.get(uid)
+    return {
+      participantId: p.id,
+      userId: uid,
+      name: prof?.full_name ?? null,
+      avatarUrl: prof?.avatar_url ?? null,
+    }
+  })
+  let myEnrollmentStatus: 'none' | 'pending' | 'confirmed' = 'none'
+  if (isOfficial && user) {
+    if (currentUserParticipantId) myEnrollmentStatus = 'confirmed'
+    else if (pendingEnrollments.some((p) => p.userId === user.id)) myEnrollmentStatus = 'pending'
+  }
+
+  const confirmedCount = participantsRaw.length
+
+  // ── Classificação inicial (geral e, em grupos_elim, só da fase de grupos) ───
+  const initialStandings = (standingsRaw ?? []) as Standing[]
+  const initialGroupStandings: Standing[] = groupStandingsRes
+    ? ((groupStandingsRes.data ?? []) as Standing[])
+    : initialStandings
+
+  // ── Conversa de grupo do campeonato (só enquanto ativo) ─────────────────────
+  const groupConversationId: string | null =
+    champ.status === 'ativo' ? ((convRow as { id: string } | null)?.id ?? null) : null
+
+  // ── Permissão de gestão ─────────────────────────────────────────────────────
+  const canManage = user
+    ? canManageError
+      ? user.id === (champ.created_by ?? '')
+      : ((canManageRaw as boolean) ?? false)
+    : false
 
   // ── Normalização dos stages para serialização server → client ──────────────
 

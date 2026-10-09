@@ -1,6 +1,7 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
+import { CACHE_TAGS } from '@/lib/cached-public-data'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminSupabase } from '@supabase/supabase-js'
 
@@ -110,4 +111,5 @@ export async function saveBannerLink(formData: FormData) {
   if (error) throw new Error(error.message)
   revalidatePath('/admin', 'layout')
   revalidatePath('/')
+  revalidateTag(CACHE_TAGS.sponsors, 'max')
 }

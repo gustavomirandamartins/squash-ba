@@ -171,7 +171,7 @@ body::before {
    containing block que QUEBRA o backdrop-filter dos cards glass aninhados. */
 .reveal {
   opacity: 0;
-  animation: fade-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: fade-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .fade-in {

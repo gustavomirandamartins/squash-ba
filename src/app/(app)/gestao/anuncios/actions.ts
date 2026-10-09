@@ -1,7 +1,8 @@
 'use server'
 
 import { createClient } from '@/utils/supabase/server'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
+import { CACHE_TAGS } from '@/lib/cached-public-data'
 
 export type AdResult = { ok: true } | { error: string }
 
@@ -31,6 +32,7 @@ export async function createAd(_prev: AdResult | null, formData: FormData): Prom
   revalidatePath('/gestao/anuncios')
   revalidatePath('/admin/anuncios')
   revalidatePath('/marketplace')
+  revalidateTag(CACHE_TAGS.ads, 'max')
   return { ok: true }
 }
 
@@ -41,6 +43,7 @@ export async function toggleAd(id: string, active: boolean): Promise<void> {
   revalidatePath('/gestao/anuncios')
   revalidatePath('/admin/anuncios')
   revalidatePath('/marketplace')
+  revalidateTag(CACHE_TAGS.ads, 'max')
 }
 
 export async function deleteAd(id: string): Promise<void> {
@@ -50,6 +53,7 @@ export async function deleteAd(id: string): Promise<void> {
   revalidatePath('/gestao/anuncios')
   revalidatePath('/admin/anuncios')
   revalidatePath('/marketplace')
+  revalidateTag(CACHE_TAGS.ads, 'max')
 }
 
 export async function updateAd(id: string, _prev: AdResult | null, formData: FormData): Promise<AdResult> {
@@ -71,5 +75,6 @@ export async function updateAd(id: string, _prev: AdResult | null, formData: For
   revalidatePath('/gestao/anuncios')
   revalidatePath('/admin/anuncios')
   revalidatePath('/marketplace')
+  revalidateTag(CACHE_TAGS.ads, 'max')
   return { ok: true }
 }

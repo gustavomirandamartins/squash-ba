@@ -10,6 +10,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, Send, User, Trophy, ExternalLink } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { onAppReturn } from '@/lib/on-app-return'
 import { formatDistanceToNowStrict, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -217,9 +218,8 @@ export function ChatView({ conv, initialMessages, currentUserId }: Props) {
 
   useEffect(() => {
     void markRead()
-    const onFocus = () => void markRead()
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
+    // Volta ao app: marca como lido no máximo a cada 30 s.
+    return onAppReturn(() => void markRead())
   }, [markRead])
 
   // Realtime: novas mensagens

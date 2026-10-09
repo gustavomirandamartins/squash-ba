@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server'
+import { getActiveAds } from '@/lib/cached-public-data'
 import { TeachersSection, type Teacher } from '@/components/home/TeachersSection'
 import { Phone, Mail, MapPin, ShoppingBag, Store } from 'lucide-react'
 
@@ -26,12 +27,8 @@ export default async function MarketplacePage() {
 
   const [organizersRes, adsRes] = await Promise.all([
     supabase.from('user_roles').select('user_id').eq('role', 'organizer'),
-    supabase
-      .from('ads')
-      .select('id, name, product_service, phone, email, address')
-      .eq('active', true)
-      .order('ordering', { ascending: true })
-      .order('created_at', { ascending: true }),
+    // em cache (invalidado ao criar/editar/remover anúncios)
+    getActiveAds().then((data) => ({ data })).catch(() => ({ data: [] })),
   ])
 
   // Perfis dos professores

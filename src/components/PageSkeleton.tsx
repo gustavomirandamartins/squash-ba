@@ -64,3 +64,17 @@ export function PageSkeleton({ variant = 'list' }: { variant?: 'list' | 'detail'
     </div>
   )
 }
+
+/** Esqueleto de uma seção (Home em streaming): título + linhas. */
+export function SectionSkeleton({ rows = 2, title = true }: { rows?: number; title?: boolean }) {
+  return (
+    <div
+      className="animate-pulse space-y-3 px-5 motion-reduce:animate-none"
+      role="status"
+      aria-label="Carregando"
+    >
+      {title && <TitleSkeleton />}
+      {Array.from({ length: rows }, (_, i) => <CardRow key={i} />)}
+    </div>
+  )
+}

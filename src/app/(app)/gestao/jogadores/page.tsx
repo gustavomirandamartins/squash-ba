@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server'
+import { getCategories } from '@/lib/cached-public-data'
 import { PlayerCategoryList, type PlayerRow } from '@/components/gestao/PlayerCategoryList'
 
 export const metadata = { title: 'Jogadores · Gestão' }
@@ -13,7 +14,7 @@ export default async function JogadoresPage() {
       .eq('onboarding_completed', true)
       .not('full_name', 'is', null)
       .order('full_name', { ascending: true }),
-    supabase.from('categories').select('id, name').order('name'),
+    getCategories().then((data) => ({ data })).catch(() => ({ data: [] })),
   ])
 
   const players: PlayerRow[] = (profiles ?? []).map(

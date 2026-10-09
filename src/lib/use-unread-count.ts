@@ -2,10 +2,15 @@
 
 import { useState, useEffect, useId } from 'react'
 import { createClient } from '@/utils/supabase/client'
+import { onAppReturn } from '@/lib/on-app-return'
 
 /**
- * Total de mensagens não-lidas do usuário, com atualização via Realtime + foco.
- * Compartilhado entre a BottomNav (mobile) e a DesktopSidebar.
+ * Total de mensagens não-lidas do usuário, com atualização via Realtime e ao
+ * voltar ao app (no máximo a cada 30 s). Compartilhado entre a BottomNav
+ * (mobile) e a DesktopSidebar.
+ *
+ * Uma chamada só (RPC get_unread_total, contada no banco) — antes era uma
+ * consulta por conversa a cada atualização.
  */
 export function useUnreadCount(userId: string | null) {
   const [count, setCount] = useState(0)
@@ -19,33 +24,20 @@ export function useUnreadCount(userId: string | null) {
     if (!userId) return
     let cancelled = false
     let channel: ReturnType<typeof supabase.channel> | null = null
+    let debounce: ReturnType<typeof setTimeout> | undefined
 
     async function fetchCount() {
-      if (!userId) { setCount(0); return }
-      const { data: memberships } = await supabase
-        .from('conversation_members')
-        .select('conversation_id, last_read_at')
-        .eq('user_id', userId)
-
-      if (!memberships?.length) { if (!cancelled) setCount(0); return }
-
-      let total = 0
-      await Promise.all(
-        memberships.map(async (m: { conversation_id: string; last_read_at: string | null }) => {
-          const since = m.last_read_at ?? new Date(0).toISOString()
-          const { count: c } = await supabase
-            .from('messages')
-            .select('id', { count: 'exact', head: true })
-            .eq('conversation_id', m.conversation_id)
-            .neq('sender_id', userId)
-            .gt('created_at', since)
-          total += c ?? 0
-        }),
-      )
-      if (!cancelled) setCount(total)
+      const { data, error } = await supabase.rpc('get_unread_total')
+      if (!cancelled && !error) setCount((data as number | null) ?? 0)
     }
 
     void fetchCount()
+
+    // Várias mensagens chegando juntas → uma recarga.
+    const refetchSoon = () => {
+      clearTimeout(debounce)
+      debounce = setTimeout(() => void fetchCount(), 800)
+    }
 
     async function setup() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -54,20 +46,18 @@ export function useUnreadCount(userId: string | null) {
       if (cancelled) return
       channel = supabase
         .channel(`unread-${userId ?? 'anon'}-${instanceId}`)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
-          void fetchCount()
-        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, refetchSoon)
         .subscribe()
     }
     void setup()
 
-    const onFocus = () => void fetchCount()
-    window.addEventListener('focus', onFocus)
+    const stopReturn = onAppReturn(() => void fetchCount())
 
     return () => {
       cancelled = true
+      clearTimeout(debounce)
       if (channel) void supabase.removeChannel(channel)
-      window.removeEventListener('focus', onFocus)
+      stopReturn()
     }
   }, [userId, supabase, instanceId])
 

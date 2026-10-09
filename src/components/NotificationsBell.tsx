@@ -12,6 +12,7 @@ import {
   Bell, MessageSquare, Swords, Trophy, GraduationCap, MessageSquareWarning, Check, type LucideIcon,
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { onAppReturn } from '@/lib/on-app-return'
 
 type Notification = {
   id: string
@@ -96,12 +97,12 @@ export function NotificationsBell({
         .subscribe()
     }
     void setup()
-    const onFocus = () => void fetchItems()
-    window.addEventListener('focus', onFocus)
+    // Volta ao app: recarrega no máximo a cada 30 s (o tempo real cobre o resto).
+    const stopReturn = onAppReturn(() => void fetchItems())
     return () => {
       cancelled = true
       if (channel) void supabase.removeChannel(channel)
-      window.removeEventListener('focus', onFocus)
+      stopReturn()
     }
   }, [supabase, userId, fetchItems])
 

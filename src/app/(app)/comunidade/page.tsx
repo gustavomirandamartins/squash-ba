@@ -1,5 +1,6 @@
 import { Users } from 'lucide-react'
 import { createClient } from '@/utils/supabase/server'
+import { getCategories } from '@/lib/cached-public-data'
 import { ComunidadeClient, type CommunityUser } from '@/components/comunidade/ComunidadeClient'
 
 export const metadata = { title: 'Comunidade' }
@@ -16,7 +17,7 @@ export default async function ComunidadePage() {
         .eq('onboarding_completed', true)
         .not('full_name', 'is', null)
         .order('full_name', { ascending: true }),
-      supabase.from('categories').select('id, name'),
+      getCategories().then((data) => ({ data })).catch(() => ({ data: [] })),
       supabase.from('teams').select('id, name'),
       supabase.from('user_roles').select('user_id, role').eq('role', 'organizer'),
     ])

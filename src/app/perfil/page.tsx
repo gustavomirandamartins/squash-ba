@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { createClient, getAuthUser } from '@/utils/supabase/server'
+import { getCategories } from '@/lib/cached-public-data'
 import { EditProfileForm } from './EditProfileForm'
 
 export const metadata: Metadata = {
@@ -34,7 +35,8 @@ export default async function PerfilPage() {
       .select('phone, email')
       .eq('user_id', user.id)
       .single(),
-    supabase.from('categories').select('id, name').order('name'),
+    // em cache (muda pouco; invalidado ao editar categorias)
+    getCategories().then((data) => ({ data })).catch(() => ({ data: [] })),
     supabase.from('teams').select('id, name').order('name'),
   ])
 

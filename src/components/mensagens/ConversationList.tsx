@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { MessageSquare, Plus, User, Users, Search, X, Trophy, ChevronRight, Trash2, Pencil } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import { toConvItems, type ConvRow } from '@/lib/conversations'
 import { formatDistanceToNowStrict, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -260,91 +261,11 @@ export function ConversationList({ initialConversations, currentUserId }: Props)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [supabase] = useState(() => createClient())
 
+  // Uma chamada (RPC get_my_conversations) — antes, uma consulta por conversa.
   const refetch = useCallback(async () => {
-    const { data: memberships } = await supabase
-      .from('conversation_members')
-      .select('conversation_id, last_read_at')
-      .eq('user_id', currentUserId)
-
-    if (!memberships?.length) { setConversations([]); return }
-
-    const convIds = memberships.map((m: { conversation_id: string }) => m.conversation_id)
-    const readMap = new Map(memberships.map((m: { conversation_id: string; last_read_at: string | null }) => [m.conversation_id, m.last_read_at]))
-
-    const { data: convs } = await supabase
-      .from('conversations')
-      .select('id, kind, title, championship_id')
-      .in('id', convIds)
-
-    if (!convs) return
-
-    const msgPromises = convIds.map((cid: string) =>
-      supabase
-        .from('messages')
-        .select('body, created_at, sender_id')
-        .eq('conversation_id', cid)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-        .then((r) => ({ cid, msg: r.data })),
-    )
-    const lastMsgs = await Promise.all(msgPromises)
-    const lastMsgMap = new Map(lastMsgs.map(({ cid, msg }) => [cid, msg]))
-
-    const directConvIds = convs.filter((c: { kind: string }) => c.kind === 'direct').map((c: { id: string }) => c.id)
-    const { data: allMembers } = directConvIds.length
-      ? await supabase
-          .from('conversation_members')
-          .select('conversation_id, user_id')
-          .in('conversation_id', directConvIds)
-          .neq('user_id', currentUserId)
-      : { data: [] }
-
-    const otherUserIds = [...new Set((allMembers ?? []).map((m: { user_id: string }) => m.user_id))]
-    const { data: otherProfiles } = otherUserIds.length
-      ? await supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url')
-          .in('id', otherUserIds)
-      : { data: [] }
-
-    const profileMap = new Map((otherProfiles ?? []).map((p: { id: string; full_name: string | null; avatar_url: string | null }) => [p.id, p]))
-    const otherUserMap = new Map(
-      (allMembers ?? []).map((m: { conversation_id: string; user_id: string }) => [m.conversation_id, m.user_id]),
-    )
-
-    const items: ConvItem[] = convs.map((c: { id: string; kind: string; title: string | null; championship_id: string | null }) => {
-      const lastMsg = lastMsgMap.get(c.id)
-      const lastReadAt = readMap.get(c.id)
-      const otherUid = c.kind === 'direct' ? (otherUserMap.get(c.id) ?? null) : null
-      const otherProfile = otherUid ? (profileMap.get(otherUid) ?? null) : null
-      const unread =
-        lastMsg && lastMsg.sender_id !== currentUserId && lastReadAt
-          ? lastMsg.created_at > lastReadAt ? 1 : 0
-          : 0
-
-      return {
-        id: c.id,
-        kind: c.kind as 'direct' | 'group',
-        title: c.title,
-        championshipId: c.championship_id,
-        lastMessageBody: lastMsg?.body ?? null,
-        lastMessageAt: lastMsg?.created_at ?? null,
-        unreadCount: unread,
-        otherUserId: otherUid,
-        otherUserName: otherProfile?.full_name ?? null,
-        otherUserAvatar: otherProfile?.avatar_url ?? null,
-      }
-    })
-
-    items.sort((a, b) => {
-      const ta = a.lastMessageAt ?? '0'
-      const tb = b.lastMessageAt ?? '0'
-      return tb > ta ? 1 : -1
-    })
-
-    setConversations(items)
-  }, [supabase, currentUserId])
+    const { data, error } = await supabase.rpc('get_my_conversations')
+    if (!error) setConversations(toConvItems(data as ConvRow[] | null))
+  }, [supabase])
 
   // Realtime: qualquer mensagem nova → refetch lista
   useEffect(() => {

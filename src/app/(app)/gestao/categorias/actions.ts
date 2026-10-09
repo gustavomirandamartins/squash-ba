@@ -1,6 +1,7 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
+import { CACHE_TAGS } from '@/lib/cached-public-data'
 import { createClient } from '@/utils/supabase/server'
 
 export async function createCategory(name: string) {
@@ -10,6 +11,7 @@ export async function createCategory(name: string) {
     .insert({ name: name.trim() })
   if (error) throw new Error(error.message)
   revalidatePath('/gestao/categorias')
+  revalidateTag(CACHE_TAGS.categories, 'max')
 }
 
 export async function updateCategory(id: string, name: string) {
@@ -20,6 +22,7 @@ export async function updateCategory(id: string, name: string) {
     .eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/gestao/categorias')
+  revalidateTag(CACHE_TAGS.categories, 'max')
 }
 
 export async function deleteCategory(id: string) {
@@ -30,4 +33,5 @@ export async function deleteCategory(id: string) {
     .eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/gestao/categorias')
+  revalidateTag(CACHE_TAGS.categories, 'max')
 }
