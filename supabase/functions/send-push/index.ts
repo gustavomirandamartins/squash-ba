@@ -21,7 +21,29 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
 )
 
+/**
+ * Só o banco (webhook com a chave de serviço) pode disparar push. O gateway já
+ * confere a assinatura do token (verify_jwt); aqui conferimos o PAPEL — sem
+ * isso, qualquer usuário logado podia forjar uma mensagem em nome de outra
+ * pessoa e mandar push para os membros de qualquer conversa.
+ */
+function isServiceRole(req: Request): boolean {
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  const part = token.split('.')[1]
+  if (!part) return false
+  try {
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/')
+    const claims = JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, '=')))
+    return claims?.role === 'service_role'
+  } catch {
+    return false
+  }
+}
+
 Deno.serve(async (req: Request) => {
+  if (!isServiceRole(req)) {
+    return new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 })
+  }
   try {
     const body = await req.json() as {
       record: {

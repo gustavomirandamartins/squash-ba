@@ -25,7 +25,29 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
 )
 
+/**
+ * Só o banco (webhook com a chave de serviço) pode disparar push. O gateway já
+ * confere a assinatura do token (verify_jwt); aqui conferimos o PAPEL — sem
+ * isso, qualquer usuário logado (cujo token também é válido) podia mandar push
+ * com título, texto e link livres para qualquer pessoa.
+ */
+function isServiceRole(req: Request): boolean {
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  const part = token.split('.')[1]
+  if (!part) return false
+  try {
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/')
+    const claims = JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, '=')))
+    return claims?.role === 'service_role'
+  } catch {
+    return false
+  }
+}
+
 Deno.serve(async (req: Request) => {
+  if (!isServiceRole(req)) {
+    return new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 })
+  }
   try {
     const body = await req.json() as {
       record: {
@@ -47,14 +69,19 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ sent: 0, skipped: 'message' }), { status: 200 })
     }
 
+    console.log(`[notify-push] type=${record.type} user=${record.user_id}`)
+
     const { data: subs } = await supabase
       .from('push_subscriptions')
       .select('endpoint, p256dh, auth_key')
       .eq('user_id', record.user_id)
 
     if (!subs || subs.length === 0) {
+      console.log(`[notify-push] no subscriptions for user=${record.user_id}`)
       return new Response(JSON.stringify({ sent: 0 }), { status: 200 })
     }
+
+    console.log(`[notify-push] ${subs.length} subscription(s) found`)
 
     const payload = JSON.stringify({
       title: record.title ?? 'SquashBa',
@@ -87,6 +114,8 @@ Deno.serve(async (req: Request) => {
     if (staleEndpoints.length > 0) {
       await supabase.from('push_subscriptions').delete().in('endpoint', staleEndpoints)
     }
+
+    console.log(`[notify-push] done: sent=${sent} stale=${staleEndpoints.length}`)
 
     return new Response(JSON.stringify({ sent, stale: staleEndpoints.length }), {
       status: 200,
