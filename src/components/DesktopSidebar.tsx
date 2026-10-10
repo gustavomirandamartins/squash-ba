@@ -7,7 +7,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Trophy, Store, Users, MessageSquare, CircleHelp, type LucideIcon } from 'lucide-react'
+import { Home, Trophy, Store, Users, MessageSquare, type LucideIcon } from 'lucide-react'
 import { Logo } from './Logo'
 import { UserAvatarMenu } from './UserAvatarMenu'
 import { NotificationsBell } from './NotificationsBell'
@@ -27,7 +27,6 @@ const items: Item[] = [
   { href: '/marketplace', label: 'Marketplace', icon: Store, matchPrefix: true },
   { href: '/comunidade', label: 'Comunidade', icon: Users, matchPrefix: true },
   { href: '/mensagens', label: 'Mensagens', icon: MessageSquare, matchPrefix: true },
-  { href: '/ajuda',     label: 'Ajuda',     icon: CircleHelp,    matchPrefix: true },
 ]
 
 interface Props {

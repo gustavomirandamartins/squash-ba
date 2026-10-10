@@ -6,7 +6,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
 import { clearShellProfile } from '@/lib/offline/shell-profile'
-import { LogOut, User, Settings, ShieldCheck, Trophy, LayoutDashboard } from 'lucide-react'
+import { LogOut, User, Settings, ShieldCheck, Trophy, LayoutDashboard, CircleHelp } from 'lucide-react'
 
 interface Props {
   name?: string | null
@@ -68,7 +68,7 @@ export function UserAvatarMenu({ name, avatarUrl, isAdmin, canManage, placement 
 
       {open && (
         <div
-          className={`glass glass-overlay glass-card absolute z-50 min-w-[160px] overflow-hidden p-1 ${
+          className={`glass glass-overlay glass-card absolute z-50 min-w-[190px] overflow-hidden p-1 ${
             placement === 'up' ? 'bottom-12' : 'top-12'
           } ${align === 'left' ? 'left-0' : 'right-0'}`}
           style={{ borderRadius: 16 }}
@@ -116,6 +116,17 @@ export function UserAvatarMenu({ name, avatarUrl, isAdmin, canManage, placement 
           >
             <Settings className="h-4 w-4" />
             Editar perfil
+          </Link>
+          {/* Ajuda saiu da navegação principal (5 abas) e fica aqui, no celular
+              e no computador. Offline, /ajuda segue a regra das telas que
+              precisam de rede (aviso no shell). */}
+          <Link
+            href="/ajuda"
+            onClick={() => setOpen(false)}
+            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-white/70 transition hover:bg-white/8 hover:text-white active:scale-95"
+          >
+            <CircleHelp className="h-4 w-4" />
+            Ajuda e feedback
           </Link>
           <button
             type="button"
