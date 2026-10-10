@@ -6,7 +6,8 @@
 #     desligada (service worker real).
 #
 # Nenhum job fala com o Supabase de produção: o build usa uma URL/chave
-# fictícias e os testes bloqueiam qualquer requisição para *.supabase.co.
+# fictícias (as mesmas do playwright.config.ts, que o e2e local também usa) e
+# os testes bloqueiam qualquer requisição para *.supabase.co.
 # O lint fica de fora por enquanto: há erros antigos no projeto.
 #
 # Ubuntu fixo (24.04) em vez de ubuntu-latest: a troca automática para o
@@ -62,12 +63,10 @@ jobs:
       - run: npm ci
       - name: Chromium do Playwright
         run: npx playwright install --with-deps chromium
-      - name: Build de produção
-        run: npm run build
-      - name: Testes offline
+      # O próprio Playwright faz o build com o Supabase fictício
+      # (playwright.config.ts) — o mesmo caminho do npm run test:e2e local.
+      - name: Build e testes ponta a ponta
         run: npx playwright test
-        env:
-          E2E_SKIP_BUILD: '1'
       - name: Rastros dos testes que falharam
         if: failure()
         uses: actions/upload-artifact@v4
