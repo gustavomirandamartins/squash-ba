@@ -1,5 +1,4 @@
 // Texto dos Termos de Uso — usado na página /termos e na tela de aceite.
-// RASCUNHO: revisar antes de publicar.
 
 import Link from 'next/link'
 
@@ -24,7 +23,11 @@ export function TermsContent() {
         </p>
       </Section>
 
-      <Section title="2. Sua conta">
+      <Section title="2. Quem opera o SquashBa">
+        <p>O SquashBa é operado por Gustavo Miranda Martins, em Salvador, Bahia.</p>
+      </Section>
+
+      <Section title="3. Sua conta">
         <ul>
           <li>Use dados verdadeiros: seu nome e sua foto, não os de outra pessoa.</li>
           <li>A conta é pessoal. Não compartilhe seu acesso.</li>
@@ -32,7 +35,14 @@ export function TermsContent() {
         </ul>
       </Section>
 
-      <Section title="3. O que não é permitido">
+      <Section title="4. Idade mínima">
+        <p>
+          O SquashBa pode ser usado a partir dos 13 anos. Menores de 18 anos precisam da
+          autorização de um responsável legal para usar o app.
+        </p>
+      </Section>
+
+      <Section title="5. O que não é permitido">
         <p>No feed, nos comentários, nas mensagens e no perfil, é proibido:</p>
         <ul>
           <li>
@@ -55,15 +65,15 @@ export function TermsContent() {
         <p>Não há tolerância para conteúdo ofensivo ou abusivo.</p>
       </Section>
 
-      <Section title="4. Denúncia e bloqueio">
+      <Section title="6. Denúncia e bloqueio">
         <ul>
           <li>
             Você pode denunciar posts, comentários, mensagens e perfis pelo menu{' '}
             <strong className="text-white/80">⋯</strong>.
           </li>
           <li>
-            Todas as denúncias são analisadas pela equipe do SquashBa. Conteúdo que viole estes
-            termos pode ser removido, e a conta responsável pode ser suspensa ou excluída.
+            Todas as denúncias são analisadas pela equipe do SquashBa. Se houver violação destes
+            termos, o conteúdo pode ser removido e a conta responsável pode ser excluída.
           </li>
           <li>
             Você pode bloquear qualquer usuário. Vocês deixam de ver o conteúdo um do outro e
@@ -72,30 +82,45 @@ export function TermsContent() {
         </ul>
       </Section>
 
-      <Section title="5. Campeonatos e resultados">
+      <Section title="7. Campeonatos e resultados">
         <p>
           Organizadores e jogadores devem registrar placares verdadeiros. Resultados
           manipulados podem ser corrigidos ou removidos pela organização.
         </p>
       </Section>
 
-      <Section title="6. Exclusão da conta">
+      <Section title="8. Exclusão da conta">
         <p>
           Você pode excluir sua conta a qualquer momento no seu perfil. O SquashBa também pode
           excluir contas que violem estes termos.
         </p>
       </Section>
 
-      <Section title="7. Mudanças nos termos">
+      <Section title="9. Mudanças nos termos">
         <p>
           Podemos atualizar estes termos. Quando a mudança for relevante, pediremos um novo
           aceite antes de você continuar usando o app.
         </p>
       </Section>
 
-      <Section title="8. Contato">
+      <Section title="10. Contato">
         <p>
-          Dúvidas sobre estes termos: pela página de Ajuda do app.
+          Dúvidas sobre estes termos: pelo e-mail{' '}
+          <a href="mailto:contato@gustavomartins.com" className="text-secondary underline-offset-2 hover:underline">
+            contato@gustavomartins.com
+          </a>{' '}
+          ou pela{' '}
+          <Link href="/ajuda" className="text-secondary underline-offset-2 hover:underline">
+            página de Ajuda
+          </Link>{' '}
+          do app.
+        </p>
+      </Section>
+
+      <Section title="11. Lei e foro">
+        <p>
+          Estes termos seguem a legislação brasileira. Fica eleito o foro da comarca de
+          Salvador, Bahia, para resolver questões relacionadas a eles.
         </p>
       </Section>
     </div>

@@ -36,7 +36,6 @@ export async function updateSession(request: NextRequest) {
     path.startsWith('/auth') ||
     path.startsWith('/onboarding') ||
     path.startsWith('/privacidade') ||
-    path.startsWith('/termos') ||
     path.startsWith('/api')
 
   if (!user && !isPublic) {

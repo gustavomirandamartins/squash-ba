@@ -13,6 +13,7 @@ import { createClient } from '@/utils/supabase/client'
 import { onAppReturn } from '@/lib/on-app-return'
 import { formatDistanceToNowStrict, parseISO } from 'date-fns'
 import { ModerationMenu } from '@/components/moderation/ModerationMenu'
+import { ReceivedMessageMenu } from './ReceivedMessageMenu'
 import { ptBR } from 'date-fns/locale'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -83,13 +84,44 @@ function Bubble({
   msg,
   showSender,
   isGroup,
+  meId,
 }: {
   msg: ChatMessage
   showSender: boolean
   isGroup: boolean
+  meId: string
 }) {
   const urls = extractUrls(msg.body)
   const textParts = msg.body.split(URL_RE)
+  const canReport = !msg.isOwn && !msg.id.startsWith('optimistic-')
+
+  const bubble = (
+    <div
+      className={[
+        'rounded-2xl px-3.5 py-2 text-sm leading-relaxed',
+        msg.isOwn
+          ? 'rounded-br-sm bg-secondary/15 ring-1 ring-secondary/30 text-white'
+          : 'rounded-bl-sm bg-white/[0.08] ring-1 ring-white/8 text-white/85',
+      ].join(' ')}
+    >
+      {/* Texto com links inline */}
+      {textParts.map((part, i) =>
+        URL_RE.test(part) ? (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-secondary underline decoration-secondary/40 break-all"
+          >
+            {part}
+          </a>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </div>
+  )
 
   return (
     <div className={`flex items-end gap-2 ${msg.isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -119,32 +151,14 @@ function Bubble({
           </span>
         )}
 
-        {/* Bolha */}
-        <div
-          className={[
-            'rounded-2xl px-3.5 py-2 text-sm leading-relaxed',
-            msg.isOwn
-              ? 'rounded-br-sm bg-secondary/15 ring-1 ring-secondary/30 text-white'
-              : 'rounded-bl-sm bg-white/[0.08] ring-1 ring-white/8 text-white/85',
-          ].join(' ')}
-        >
-          {/* Texto com links inline */}
-          {textParts.map((part, i) =>
-            URL_RE.test(part) ? (
-              <a
-                key={i}
-                href={part}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-secondary underline decoration-secondary/40 break-all"
-              >
-                {part}
-              </a>
-            ) : (
-              <span key={i}>{part}</span>
-            ),
-          )}
-        </div>
+        {/* Bolha — recebida: toque longo / "⋯" para denunciar */}
+        {canReport ? (
+          <ReceivedMessageMenu meId={meId} messageId={msg.id}>
+            {bubble}
+          </ReceivedMessageMenu>
+        ) : (
+          bubble
+        )}
 
         {/* Link preview cards */}
         {urls.map((url) => (
@@ -438,6 +452,7 @@ export function ChatView({ conv, initialMessages, currentUserId }: Props) {
               msg={msg}
               showSender={showSender}
               isGroup={isGroup}
+              meId={currentUserId}
             />
           )
         })}
