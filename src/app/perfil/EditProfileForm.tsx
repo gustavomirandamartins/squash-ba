@@ -22,6 +22,7 @@ import {
 import { Logo } from '@/components/Logo'
 import { subscribePush } from '@/lib/push'
 import { PasswordSection } from './PasswordSection'
+import { BlockedUsersSection } from './BlockedUsersSection'
 
 type Gender = 'masculino' | 'feminino' | 'outro' | 'nao_informado'
 
@@ -496,6 +497,9 @@ export function EditProfileForm({ userId, email, categories, teams, initial }: P
 
         {/* Senha de acesso (alternativa ao link mágico) */}
         <PasswordSection />
+
+        {/* Bloqueios (desbloquear) */}
+        <BlockedUsersSection userId={userId} />
       </div>
     </div>
   )

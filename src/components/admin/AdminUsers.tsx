@@ -13,12 +13,22 @@ export type AdminUser = {
   role: 'admin' | 'organizer' | 'jogador'
 }
 
-export function AdminUsers({ users, currentUserId }: { users: AdminUser[]; currentUserId: string }) {
-  const [query, setQuery] = useState('')
+export function AdminUsers({
+  users,
+  currentUserId,
+  initialQuery = '',
+}: {
+  users: AdminUser[]
+  currentUserId: string
+  /** vindo de "Ir para o usuário" (denúncias): id ou nome */
+  initialQuery?: string
+}) {
+  const [query, setQuery] = useState(initialQuery)
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return users
     return users.filter((u) =>
+      u.id === q ||
       (u.name ?? '').toLowerCase().includes(q) ||
       (u.email ?? '').toLowerCase().includes(q)
     )

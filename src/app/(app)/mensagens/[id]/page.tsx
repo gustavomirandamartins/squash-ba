@@ -60,6 +60,7 @@ export default async function ChatPage({
     id: conv.id,
     kind: conv.kind as 'direct' | 'group',
     title: conv.title,
+    otherUserId,
     otherUserName: otherProfile?.full_name ?? null,
     otherUserAvatar: (otherProfile as { avatar_url?: string | null } | null)?.avatar_url ?? null,
   }

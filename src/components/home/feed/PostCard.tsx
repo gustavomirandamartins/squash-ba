@@ -15,6 +15,7 @@ import { Trash2, ExternalLink, Globe, UserRound, Loader2, Heart, MessageCircle }
 import { createClient } from '@/utils/supabase/client'
 import { prettyDomain, parseMediaUrl } from './embed'
 import { CommentsSection } from './CommentsSection'
+import { ModerationMenu } from '@/components/moderation/ModerationMenu'
 import type { CurrentUser, FeedPost } from './types'
 
 const URL_SPLIT = /(https?:\/\/[^\s<>"')]+)/gi
@@ -100,6 +101,17 @@ export function PostCard({
           <p className="truncate text-sm font-semibold text-white/90">{post.author_name ?? 'Jogador'}</p>
           <p className="text-[11px] text-white/35">{when}</p>
         </div>
+
+        {/* Denunciar / bloquear (posts de outras pessoas). Bloqueou → o feed
+            recarrega e o banco já não traz mais nada do autor. */}
+        <ModerationMenu
+          meId={me.id}
+          targetType="post"
+          targetId={post.id}
+          ownerId={post.author_id}
+          ownerName={post.author_name}
+          onBlocked={onDeleted}
+        />
 
         {canDelete && (
           confirming ? (

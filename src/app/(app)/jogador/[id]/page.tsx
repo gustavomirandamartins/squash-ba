@@ -3,6 +3,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { createClient, getAuthUser } from '@/utils/supabase/server'
 import { MessageButton } from '@/components/jogador/MessageButton'
+import { BlockedNotice, PlayerMenu } from '@/components/jogador/PlayerSafety'
 import { ChevronLeft, User, Award, Users, Trophy, Settings } from 'lucide-react'
 
 export const metadata = { title: 'Jogador' }
@@ -32,7 +33,7 @@ export default async function JogadorPage({
   const isSelf = user?.id === profile.id
 
   // ── Categoria, time, stats e nº de campeonatos (em paralelo) ───────────────
-  const [catRes, teamRes, statsRes, partsRes] = await Promise.all([
+  const [catRes, teamRes, statsRes, partsRes, blockRes] = await Promise.all([
     profile.category_id
       ? supabase.from('categories').select('name').eq('id', profile.category_id).single()
       : Promise.resolve({ data: null }),
@@ -41,7 +42,12 @@ export default async function JogadorPage({
       : Promise.resolve({ data: null }),
     supabase.from('v_user_lifetime_stats').select('*').eq('user_id', id).maybeSingle(),
     supabase.from('participant_members').select('participant_id').eq('user_id', id),
+    // Só as minhas linhas são visíveis (RLS): "eu bloqueei este jogador?"
+    user && !isSelf
+      ? supabase.from('user_blocks').select('blocked_id').eq('blocker_id', user.id).eq('blocked_id', id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
+  const iBlocked = !!blockRes.data
 
   const categoryName = (catRes.data as { name: string } | null)?.name ?? null
   const teamName = (teamRes.data as { name: string } | null)?.name ?? null
@@ -74,7 +80,12 @@ export default async function JogadorPage({
       </Link>
 
       {/* Cabeçalho da ficha */}
-      <div className="glass glass-card flex flex-col items-center gap-3 px-5 py-6 text-center">
+      <div className="glass glass-card relative flex flex-col items-center gap-3 px-5 py-6 text-center">
+        {user && !isSelf && !iBlocked && (
+          <div className="absolute right-3 top-3">
+            <PlayerMenu meId={user.id} playerId={profile.id} playerName={profile.full_name} />
+          </div>
+        )}
         <div className="relative h-24 w-24 overflow-hidden rounded-full ring-2 ring-white/15">
           {profile.avatar_url ? (
             <Image src={profile.avatar_url} alt={name} fill className="object-cover" unoptimized />
@@ -138,6 +149,8 @@ export default async function JogadorPage({
           <Settings className="h-4 w-4" />
           Editar meu perfil
         </Link>
+      ) : user && iBlocked ? (
+        <BlockedNotice meId={user.id} playerId={profile.id} />
       ) : user ? (
         <MessageButton userId={profile.id} />
       ) : null}

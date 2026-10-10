@@ -180,3 +180,34 @@ test('versão nova descarta as páginas guardadas pela anterior', async ({ page 
     )
     .toBe(0)
 })
+
+test('redirecionamento não é guardado como página: sem rede, cai no shell', async ({ context, page }) => {
+  // Sem sessão, o servidor redireciona as telas do app para /login — o mesmo
+  // mecanismo do aceite dos termos (/termos/aceitar). Com rede: navegação e
+  // payload RSC de /campeonatos voltam redirecionados.
+  await page.goto('/campeonatos')
+  await expect(page).toHaveURL(/\/login/)
+  await page.evaluate(async () => {
+    await fetch('/campeonatos', { headers: { RSC: '1' } })
+  })
+
+  const guardadas = await page.evaluate(async () => {
+    const out: string[] = []
+    for (const name of ['pages', 'pages-rsc', 'pages-rsc-prefetch']) {
+      if (!(await caches.has(name))) continue
+      for (const req of await (await caches.open(name)).keys()) {
+        if (new URL(req.url).pathname === '/campeonatos') out.push(name)
+      }
+    }
+    return out
+  })
+  expect(guardadas).toEqual([])
+
+  // Sem rede (e com o perfil guardado), /campeonatos abre no shell — não a
+  // tela para onde o servidor redirecionou.
+  await seed(page, { profile: PROFILE })
+  await context.setOffline(true)
+  await page.goto('/campeonatos')
+  await expect(page.getByRole('heading', { name: 'Campeonatos' })).toBeVisible()
+  await expect(page).toHaveURL(/\/campeonatos$/)
+})

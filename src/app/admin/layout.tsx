@@ -27,10 +27,11 @@ export default async function AdminLayout({
   if (!adminRole) notFound()
 
   // Badge de feedbacks novos para o nav
-  const { count: feedbackCount } = await supabase
-    .from('feedback')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'novo')
+  // Badges do nav: feedbacks novos e denúncias abertas
+  const [{ count: feedbackCount }, { count: reportCount }] = await Promise.all([
+    supabase.from('feedback').select('id', { count: 'exact', head: true }).eq('status', 'novo'),
+    supabase.from('content_reports').select('id', { count: 'exact', head: true }).eq('status', 'aberta'),
+  ])
 
   return (
     <div
@@ -67,7 +68,7 @@ export default async function AdminLayout({
         </div>
 
         {/* Navegação por abas */}
-        <AdminNav feedbackCount={feedbackCount ?? 0} />
+        <AdminNav feedbackCount={feedbackCount ?? 0} reportCount={reportCount ?? 0} />
 
         {/* Conteúdo da aba */}
         <div className="mt-6">{children}</div>
