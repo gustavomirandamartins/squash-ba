@@ -211,3 +211,29 @@ test('redirecionamento não é guardado como página: sem rede, cai no shell', a
   await expect(page.getByRole('heading', { name: 'Campeonatos' })).toBeVisible()
   await expect(page).toHaveURL(/\/campeonatos$/)
 })
+
+test('imagens do shell e da moldura carregam sem rede (logo incluído)', async ({ context, page }) => {
+  await seed(page, { profile: PROFILE })
+  const falhas: string[] = []
+  page.on('requestfailed', (r) => {
+    if (r.resourceType() === 'image') falhas.push(`falhou ${r.url()}`)
+  })
+  page.on('response', (r) => {
+    if (r.request().resourceType() === 'image' && r.status() >= 400) falhas.push(`${r.status()} ${r.url()}`)
+  })
+  await context.setOffline(true)
+
+  // Celular (TopBar) e computador (barra lateral): cada moldura tem seu logo.
+  for (const tela of [{ width: 412, height: 915 }, { width: 1280, height: 800 }]) {
+    await page.setViewportSize(tela)
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: /Bem-vindo/ })).toBeVisible()
+    await page.waitForFunction(() => [...document.images].every((i) => i.complete))
+    const quebradas = await page.evaluate(() =>
+      [...document.images].filter((i) => i.naturalWidth === 0).map((i) => i.currentSrc || i.src),
+    )
+    expect(quebradas, `tela ${tela.width}px`).toEqual([])
+    expect(await page.locator('img[alt="SquashBa"]').count(), `logo na tela ${tela.width}px`).toBeGreaterThan(0)
+  }
+  expect(falhas).toEqual([])
+})

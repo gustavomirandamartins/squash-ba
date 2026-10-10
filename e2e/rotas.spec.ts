@@ -56,3 +56,22 @@ test('rotas públicas abrem sem sessão', async ({ request }) => {
   expect(new URL(cb.headers()['location']).search).toBe('?error=auth')
   expect((await request.get('/api/keep-alive', { maxRedirects: 0 })).status()).toBe(401)
 })
+
+test('"Voltar" das páginas públicas: página anterior ou, sem histórico, o início', async ({ page }) => {
+  // Com histórico: volta para onde estava.
+  await page.goto('/privacidade')
+  await page.goto('/termos')
+  await page.getByRole('button', { name: 'Voltar' }).click()
+  await expect(page).toHaveURL(/\/privacidade$/)
+
+  // Sem histórico: aba nova, como o link dos termos no cadastro (target=_blank).
+  // Vai para o início — sem sessão, o proxy leva ao login.
+  const [aba] = await Promise.all([
+    page.context().waitForEvent('page'),
+    page.evaluate(() => window.open('/termos', '_blank', 'noopener')),
+  ])
+  await aba.waitForLoadState()
+  expect(await aba.evaluate(() => window.history.length)).toBe(1)
+  await aba.getByRole('button', { name: 'Voltar' }).click()
+  await expect(aba).toHaveURL(/\/login$/)
+})
