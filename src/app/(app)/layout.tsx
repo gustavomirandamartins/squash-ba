@@ -20,7 +20,7 @@ export default async function AppLayout({
   const [{ data: profile }, { data: rolesData }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('full_name, avatar_url, gender, onboarding_completed')
+      .select('full_name, avatar_url, gender, onboarding_completed, terms_accepted_at')
       .eq('id', user.id)
       .single(),
     supabase
@@ -30,6 +30,9 @@ export default async function AppLayout({
   ])
 
   if (!profile?.onboarding_completed) redirect('/onboarding')
+  // Termos: quem ainda não aceitou (conta antiga, entrou por link mágico)
+  // aceita antes de usar o app.
+  if (!profile.terms_accepted_at) redirect('/termos/aceitar')
 
   const roleSet = new Set((rolesData ?? []).map((r) => r.role as string))
   const isAdmin = roleSet.has('admin')

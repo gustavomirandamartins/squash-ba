@@ -13,6 +13,7 @@ import { ptBR } from 'date-fns/locale'
 import { Loader2, Send, Trash2, UserRound } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import type { CurrentUser, FeedComment } from './types'
+import { ModerationMenu } from '@/components/moderation/ModerationMenu'
 
 const MAX = 1000
 
@@ -91,6 +92,13 @@ export function CommentsSection({
     taRef.current?.focus()
   }
 
+  // Bloqueou o autor: some tudo dele desta lista (o banco já não traz mais).
+  function hideAuthor(authorId: string) {
+    const gone = (comments ?? []).filter((c) => c.author_id === authorId).length
+    setComments((prev) => (prev ?? []).filter((c) => c.author_id !== authorId))
+    if (gone) onCountChange(-gone)
+  }
+
   async function remove(id: string) {
     const supabase = createClient()
     const { error } = await supabase.from('community_post_comments').delete().eq('id', id)
@@ -118,6 +126,17 @@ export function CommentsSection({
                     <p className="whitespace-pre-wrap break-words text-sm text-white/70">{c.body}</p>
                   </div>
                   <p className="mt-0.5 pl-1 text-[10px] text-white/30">{relTime(c.created_at)}</p>
+                </div>
+                <div className="mt-1">
+                  <ModerationMenu
+                    size="sm"
+                    meId={me.id}
+                    targetType="comment"
+                    targetId={c.id}
+                    ownerId={c.author_id}
+                    ownerName={c.author_name}
+                    onBlocked={() => hideAuthor(c.author_id)}
+                  />
                 </div>
                 {canDelete && (
                   <button

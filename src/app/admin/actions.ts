@@ -113,3 +113,37 @@ export async function saveBannerLink(formData: FormData) {
   revalidatePath('/')
   revalidateTag(CACHE_TAGS.sponsors, 'max')
 }
+
+// Denúncia: 'remover' apaga o conteúdo e fecha as denúncias abertas do mesmo
+// alvo; 'descartar' fecha só esta (RPC resolve_content_report, que também
+// confere o papel de admin). Post com foto: apaga o arquivo do Storage com a
+// chave de serviço (o RLS do Storage só deixa o dono apagar).
+export async function resolveReport(
+  reportId: string,
+  action: 'remover' | 'descartar',
+): Promise<{ error: string | null }> {
+  const ctx = await requireAdmin()
+  if (!ctx.ok) return { error: ctx.error }
+
+  const { data, error } = await ctx.supabase.rpc('resolve_content_report', {
+    _report_id: reportId,
+    _action: action,
+  })
+  if (error) return { error: error.message }
+
+  const imagePath = (data as { image_path?: string | null } | null)?.image_path
+  if (imagePath) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const secretKey = process.env.SUPABASE_SECRET_KEY
+    if (supabaseUrl && secretKey) {
+      const admin = createAdminSupabase(supabaseUrl, secretKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      })
+      await admin.storage.from('community').remove([imagePath])
+    }
+  }
+
+  revalidatePath('/admin', 'layout')
+  revalidatePath('/')
+  return { error: null }
+}

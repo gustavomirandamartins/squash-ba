@@ -12,6 +12,7 @@ import { ChevronLeft, Send, User, Trophy, ExternalLink } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { onAppReturn } from '@/lib/on-app-return'
 import { formatDistanceToNowStrict, parseISO } from 'date-fns'
+import { ModerationMenu } from '@/components/moderation/ModerationMenu'
 import { ptBR } from 'date-fns/locale'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ export type ConvMeta = {
   id: string
   kind: 'direct' | 'group'
   title: string | null
+  otherUserId: string | null
   otherUserName: string | null
   otherUserAvatar: string | null
 }
@@ -178,6 +180,7 @@ export function ChatView({ conv, initialMessages, currentUserId }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
   const [supabase] = useState(() => createClient())
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -313,6 +316,7 @@ export function ChatView({ conv, initialMessages, currentUserId }: Props) {
       textareaRef.current.style.height = 'auto'
     }
     setSending(true)
+    setSendError(null)
 
     // Otimista
     const optimisticId = `optimistic-${Date.now()}`
@@ -344,8 +348,15 @@ export function ChatView({ conv, initialMessages, currentUserId }: Props) {
           ),
         )
       } else {
-        // Remove otimista em caso de erro
+        // Remove otimista em caso de erro e devolve o texto ao campo.
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
+        setInput(body)
+        // 42501 = RLS: conversa direta com bloqueio não aceita mensagem nova.
+        setSendError(
+          error?.code === '42501'
+            ? 'Não é possível enviar mensagens nesta conversa.'
+            : 'Não foi possível enviar. Tente de novo.',
+        )
       }
     } finally {
       setSending(false)
@@ -396,6 +407,18 @@ export function ChatView({ conv, initialMessages, currentUserId }: Props) {
             <span className="text-[10px] font-semibold text-secondary/60">Grupo do campeonato</span>
           )}
         </div>
+
+        {/* Denunciar / bloquear a outra pessoa (conversa direta). */}
+        {!isGroup && conv.otherUserId && (
+          <ModerationMenu
+            meId={currentUserId}
+            targetType="profile"
+            targetId={conv.otherUserId}
+            ownerId={conv.otherUserId}
+            ownerName={conv.otherUserName}
+            onBlocked={() => router.push('/mensagens')}
+          />
+        )}
       </div>
 
       {/* ── Messages ── */}
@@ -422,6 +445,9 @@ export function ChatView({ conv, initialMessages, currentUserId }: Props) {
       </div>
 
       {/* ── Input ── */}
+      {sendError && (
+        <p className="shrink-0 bg-red-500/10 px-4 py-2 text-center text-xs text-red-400">{sendError}</p>
+      )}
       <div className="glass border-t border-white/8 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-end gap-2.5 shrink-0">
         <textarea
           ref={textareaRef}

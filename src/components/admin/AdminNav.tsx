@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const TABS = [
+  { label: 'Denúncias',   href: '/admin/denuncias'   },
   { label: 'Usuários',    href: '/admin/usuarios'    },
   { label: 'Professores', href: '/admin/professores' },
   { label: 'Anúncios',   href: '/admin/anuncios'    },
@@ -11,15 +12,16 @@ const TABS = [
   { label: 'Feedbacks',  href: '/admin/feedbacks'   },
 ]
 
-export function AdminNav({ feedbackCount }: { feedbackCount: number }) {
+export function AdminNav({ feedbackCount, reportCount }: { feedbackCount: number; reportCount: number }) {
   const pathname = usePathname()
 
   return (
     <nav className="flex gap-2 overflow-x-auto no-scrollbar border-b border-white/8 pb-3">
       {TABS.map((tab) => {
         const isActive = pathname === tab.href || pathname.startsWith(tab.href + '/')
-        const isFeedback = tab.href === '/admin/feedbacks'
-        const badge = isFeedback && feedbackCount > 0
+        const count =
+          tab.href === '/admin/feedbacks' ? feedbackCount : tab.href === '/admin/denuncias' ? reportCount : 0
+        const badge = count > 0
 
         return (
           <Link
@@ -38,7 +40,7 @@ export function AdminNav({ feedbackCount }: { feedbackCount: number }) {
                   isActive ? 'bg-primary text-secondary' : 'bg-secondary text-primary'
                 }`}
               >
-                {feedbackCount > 9 ? '9+' : feedbackCount}
+                {count > 9 ? '9+' : count}
               </span>
             )}
           </Link>

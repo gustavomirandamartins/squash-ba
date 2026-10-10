@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
 import { PASSWORD_HINT, isPasswordLongEnough, translatePasswordError } from '@/lib/auth/password'
 import { Logo } from '@/components/Logo'
@@ -16,12 +17,14 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
+  // Cadastro: aceite dos Termos de Uso é obrigatório.
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const emailOk = email.trim().length > 3 && email.includes('@')
   // Criar conta: mínimo novo. Entrar: só não vazia (contas antigas têm senha de 6+).
-  const passwordOk = mode === 'signup' ? isPasswordLongEnough(password) : password.length > 0
+  const passwordOk = mode === 'signup' ? isPasswordLongEnough(password) && acceptedTerms : password.length > 0
 
   function fail(msg: string) {
     setErrorMsg(msg)
@@ -40,7 +43,8 @@ export default function LoginPage() {
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { emailRedirectTo: `${location.origin}/auth/callback` },
+        // O banco grava o aceite no perfil (handle_new_user → terms_accepted_at).
+        options: { emailRedirectTo: `${location.origin}/auth/callback`, data: { terms_accepted: true } },
       })
       if (error) return fail(traduzErro(error.message))
       if (data.session) {
@@ -236,7 +240,24 @@ export default function LoginPage() {
                   </div>
 
                   {mode === 'signup' ? (
-                    <p className="px-1 text-[11px] text-white/35">{PASSWORD_HINT}</p>
+                    <>
+                      <p className="px-1 text-[11px] text-white/35">{PASSWORD_HINT}</p>
+                      <label className="flex cursor-pointer items-start gap-2.5 px-1 text-xs leading-relaxed text-white/60">
+                        <input
+                          type="checkbox"
+                          checked={acceptedTerms}
+                          onChange={(e) => setAcceptedTerms(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-[#cdfd51]"
+                        />
+                        <span>
+                          Li e aceito os{' '}
+                          <Link href="/termos" target="_blank" className="text-secondary underline-offset-2 hover:underline">
+                            Termos de Uso
+                          </Link>
+                          .
+                        </span>
+                      </label>
+                    </>
                   ) : (
                     /* Link "Esqueci a senha" — só no login */
                     <div className="flex justify-end">

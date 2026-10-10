@@ -27,6 +27,17 @@ const NETWORK_TIMEOUT_S = 3;
 const pageExpiration = () =>
   new ExpirationPlugin({ maxEntries: 120, maxAgeSeconds: 7 * 24 * 60 * 60 });
 
+// Páginas e RSC: só guarda resposta 200 de verdade. Um redirecionamento (para
+// /login sem sessão, para /termos/aceitar antes do aceite) guardado sob a URL
+// pedida faria o app, sem rede, repetir o redirecionamento para uma tela que
+// precisa de internet — em vez de cair no shell offline. Navegação chega como
+// "opaqueredirect" (status 0); fetch/RSC segue o redirecionamento e chega com
+// redirected = true.
+const onlyRealPages = {
+  cacheWillUpdate: async ({ response }: { response: Response }) =>
+    response.status === 200 && !response.redirected && response.type !== "opaqueredirect" ? response : null,
+};
+
 const isSupabase = (url: URL) => url.hostname.endsWith(".supabase.co");
 
 // Campeonato, desafio e jogo: o aparelho tem os dados (cache da estrutura +
@@ -69,7 +80,7 @@ const appCaching: RuntimeCaching[] = [
     handler: new NetworkFirst({
       cacheName: "pages-rsc-prefetch",
       networkTimeoutSeconds: NETWORK_TIMEOUT_S,
-      plugins: [pageExpiration()],
+      plugins: [onlyRealPages, pageExpiration()],
     }),
   },
   {
@@ -78,7 +89,7 @@ const appCaching: RuntimeCaching[] = [
     handler: new NetworkFirst({
       cacheName: "pages-rsc",
       networkTimeoutSeconds: NETWORK_TIMEOUT_S,
-      plugins: [pageExpiration()],
+      plugins: [onlyRealPages, pageExpiration()],
     }),
   },
   {
@@ -92,7 +103,7 @@ const appCaching: RuntimeCaching[] = [
     handler: new NetworkFirst({
       cacheName: "pages",
       networkTimeoutSeconds: NETWORK_TIMEOUT_S,
-      plugins: [pageExpiration()],
+      plugins: [onlyRealPages, pageExpiration()],
     }),
   },
 ];

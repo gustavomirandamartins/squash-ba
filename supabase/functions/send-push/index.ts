@@ -2,8 +2,8 @@
  * send-push — Edge Function para Web Push notifications.
  *
  * Disparada via Database Webhook em public.messages (INSERT).
- * Para cada membro da conversa (exceto o sender) com push_subscription
- * registrada, envia uma Web Push notification via VAPID.
+ * Para cada membro da conversa (exceto o sender e quem bloqueou o sender) com
+ * push_subscription registrada, envia uma Web Push notification via VAPID.
  */
 
 import webpush from 'npm:web-push@3.6.7'
@@ -77,7 +77,28 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ sent: 0 }), { status: 200 })
     }
 
-    const memberIds = members.map((m: { user_id: string }) => m.user_id)
+    // 2b. Quem bloqueou o remetente não recebe push dele (user_blocks com
+    //     blocker = destinatário e blocked = remetente). Sem como conferir,
+    //     não envia: melhor perder um aviso do que avisar quem bloqueou.
+    const { data: blocks, error: blocksError } = await supabase
+      .from('user_blocks')
+      .select('blocker_id')
+      .eq('blocked_id', sender_id)
+      .in('blocker_id', members.map((m: { user_id: string }) => m.user_id))
+
+    if (blocksError) {
+      console.error('send-push: falha ao ler bloqueios:', blocksError.message)
+      return new Response(JSON.stringify({ sent: 0, skipped: 'blocks' }), { status: 200 })
+    }
+
+    const blockedBy = new Set((blocks ?? []).map((b: { blocker_id: string }) => b.blocker_id))
+    const memberIds = members
+      .map((m: { user_id: string }) => m.user_id)
+      .filter((id: string) => !blockedBy.has(id))
+
+    if (memberIds.length === 0) {
+      return new Response(JSON.stringify({ sent: 0 }), { status: 200 })
+    }
 
     // 3. Busca push subscriptions dos membros
     const { data: subs } = await supabase

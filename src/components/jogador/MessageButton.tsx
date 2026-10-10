@@ -23,7 +23,12 @@ export function MessageButton({ userId }: { userId: string }) {
     })
     if (error || !data) {
       setBusy(false)
-      setError('Não foi possível abrir a conversa.')
+      // Bloqueio (em qualquer sentido): o banco recusa com mensagem própria.
+      setError(
+        error?.message === 'Não é possível conversar com este usuário.'
+          ? error.message
+          : 'Não foi possível abrir a conversa.',
+      )
       return
     }
     router.push(`/mensagens/${data as string}`)

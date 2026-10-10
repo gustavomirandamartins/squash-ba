@@ -4,7 +4,12 @@ import { AdminUsers, type AdminUser } from '@/components/admin/AdminUsers'
 
 export const metadata = { title: 'Usuários — Admin' }
 
-export default async function AdminUsuariosPage() {
+export default async function AdminUsuariosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ u?: string }>
+}) {
+  const { u } = await searchParams
   const supabase = await createClient()
   const user = await getAuthUser()
   if (!user) return null
@@ -60,7 +65,7 @@ export default async function AdminUsuariosPage() {
       <p className="text-xs text-white/35">
         Remova o acesso de professor ou exclua usuários cadastrados.
       </p>
-      <AdminUsers users={users} currentUserId={user.id} />
+      <AdminUsers users={users} currentUserId={user.id} initialQuery={u ?? ''} />
     </div>
   )
 }
