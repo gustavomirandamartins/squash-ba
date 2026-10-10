@@ -2,7 +2,8 @@
  * notify-push — Edge Function genérica de Web Push.
  *
  * Disparada via Database Webhook em public.notifications (INSERT).
- * Envia uma Web Push para todas as subscriptions do destinatário (user_id).
+ * Envia uma Web Push para todas as subscriptions do destinatário (user_id) e,
+ * pelo APNs, para os iPhones dele com o app (push_devices; ver _shared/apns.ts).
  *
  * Mensagens (type='mensagem') são IGNORADAS aqui: elas já têm push próprio via
  * a função send-push (webhook em public.messages), evitando push duplicado.
@@ -13,6 +14,7 @@
 
 import webpush from 'npm:web-push@3.6.7'
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { sendApns } from '../_shared/apns.ts'
 
 const VAPID_PUBLIC_KEY  = Deno.env.get('VAPID_PUBLIC_KEY')  ?? ''
 const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY') ?? ''
@@ -71,6 +73,19 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[notify-push] type=${record.type} user=${record.user_id}`)
 
+    // App iOS (APNs) — à parte do Web Push abaixo, que segue igual.
+    const apns = await sendApns(
+      supabase,
+      [record.user_id],
+      {
+        title: record.title ?? 'SquashBa',
+        body: (record.body ?? '').slice(0, 120),
+        threadId: record.type,
+        url: record.url ?? '/',
+      },
+      (m) => console.log(`[notify-push] ${m}`),
+    )
+
     const { data: subs } = await supabase
       .from('push_subscriptions')
       .select('endpoint, p256dh, auth_key')
@@ -78,7 +93,7 @@ Deno.serve(async (req: Request) => {
 
     if (!subs || subs.length === 0) {
       console.log(`[notify-push] no subscriptions for user=${record.user_id}`)
-      return new Response(JSON.stringify({ sent: 0 }), { status: 200 })
+      return new Response(JSON.stringify({ sent: 0, apns }), { status: 200 })
     }
 
     console.log(`[notify-push] ${subs.length} subscription(s) found`)
@@ -117,7 +132,7 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[notify-push] done: sent=${sent} stale=${staleEndpoints.length}`)
 
-    return new Response(JSON.stringify({ sent, stale: staleEndpoints.length }), {
+    return new Response(JSON.stringify({ sent, stale: staleEndpoints.length, apns }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })

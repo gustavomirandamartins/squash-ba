@@ -411,3 +411,8 @@ verify_jwt = true
 # confere se o papel é service_role.
 [functions.send-push]
 verify_jwt = true
+
+# Push de notificações (webhook do banco). Só aceita JWT válido; a função ainda
+# confere se o papel é service_role.
+[functions.notify-push]
+verify_jwt = true
