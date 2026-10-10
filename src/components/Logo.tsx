@@ -15,6 +15,10 @@ export function Logo({ className = "", showWordmark = true, size = 40 }: Props) 
         width={size}
         height={size}
         priority
+        // Arquivo direto (9 KB, já no precache do service worker): a URL
+        // otimizada do next/image (/_next/image?…) não existe sem rede e o
+        // logo aparecia quebrado no shell offline.
+        unoptimized
         className="shrink-0"
       />
       {showWordmark && (
