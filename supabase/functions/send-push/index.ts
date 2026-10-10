@@ -3,11 +3,13 @@
  *
  * Disparada via Database Webhook em public.messages (INSERT).
  * Para cada membro da conversa (exceto o sender e quem bloqueou o sender) com
- * push_subscription registrada, envia uma Web Push notification via VAPID.
+ * push_subscription registrada, envia uma Web Push notification via VAPID; e,
+ * pelo APNs, para os iPhones deles com o app (push_devices; ver _shared/apns.ts).
  */
 
 import webpush from 'npm:web-push@3.6.7'
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { sendApns } from '../_shared/apns.ts'
 
 const VAPID_PUBLIC_KEY  = Deno.env.get('VAPID_PUBLIC_KEY')  ?? ''
 const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY') ?? ''
@@ -100,6 +102,20 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ sent: 0 }), { status: 200 })
     }
 
+    // 2c. App iOS (APNs) — mesmos destinatários (já sem quem bloqueou o
+    //     remetente). À parte do Web Push abaixo, que segue igual.
+    const apns = await sendApns(
+      supabase,
+      memberIds,
+      {
+        title: senderName,
+        body: messageBody.slice(0, 120),
+        threadId: conversation_id,
+        url: `/mensagens/${conversation_id}`,
+      },
+      (m) => console.log(`[send-push] ${m}`),
+    )
+
     // 3. Busca push subscriptions dos membros
     const { data: subs } = await supabase
       .from('push_subscriptions')
@@ -107,7 +123,7 @@ Deno.serve(async (req: Request) => {
       .in('user_id', memberIds)
 
     if (!subs || subs.length === 0) {
-      return new Response(JSON.stringify({ sent: 0 }), { status: 200 })
+      return new Response(JSON.stringify({ sent: 0, apns }), { status: 200 })
     }
 
     // 4. Envia notificações — falhas silenciosas por assinatura
@@ -149,7 +165,7 @@ Deno.serve(async (req: Request) => {
         .in('endpoint', staleEndpoints)
     }
 
-    return new Response(JSON.stringify({ sent, stale: staleEndpoints.length }), {
+    return new Response(JSON.stringify({ sent, stale: staleEndpoints.length, apns }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
