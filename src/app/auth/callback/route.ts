@@ -1,16 +1,23 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
 import type { EmailOtpType } from '@supabase/supabase-js'
+import { LOGIN_NEXT_COOKIE, safeNextPath } from '@/lib/auth/next-path'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
-  const next = searchParams.get('next') ?? '/'
+  // Destino: ?next= ou o cookie que a tela de login gravou ao pedir o link
+  // (a página que o visitante tentou abrir). Só caminhos internos.
+  const next =
+    safeNextPath(searchParams.get('next')) ??
+    safeNextPath(request.cookies.get(LOGIN_NEXT_COOKIE)?.value) ??
+    '/'
 
   // Cria a resposta de redirect antecipadamente para poder setar cookies nela.
   // Padrão correto para Next.js 15: ler cookies de request.cookies e escrever
   // diretamente no objeto response — garantindo que os Set-Cookie headers
   // estejam no mesmo response retornado ao browser.
   const successResponse = NextResponse.redirect(`${origin}${next}`)
+  successResponse.cookies.delete(LOGIN_NEXT_COOKIE)
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

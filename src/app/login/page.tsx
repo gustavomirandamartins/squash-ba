@@ -5,11 +5,31 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
 import { PASSWORD_HINT, isPasswordLongEnough, translatePasswordError } from '@/lib/auth/password'
+import { LOGIN_NEXT_COOKIE, safeNextPath } from '@/lib/auth/next-path'
 import { Logo } from '@/components/Logo'
 import { Mail, Lock, Eye, EyeOff, ArrowRight, CheckCircle, Sparkles } from 'lucide-react'
 
 type Mode = 'login' | 'signup' | 'forgot'
 type Status = 'idle' | 'loading' | 'magic-loading' | 'reset-loading' | 'sent' | 'signup-confirm' | 'reset-sent' | 'error'
+
+// Para onde voltar depois de entrar: o ?next= que o proxy pôs ao mandar para
+// cá quem abriu uma tela do app sem sessão. Lido na hora do envio (sem
+// useSearchParams, que exigiria Suspense na página).
+function nextPath(): string {
+  return safeNextPath(new URLSearchParams(window.location.search).get('next')) ?? '/'
+}
+
+// Link mágico / confirmação de e-mail: o destino vai num cookie curto que o
+// /auth/callback lê. A URL de retorno não muda (ela precisa estar na lista de
+// URLs permitidas do Supabase Auth). Link aberto em outro aparelho → início.
+function callbackUrl(): string {
+  const next = nextPath()
+  document.cookie =
+    next === '/'
+      ? `${LOGIN_NEXT_COOKIE}=; path=/; max-age=0; samesite=lax`
+      : `${LOGIN_NEXT_COOKIE}=${encodeURIComponent(next)}; path=/; max-age=900; samesite=lax`
+  return `${location.origin}/auth/callback`
+}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -44,11 +64,11 @@ export default function LoginPage() {
         email: email.trim(),
         password,
         // O banco grava o aceite no perfil (handle_new_user → terms_accepted_at).
-        options: { emailRedirectTo: `${location.origin}/auth/callback`, data: { terms_accepted: true } },
+        options: { emailRedirectTo: callbackUrl(), data: { terms_accepted: true } },
       })
       if (error) return fail(traduzErro(error.message))
       if (data.session) {
-        router.push('/')
+        router.push(nextPath())
         router.refresh()
       } else {
         // Confirmação de e-mail está ativada no projeto.
@@ -62,7 +82,7 @@ export default function LoginPage() {
       password,
     })
     if (error) return fail(traduzErro(error.message))
-    router.push('/')
+    router.push(nextPath())
     router.refresh()
   }
 
@@ -87,7 +107,7 @@ export default function LoginPage() {
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { emailRedirectTo: `${location.origin}/auth/callback` },
+      options: { emailRedirectTo: callbackUrl() },
     })
     if (error) return fail(traduzErro(error.message))
     setStatus('sent')
